@@ -1,34 +1,198 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sweet Dreams Darts</title>
-  <meta name="theme-color" content="#14213d">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Darts">
-  <style>
-    body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center;
-           justify-content:center; gap:14px; padding:24px; box-sizing:border-box;
-           background:#14213d; color:#f1faee; font-family:system-ui,sans-serif; text-align:center; }
-    h1 { margin:0; font-size:1.8rem; }
-    p { margin:0; font-size:1.1rem; max-width:32ch; }
-    .ok { color:#ffd166; font-weight:700; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweet Dreams Darts</title>
+<meta name="theme-color" content="#14213d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Darts">
+<style>
+:root{--fondo:#14213d;--panel:#1d2f52;--claro:#f1faee;--acento:#ffd166}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--fondo);color:var(--claro);font-family:system-ui,sans-serif;display:flex;justify-content:center;padding:20px}
+main{width:100%;max-width:420px}
+h1{font-size:1.6rem;margin:8px 0 18px;text-align:center}
+.caja{background:var(--panel);border-radius:12px;padding:18px;margin-bottom:14px}
+label{display:block;margin:12px 0 4px}
+input{width:100%;padding:12px;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:var(--claro);font-size:1rem}
+button{width:100%;margin-top:16px;padding:13px;border:0;border-radius:8px;background:var(--acento);color:#14213d;font-size:1rem;font-weight:700}
+button.sec{background:transparent;color:var(--claro);border:1px solid #3d5380}
+button.enlace{background:none;border:0;color:var(--acento);text-decoration:underline;font-weight:400;margin-top:8px;padding:8px}
+#msg{min-height:1.4em;color:var(--acento);text-align:center}
+.rol{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--acento);color:#14213d;font-weight:700}
+.zona{background:#0f1a30;border-radius:8px;padding:12px;margin-top:12px}
+.pie{text-align:center;opacity:.6;font-size:.85rem}
+.oculto{display:none!important}
+</style>
 </head>
 <body>
+<main>
   <h1>Sweet Dreams Darts</h1>
-  <p class="ok">Página de prueba funcionando</p>
-  <p id="modo">Comprobando…</p>
-  <p>Versión de prueba 0.1</p>
-  <script>
-    const instalada = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-    document.getElementById("modo").textContent = instalada
-      ? "Estás usando la app instalada ✔"
-      : "Ahora mismo estás en el navegador (aún no instalada)";
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
-  </script>
+  <p id="cargando" style="text-align:center">Cargando…</p>
+
+  <form id="form" class="caja oculto" novalidate>
+    <h2 id="titulo" style="margin:0;font-size:1.2rem">Entrar</h2>
+    <div id="campoNombre" class="oculto">
+      <label for="nombre">Nombre y apellidos</label>
+      <input id="nombre" autocomplete="name" maxlength="60">
+    </div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" inputmode="email">
+    <label for="pass">Contraseña (mínimo 6 caracteres)</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <button id="enviar" type="submit">Entrar</button>
+    <button id="cambiar" class="enlace" type="button">No tengo cuenta: crear una</button>
+    <button id="olvido" class="enlace" type="button">He olvidado mi contraseña</button>
+  </form>
+
+  <section id="vistaUsuario" class="caja oculto">
+    <p style="margin-top:0">Hola, <strong id="uNombre"></strong></p>
+    <p id="uEmail" style="opacity:.8"></p>
+    <p>Tu rol: <span id="uRol" class="rol"></span></p>
+    <div id="zonaLiga" class="zona oculto"><strong>Zona Liga</strong><br>Aquí irán clasificaciones, calendarios y tu perfil (próximamente).</div>
+    <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br>Aquí aprobarás accesos y gestionarás reservas (próximamente).</div>
+    <button id="salir" class="sec" type="button">Cerrar sesión</button>
+  </section>
+
+  <p id="msg" role="status"></p>
+  <p class="pie">Versión 0.2</p>
+</main>
+
+<script>
+setTimeout(function () {
+  var c = document.getElementById("cargando");
+  if (c && !c.classList.contains("oculto")) c.textContent = "No se ha podido cargar. Comprueba tu conexión y vuelve a abrir la app.";
+}, 8000);
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const ROLES = { user: "Usuario", player: "Jugador oficial", admin: "Administrador" };
+let modoRegistro = false;
+let registrando = false;
+
+function mensaje(t) { $("msg").textContent = t || ""; }
+
+function errorTexto(e) {
+  const c = e.code || "";
+  if (["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(c)) return "Email o contraseña incorrectos.";
+  if (c === "auth/email-already-in-use") return "Ese email ya tiene cuenta. Prueba a entrar.";
+  if (c === "auth/weak-password") return "La contraseña es demasiado corta (mínimo 6 caracteres).";
+  if (c === "auth/invalid-email") return "El email no es válido.";
+  if (c === "auth/network-request-failed") return "Sin conexión. Revisa tu internet.";
+  if (c === "auth/too-many-requests") return "Demasiados intentos. Espera unos minutos.";
+  if (c === "permission-denied") return "Permiso denegado por las reglas de seguridad.";
+  return "Error: " + (c || e.message);
+}
+
+function vista(cual) {
+  for (const id of ["cargando", "form", "vistaUsuario"]) $(id).classList.toggle("oculto", id !== cual);
+}
+
+function ponerModo(reg) {
+  modoRegistro = reg;
+  $("titulo").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("enviar").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("cambiar").textContent = reg ? "Ya tengo cuenta: entrar" : "No tengo cuenta: crear una";
+  $("campoNombre").classList.toggle("oculto", !reg);
+  $("pass").autocomplete = reg ? "new-password" : "current-password";
+  mensaje("");
+}
+
+function mostrar(user, ficha) {
+  $("uNombre").textContent = ficha.nombre;
+  $("uEmail").textContent = user.email;
+  $("uRol").textContent = ROLES[ficha.role] || ficha.role;
+  $("zonaLiga").classList.toggle("oculto", !["player", "admin"].includes(ficha.role));
+  $("zonaAdmin").classList.toggle("oculto", ficha.role !== "admin");
+  mensaje("");
+  vista("vistaUsuario");
+}
+
+async function cargarFicha(user) {
+  const ref = doc(db, "users", user.uid);
+  let snap = await getDoc(ref);
+  if (!snap.exists()) {
+    const nombre = (user.displayName || user.email.split("@")[0]).slice(0, 60);
+    await setDoc(ref, { nombre: nombre, email: user.email, role: "user", creado: serverTimestamp() });
+    snap = await getDoc(ref);
+  }
+  return snap.data();
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (registrando) return;
+  if (!user) { vista("form"); return; }
+  try {
+    mostrar(user, await cargarFicha(user));
+  } catch (e) {
+    mensaje(errorTexto(e));
+    await signOut(auth);
+  }
+});
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  mensaje("");
+  const email = $("email").value.trim();
+  const pass = $("pass").value;
+  const nombre = $("nombre").value.trim().slice(0, 60);
+  if (!email || !pass) return mensaje("Escribe tu email y tu contraseña.");
+  if (modoRegistro && !nombre) return mensaje("Escribe tu nombre y apellidos.");
+  $("enviar").disabled = true;
+  try {
+    if (modoRegistro) {
+      registrando = true;
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(cred.user, { displayName: nombre });
+      await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp() });
+      registrando = false;
+      mostrar(cred.user, { nombre: nombre, role: "user" });
+    } else {
+      await signInWithEmailAndPassword(auth, email, pass);
+    }
+  } catch (e) {
+    registrando = false;
+    mensaje(errorTexto(e));
+    if (modoRegistro && auth.currentUser) await signOut(auth).catch(() => {});
+  }
+  $("enviar").disabled = false;
+});
+
+$("cambiar").addEventListener("click", () => ponerModo(!modoRegistro));
+
+$("olvido").addEventListener("click", async () => {
+  const email = $("email").value.trim();
+  if (!email) return mensaje("Escribe tu email arriba y pulsa de nuevo.");
+  try {
+    await sendPasswordResetEmail(auth, email);
+    mensaje("Si ese email tiene cuenta, te hemos enviado un correo para cambiar la contraseña. Mira también en spam.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("salir").addEventListener("click", async () => {
+  await signOut(auth);
+  $("pass").value = "";
+});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
 </body>
 </html>
