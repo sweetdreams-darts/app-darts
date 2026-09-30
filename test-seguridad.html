@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Prueba de seguridad</title>
+<style>body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;padding:20px;max-width:440px;margin:auto}input,button{width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0}button{background:#ffd166;font-weight:700}li{margin:10px 0}.ok{color:#8ce99a}.mal{color:#ff8787;font-weight:700}</style></head>
+<body>
+<h1>Prueba de seguridad</h1>
+<p id="estado">Cargando…</p>
+<div id="login" hidden><input id="email" type="email" placeholder="Email de la cuenta de PRUEBA"><input id="pass" type="password" placeholder="Contraseña"><button id="entrar">Entrar</button></div>
+<div id="panel" hidden><button id="lanzar">Ejecutar pruebas</button><button id="salir">Cambiar de cuenta</button><ul id="res"></ul></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, updateDoc, getDocs, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const uid = () => auth.currentUser.uid;
+const pruebas = [
+  ["Cambiarme el nombre (esto SÍ debe permitirse)", () => updateDoc(doc(db, "users", uid()), { nombre: "Prueba Usuario" }), true],
+  ["Ponerme el rol admin a mí mismo", () => updateDoc(doc(db, "users", uid()), { role: "admin" }), false],
+  ["Reescribir mi ficha con rol admin", () => setDoc(doc(db, "users", uid()), { nombre: "Prueba Usuario", email: auth.currentUser.email, role: "admin", creado: serverTimestamp() }), false],
+  ["Crear la ficha de otra persona como admin", () => setDoc(doc(db, "users", "ficha-falsa-123"), { nombre: "Falso", email: "falso@x.com", role: "admin", creado: serverTimestamp() }), false],
+  ["Leer la lista de todos los usuarios", () => getDocs(collection(db, "users")), false],
+  ["Escribir en una colección inventada", () => setDoc(doc(db, "cosa", "x"), { a: 1 }), false],
+  ["Leer una colección inventada", () => getDocs(collection(db, "cosa")), false]
+];
+onAuthStateChanged(auth, (u) => {
+  $("login").hidden = !!u;
+  $("panel").hidden = !u;
+  $("estado").textContent = u ? "Cuenta: " + u.email : "Entra con la cuenta de PRUEBA (la que lleva +prueba1).";
+  $("res").innerHTML = "";
+});
+$("entrar").onclick = async () => {
+  try { await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value); }
+  catch (e) { $("estado").textContent = "No se pudo entrar: " + (e.code || e.message); }
+};
+$("salir").onclick = () => signOut(auth);
+$("lanzar").onclick = async () => {
+  const ul = $("res");
+  ul.innerHTML = "";
+  if (!auth.currentUser.email.includes("prueba")) {
+    ul.innerHTML = "<li class='mal'>Esta no es la cuenta de prueba. Pulsa Cambiar de cuenta.</li>";
+    return;
+  }
+  for (const [texto, fn, debe] of pruebas) {
+    let permitido = true;
+    try { await fn(); } catch (e) { permitido = false; }
+    const bien = permitido === debe;
+    const li = document.createElement("li");
+    li.className = bien ? "ok" : "mal";
+    li.textContent = (bien ? "✔ " : "✘ ") + texto + " → " + (permitido ? "permitido" : "bloqueado");
+    ul.appendChild(li);
+  }
+};
+</script>
+</body></html>
