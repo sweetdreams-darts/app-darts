@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel de administrador</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+a{color:#ffd166}
+input,select,button{width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0}
+input,select{background:#0f1a30;color:#f1faee;border:1px solid #3d5380}
+button{background:#ffd166;color:#14213d;font-weight:700}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+.card{background:#1d2f52;border-radius:12px;padding:14px;margin-top:12px}
+.card small{opacity:.75;display:block;margin-top:2px}
+.rol{display:inline-block;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.85rem}
+#msg{color:#ffd166}
+</style></head>
+<body><main>
+<p><a href="./">← Volver a la app</a></p>
+<h1>Panel de administrador</h1>
+<p id="msg">Cargando…</p>
+<div id="panel" hidden>
+  <p id="resumen"></p>
+  <input id="buscar" type="search" placeholder="Buscar por nombre o email">
+  <select id="filtro">
+    <option value="todos">Todos</option>
+    <option value="user">Solo usuarios (sin acceso a la Zona Liga)</option>
+    <option value="player">Solo jugadores oficiales</option>
+  </select>
+  <div id="lista"></div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, orderBy } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const ROLES = { user: "Usuario", player: "Jugador oficial", admin: "Administrador" };
+const el = (tag, txt, cls) => {
+  const e = document.createElement(tag);
+  if (txt) e.textContent = txt;
+  if (cls) e.className = cls;
+  return e;
+};
+let usuarios = [];
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").hidden = true;
+  if (!u) { $("msg").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("msg").textContent = "No tienes permiso para ver esta página."; return; }
+    const snap = await getDocs(query(collection(db, "users"), orderBy("creado", "desc")));
+    usuarios = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    $("msg").textContent = "";
+    $("panel").hidden = false;
+    pintar();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+});
+
+function pintar() {
+  const t = $("buscar").value.trim().toLowerCase();
+  const f = $("filtro").value;
+  const n = (r) => usuarios.filter((x) => x.role === r).length;
+  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("admin") + " administradores.";
+  const lista = $("lista");
+  lista.innerHTML = "";
+  for (const x of usuarios) {
+    if (f !== "todos" && x.role !== f) continue;
+    if (t && !((x.nombre || "") + " " + (x.email || "")).toLowerCase().includes(t)) continue;
+    const fecha = x.creado && x.creado.toDate ? x.creado.toDate().toLocaleDateString("es-ES") : "";
+    const c = el("div", "", "card");
+    c.append(el("strong", x.nombre), el("small", x.email), el("small", "Registrado: " + fecha));
+    const p = el("p");
+    p.append(el("span", ROLES[x.role] || x.role, "rol"));
+    c.append(p);
+    if (x.role === "user" || x.role === "player") {
+      const dar = x.role === "user";
+      const b = el("button", dar ? "Dar acceso a la Zona Liga" : "Quitar acceso a la Zona Liga", dar ? "" : "sec");
+      b.onclick = () => cambiar(x, dar ? "player" : "user");
+      c.append(b);
+    }
+    lista.append(c);
+  }
+}
+
+async function cambiar(x, nuevo) {
+  const txt = (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + x.nombre + "?";
+  if (!confirm(txt)) return;
+  try {
+    await updateDoc(doc(db, "users", x.id), { role: nuevo });
+    x.role = nuevo;
+    pintar();
+  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
+}
+
+$("buscar").oninput = pintar;
+$("filtro").onchange = pintar;
+</script>
+</main></body></html>
