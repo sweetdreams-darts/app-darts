@@ -24,6 +24,8 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
 #msg{min-height:1.4em;color:var(--acento);text-align:center}
 .rol{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--acento);color:#14213d;font-weight:700}
 .zona{background:#0f1a30;border-radius:8px;padding:12px;margin-top:12px}
+.boton{display:block;margin-top:12px;padding:13px;border-radius:8px;background:var(--acento);color:#14213d;font-weight:700;text-align:center;text-decoration:none}
+.boton.sec{background:transparent;color:var(--claro);border:1px solid #3d5380}
 .pie{text-align:center;opacity:.6;font-size:.85rem}
 .oculto{display:none!important}
 </style>
@@ -53,6 +55,8 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
     <p style="margin-top:0">Hola, <strong id="uNombre"></strong></p>
     <p id="uEmail" style="opacity:.8"></p>
     <p>Tu rol: <span id="uRol" class="rol"></span></p>
+    <a class="boton" href="reservar.html">Reservar diana</a>
+    <a class="boton sec" href="mis-reservas.html">Mis reservas</a>
     <div id="avisoUsuario" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
     <div id="zonaLiga" class="zona oculto"><strong>Zona Liga</strong><br>Aquí irán clasificaciones, calendarios y tu perfil (próximamente).</div>
     <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br><a href="admin.html" style="color:#ffd166">Abrir el panel</a> para dar o quitar acceso a la Zona Liga.</div>
@@ -60,7 +64,7 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
   </section>
 
   <p id="msg" role="status"></p>
-  <p class="pie">Versión 0.3</p>
+  <p class="pie">Versión 0.4</p>
 </main>
 
 <script>
