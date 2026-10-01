@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reservas (administrador)</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:22px 0 0;color:#ffd166}
+.card{background:#1d2f52;border-radius:12px;padding:14px;margin-top:10px}
+.card small{display:block;opacity:.8;margin-top:3px}
+.card button{width:100%;margin-top:12px;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #ff8787;background:transparent;color:#ff8787;font-weight:700}
+.curso{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.85rem}
+#msg{min-height:1.4em;color:#ffd166}
+#msg.ok{color:#8ce99a}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Reservas</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="lista"></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MIN = 60000;
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const pad = (n) => String(n).padStart(2, "0");
+const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const dia = (ms) => { const d = new Date(ms); return DIAS[d.getDay()] + " " + d.getDate() + " " + MESES[d.getMonth()]; };
+const dur = (m) => ((m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60 ? (m % 60) + " min" : "")).trim();
+const el = (tag, txt) => { const e = document.createElement(tag); if (txt) e.textContent = txt; return e; };
+let reservas = [], usuarios = {}, nombres = {};
+
+function mensaje(t, ok) { $("msg").textContent = t || ""; $("msg").className = ok ? "ok" : ""; }
+
+async function cargar() {
+  const [d, u, r] = await Promise.all([
+    getDocs(collection(db, "dartboards")),
+    getDocs(collection(db, "users")),
+    getDocs(query(collection(db, "reservations"), where("fin", ">", Timestamp.now())))
+  ]);
+  d.forEach((x) => { nombres[x.id] = x.data().nombre; });
+  u.forEach((x) => { usuarios[x.id] = x.data(); });
+  reservas = r.docs.map((x) => ({ id: x.id, ...x.data() })).sort((a, b) => a.inicio.toMillis() - b.inicio.toMillis());
+  pintar();
+}
+
+function pintar() {
+  const lista = $("lista");
+  lista.innerHTML = "";
+  $("estado").textContent = reservas.length ? reservas.length + " reservas próximas, agrupadas por jornada." : "No hay reservas próximas.";
+  let ultimo = "";
+  for (const r of reservas) {
+    const ini = r.inicio.toMillis(), fin = r.fin.toMillis();
+    const jornada = "Jornada del " + dia(ini - 12 * 60 * MIN);
+    if (jornada !== ultimo) { lista.append(el("h2", jornada)); ultimo = jornada; }
+    const u = usuarios[r.uid] || {};
+    const c = el("div");
+    c.className = "card";
+    c.append(el("strong", (nombres[r.dianaId] || r.dianaId) + " · " + hhmm(ini) + " a " + hhmm(fin) + " (" + dur((fin - ini) / MIN) + ")"));
+    c.append(el("small", u.nombre || "Cuenta desconocida"));
+    c.append(el("small", u.email || ""));
+    if (ini <= Date.now()) { const s = el("span", "En curso"); s.className = "curso"; c.append(s); }
+    const b = el("button", "Cancelar reserva");
+    b.onclick = () => cancelar(r);
+    c.append(b);
+    lista.append(c);
+  }
+}
+
+async function cancelar(r) {
+  const ini = r.inicio.toMillis(), fin = r.fin.toMillis();
+  const u = usuarios[r.uid] || {};
+  if (!confirm("¿Cancelar la reserva de " + (u.nombre || "esta persona") + " en " + (nombres[r.dianaId] || r.dianaId) + " el " + dia(ini) + ", de " + hhmm(ini) + " a " + hhmm(fin) + "?")) return;
+  mensaje("Cancelando…");
+  try {
+    const snap = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(ini)), where("inicio", "<", Timestamp.fromMillis(fin))));
+    const b = writeBatch(db);
+    snap.forEach((s) => {
+      const x = s.data();
+      if (x.dianaId === r.dianaId && x.uid === r.uid && x.tipo === "reserva") b.delete(s.ref);
+    });
+    b.delete(doc(db, "reservations", r.id));
+    await b.commit();
+    mensaje("✔ Reserva cancelada.", true);
+  } catch (e) { mensaje("No se pudo cancelar: " + (e.code || e.message)); }
+  await cargar();
+}
+
+onAuthStateChanged(auth, async (u) => {
+  $("lista").innerHTML = "";
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    await cargar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
