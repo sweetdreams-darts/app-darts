@@ -38,6 +38,7 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
     <div id="campoNombre" class="oculto">
       <label for="nombre">Nombre y apellidos</label>
       <input id="nombre" autocomplete="name" maxlength="60">
+      <small style="opacity:.8">Si juegas en la liga, escribe tu nombre y apellidos tal cual aparecen en la liga.</small>
     </div>
     <label for="email">Email</label>
     <input id="email" type="email" autocomplete="email" inputmode="email">
@@ -52,13 +53,14 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
     <p style="margin-top:0">Hola, <strong id="uNombre"></strong></p>
     <p id="uEmail" style="opacity:.8"></p>
     <p>Tu rol: <span id="uRol" class="rol"></span></p>
+    <div id="avisoUsuario" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
     <div id="zonaLiga" class="zona oculto"><strong>Zona Liga</strong><br>Aquí irán clasificaciones, calendarios y tu perfil (próximamente).</div>
-    <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br>Aquí aprobarás accesos y gestionarás reservas (próximamente).</div>
+    <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br><a href="admin.html" style="color:#ffd166">Abrir el panel</a> para dar o quitar acceso a la Zona Liga.</div>
     <button id="salir" class="sec" type="button">Cerrar sesión</button>
   </section>
 
   <p id="msg" role="status"></p>
-  <p class="pie">Versión 0.2</p>
+  <p class="pie">Versión 0.3</p>
 </main>
 
 <script>
@@ -120,6 +122,7 @@ function mostrar(user, ficha) {
   $("uNombre").textContent = ficha.nombre;
   $("uEmail").textContent = user.email;
   $("uRol").textContent = ROLES[ficha.role] || ficha.role;
+  $("avisoUsuario").classList.toggle("oculto", ficha.role !== "user");
   $("zonaLiga").classList.toggle("oculto", !["player", "admin"].includes(ficha.role));
   $("zonaAdmin").classList.toggle("oculto", ficha.role !== "admin");
   mensaje("");
