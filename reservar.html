@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reservar diana</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+a{color:#ffd166}
+label{display:block;margin:16px 0 6px;font-weight:700}
+select,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee}
+#reservar{background:#ffd166;color:#14213d;font-weight:700;border:0;margin-top:18px}
+#reservar:disabled{opacity:.4}
+.dianas{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.dianas button{padding:10px 0;font-weight:700}
+.dianas button.sel{background:#ffd166;color:#14213d;border-color:#ffd166}
+.dianas small{display:block;font-weight:400;font-size:.65rem}
+.libre{background:#1d2f52;border-radius:8px;padding:10px;margin-top:12px}
+#msg{min-height:1.4em;color:#ffd166;margin-top:12px}
+#msg.ok{color:#8ce99a}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Volver a la app</a></p>
+<h1>Reservar diana</h1>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <label for="dia">Día</label>
+  <select id="dia"></select>
+  <label>Diana</label>
+  <div id="dianas" class="dianas"></div>
+  <div id="libre" class="libre"></div>
+  <label for="ini">Hora de inicio</label>
+  <select id="ini"></select>
+  <label for="fin">Hora de fin</label>
+  <select id="fin"></select>
+  <button id="reservar" disabled>Reservar</button>
+  <p id="msg" role="status"></p>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where, orderBy, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MIN = 60000;
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const pad = (n) => String(n).padStart(2, "0");
+const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const dur = (m) => ((m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60 ? (m % 60) + " min" : "")).trim();
+let user = null, dianas = [], cfg = null, horario = null, lista = [], jornada = null, dianaSel = null, ocupados = new Set();
+
+function mensaje(t, ok) { $("msg").textContent = t || ""; $("msg").className = ok ? "ok" : ""; }
+
+function calcularJornadas() {
+  const res = [], hoy = new Date();
+  for (let i = -1; i <= cfg.max; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
+    const h = horario.dias[d.getDay()];
+    if (!h) continue;
+    const [ah, am] = h.abre.split(":").map(Number);
+    const [ch, cm] = h.cierra.split(":").map(Number);
+    const abre = new Date(d.getFullYear(), d.getMonth(), d.getDate(), ah, am).getTime();
+    const cierra = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, ch, cm).getTime();
+    if (cierra <= Date.now()) continue;
+    res.push({ etiqueta: DIAS[d.getDay()] + " " + d.getDate() + " " + MESES[d.getMonth()], abre: abre, cierra: cierra });
+  }
+  return res;
+}
+
+async function cargarOcupados() {
+  ocupados = new Set();
+  const q = query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(jornada.abre)), where("inicio", "<", Timestamp.fromMillis(jornada.cierra)));
+  (await getDocs(q)).forEach((d) => ocupados.add(d.id));
+}
+
+function pintarDianas() {
+  const c = $("dianas");
+  c.innerHTML = "";
+  for (const d of dianas) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = d.id === dianaSel ? "sel" : "";
+    b.textContent = d.nombre.replace("Diana ", "");
+    if (d.online) { const s = document.createElement("small"); s.textContent = "online"; b.append(s); }
+    b.onclick = () => { dianaSel = d.id; pintarDianas(); refrescar(); };
+    c.append(b);
+  }
+}
+
+function refrescar() {
+  const tr = cfg.tramo * MIN, ahora = Date.now();
+  $("ini").innerHTML = "";
+  $("fin").innerHTML = "";
+  $("reservar").disabled = true;
+  if (!dianaSel) { $("libre").textContent = "Elige una diana."; return; }
+  const trozos = [];
+  let desde = null;
+  for (let t = jornada.abre; t < jornada.cierra; t += tr) {
+    const ok = !ocupados.has(dianaSel + "_" + t) && t + tr > ahora;
+    if (ok && desde === null) desde = t;
+    if (!ok && desde !== null) { trozos.push(hhmm(desde) + "–" + hhmm(t)); desde = null; }
+  }
+  if (desde !== null) trozos.push(hhmm(desde) + "–" + hhmm(jornada.cierra));
+  $("libre").textContent = trozos.length ? "Libre: " + trozos.join(" · ") : "Esta diana no tiene huecos este día.";
+  const minimo = ahora + (cfg.min + 1) * MIN, maximo = ahora + cfg.max * 86400000 - MIN;
+  for (let t = jornada.abre; t < jornada.cierra; t += tr) {
+    if (!ocupados.has(dianaSel + "_" + t) && t >= minimo && t <= maximo) $("ini").add(new Option(hhmm(t), t));
+  }
+  if (!$("ini").options.length) $("ini").add(new Option("No hay horas disponibles", ""));
+  pintarFin();
+}
+
+function pintarFin() {
+  const tr = cfg.tramo * MIN, t0 = Number($("ini").value), maximo = Date.now() + cfg.max * 86400000 - MIN;
+  $("fin").innerHTML = "";
+  $("reservar").disabled = true;
+  if (!t0) return;
+  for (let s = t0; s < jornada.cierra && s <= maximo && !ocupados.has(dianaSel + "_" + s); s += tr) {
+    $("fin").add(new Option(hhmm(s + tr) + " (" + dur((s + tr - t0) / MIN) + ")", s + tr));
+  }
+  $("fin").selectedIndex = Math.min(3, $("fin").options.length - 1);
+  $("reservar").disabled = !$("fin").options.length;
+}
+
+$("dia").onchange = async () => {
+  jornada = lista[$("dia").value];
+  mensaje("");
+  await cargarOcupados();
+  refrescar();
+};
+$("ini").onchange = pintarFin;
+
+$("reservar").onclick = async () => {
+  const tr = cfg.tramo * MIN, ini = Number($("ini").value), fin = Number($("fin").value);
+  if (!dianaSel || !ini || !fin) return;
+  $("reservar").disabled = true;
+  mensaje("Reservando…");
+  try {
+    const b = writeBatch(db);
+    for (let s = ini; s < fin; s += tr) {
+      b.set(doc(db, "slots", dianaSel + "_" + s), { dianaId: dianaSel, inicio: Timestamp.fromMillis(s), uid: user.uid, tipo: "reserva" });
+    }
+    b.set(doc(collection(db, "reservations")), { uid: user.uid, dianaId: dianaSel, inicio: Timestamp.fromMillis(ini), fin: Timestamp.fromMillis(fin), creado: serverTimestamp() });
+    await b.commit();
+    const nombre = dianas.find((d) => d.id === dianaSel).nombre;
+    mensaje("✔ Reserva hecha: " + nombre + ", " + jornada.etiqueta + ", de " + hhmm(ini) + " a " + hhmm(fin) + ".", true);
+  } catch (e) {
+    mensaje(e.code === "permission-denied"
+      ? "No se ha podido reservar: alguien ha reservado ese hueco hace un momento, o ya no se cumple la antelación mínima. Elige otra hora."
+      : "Error: " + (e.code || e.message));
+  }
+  await cargarOcupados();
+  refrescar();
+};
+
+onAuthStateChanged(auth, async (u) => {
+  user = u;
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const [d, r, h] = await Promise.all([
+      getDocs(query(collection(db, "dartboards"), orderBy("orden"))),
+      getDoc(doc(db, "settings", "reservas")),
+      getDoc(doc(db, "settings", "horario"))
+    ]);
+    dianas = d.docs.map((x) => ({ id: x.id, ...x.data() })).filter((x) => x.activa);
+    cfg = { min: r.data().minAntelacionMin, max: r.data().maxDiasAntelacion, tramo: r.data().tramoMin };
+    horario = h.data();
+    lista = calcularJornadas();
+    $("dia").innerHTML = "";
+    lista.forEach((j, i) => $("dia").add(new Option(j.etiqueta, i)));
+    jornada = lista[0];
+    await cargarOcupados();
+    pintarDianas();
+    refrescar();
+    $("estado").textContent = "Reservas con al menos " + cfg.min + " minutos de antelación y hasta " + cfg.max + " días vista.";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
