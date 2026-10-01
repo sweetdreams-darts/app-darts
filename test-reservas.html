@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Prueba de reservas</title>
+<style>body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;padding:20px;max-width:460px;margin:auto}input,button{width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0}button{background:#ffd166;font-weight:700}li{margin:8px 0}.ok{color:#8ce99a}.mal{color:#ff8787;font-weight:700}</style></head>
+<body>
+<h1>Prueba de reservas</h1>
+<p id="estado">Cargando…</p>
+<div id="login" hidden><input id="email" type="email" placeholder="Email de la cuenta de PRUEBA"><input id="pass" type="password" placeholder="Contraseña"><button id="entrar">Entrar</button></div>
+<div id="panel" hidden><button id="lanzar">Ejecutar pruebas</button><button id="salir">Cambiar de cuenta</button><p id="resumen"></p><ul id="res"></ul></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MIN = 60000, Q = 900000, DIA = 86400000;
+const alinear = (ms) => Math.ceil(ms / Q) * Q;
+const en = (dias) => alinear(Date.now() + dias * DIA);
+const T = Timestamp.fromMillis;
+const slot = (dianaId, t, extra) => setDoc(doc(db, "slots", dianaId + "_" + t), Object.assign({ dianaId: dianaId, inicio: T(t), uid: auth.currentUser.uid, tipo: "reserva" }, extra || {}));
+const ajeno = "g3-roja-izq_" + new Date(2026, 9, 10, 17, 0).getTime();
+const t3 = en(3);
+const pruebas = [
+  ["Leer las franjas ocupadas (SÍ debe permitirse)", () => getDocs(query(collection(db, "slots"), where("inicio", ">=", T(t3)), where("inicio", "<", T(t3 + DIA)))), true],
+  ["Leer mis propias reservas (SÍ debe permitirse)", () => getDocs(query(collection(db, "reservations"), where("uid", "==", auth.currentUser.uid))), true],
+  ["Leer la lista de TODAS las reservas", () => getDocs(collection(db, "reservations")), false],
+  ["Reservar una franja ya ocupada por otra persona", () => setDoc(doc(db, "slots", ajeno), { dianaId: "g3-roja-izq", inicio: T(new Date(2026, 9, 10, 17, 0).getTime()), uid: auth.currentUser.uid, tipo: "reserva" }), false],
+  ["Borrar la franja de otra persona", () => deleteDoc(doc(db, "slots", ajeno)), false],
+  ["Reservar con menos de 30 minutos de antelación", () => slot("g3-negra-der", alinear(Date.now() + 10 * MIN)), false],
+  ["Reservar a más de 14 días", () => slot("g3-negra-der", en(20)), false],
+  ["Reservar en una diana que no existe", () => slot("diana-falsa", en(3)), false],
+  ["Reservar a una hora que no es múltiplo de 15 min", () => slot("g3-negra-der", t3 + 7 * MIN), false],
+  ["Reservar a nombre de otra persona", () => slot("g3-negra-der", t3, { uid: "otra-persona" }), false],
+  ["Crear un bloqueo de liga", () => slot("g3-negra-der", t3, { tipo: "liga" }), false],
+  ["Reservar con un identificador que no coincide con la hora", () => setDoc(doc(db, "slots", "g3-negra-der_" + t3), { dianaId: "g3-negra-der", inicio: T(t3 + Q), uid: auth.currentUser.uid, tipo: "reserva" }), false],
+  ["Crear una reserva a nombre de otra persona", () => setDoc(doc(collection(db, "reservations")), { uid: "otra-persona", dianaId: "g3-negra-der", inicio: T(t3), fin: T(t3 + Q), creado: serverTimestamp() }), false],
+  ["Modificar una diana", () => updateDoc(doc(db, "dartboards", "g3-negra-der"), { activa: false }), false],
+  ["Modificar las reglas de reserva", () => updateDoc(doc(db, "settings", "reservas"), { minAntelacionMin: 0 }), false],
+  ["Hacer una reserva normal y correcta (SÍ debe permitirse)", () => slot("g3-negra-der", t3), true],
+  ["Cancelar mi propia franja futura (SÍ debe permitirse)", () => deleteDoc(doc(db, "slots", "g3-negra-der_" + t3)), true]
+];
+onAuthStateChanged(auth, (u) => {
+  $("login").hidden = !!u;
+  $("panel").hidden = !u;
+  $("estado").textContent = u ? "Cuenta: " + u.email : "Entra con la cuenta de PRUEBA (la que lleva +prueba1).";
+  $("res").innerHTML = "";
+  $("resumen").textContent = "";
+});
+$("entrar").onclick = async () => {
+  try { await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value); }
+  catch (e) { $("estado").textContent = "No se pudo entrar: " + (e.code || e.message); }
+};
+$("salir").onclick = () => signOut(auth);
+$("lanzar").onclick = async () => {
+  const ul = $("res");
+  ul.innerHTML = "";
+  $("resumen").textContent = "";
+  if (!auth.currentUser.email.includes("prueba")) { ul.innerHTML = "<li class='mal'>Esta no es la cuenta de prueba. Pulsa Cambiar de cuenta.</li>"; return; }
+  try {
+    if (!(await getDoc(doc(db, "slots", ajeno))).exists()) { ul.innerHTML = "<li class='mal'>No encuentro la reserva del administrador (Diana 1, sáb 10 oct, 17:00). Haz primero el paso 6.</li>"; return; }
+  } catch (e) { ul.innerHTML = "<li class='mal'>Error: " + (e.code || e.message) + "</li>"; return; }
+  let bien = 0;
+  for (const [texto, fn, debe] of pruebas) {
+    let permitido = true;
+    try { await fn(); } catch (e) { permitido = false; }
+    const ok = permitido === debe;
+    if (ok) bien++;
+    const li = document.createElement("li");
+    li.className = ok ? "ok" : "mal";
+    li.textContent = (ok ? "✔ " : "✘ ") + texto + " → " + (permitido ? "permitido" : "bloqueado");
+    ul.appendChild(li);
+  }
+  $("resumen").textContent = bien + " de " + pruebas.length + " correctas.";
+};
+</script>
+</body></html>
