@@ -5,6 +5,7 @@
 body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:520px}
 a{color:#ffd166}
+.boton{display:block;margin-top:12px;padding:13px;border-radius:8px;background:#ffd166;color:#14213d;font-weight:700;text-align:center;text-decoration:none}
 input,select,button{width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0}
 input,select{background:#0f1a30;color:#f1faee;border:1px solid #3d5380}
 button{background:#ffd166;color:#14213d;font-weight:700}
@@ -19,6 +20,7 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 <h1>Panel de administrador</h1>
 <p id="msg">Cargando…</p>
 <div id="panel" hidden>
+  <a class="boton" href="admin-reservas.html">Ver y gestionar reservas</a>
   <p id="resumen"></p>
   <input id="buscar" type="search" placeholder="Buscar por nombre o email">
   <select id="filtro">
