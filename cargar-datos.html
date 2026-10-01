@@ -6,7 +6,7 @@
 <h1>Cargar datos del bar</h1>
 <p id="msg">Cargando…</p>
 <div id="panel" hidden>
-  <p>Esto crea las 5 dianas, el horario del bar y las reglas de reserva (mínimo 30 min de antelación, máximo 14 días, tramos de 15 min). Si ya existen, los vuelve a escribir.</p>
+  <p>Esto crea las 5 dianas (Diana 1 a 5, las 4 G3 con online), el horario del bar y las reglas de reserva (mínimo 30 min de antelación, máximo 14 días, tramos de 15 min). Si ya existen, los vuelve a escribir.</p>
   <button id="cargar">Cargar datos</button>
   <ul id="res"></ul>
 </div>
@@ -26,11 +26,11 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const DIANAS = [
-  ["g3-roja-izq", "G3 roja izquierda", "G3", "roja", "izquierda"],
-  ["g3-roja-der", "G3 roja derecha", "G3", "roja", "derecha"],
-  ["g3-negra-izq", "G3 negra izquierda", "G3", "negra", "izquierda"],
-  ["g3-negra-der", "G3 negra derecha", "G3", "negra", "derecha"],
-  ["g2-barra", "G2 junto a la barra", "G2", "", "junto a la barra"]
+  ["g3-roja-izq", "Diana 1", "G3", "roja", "izquierda", true],
+  ["g3-roja-der", "Diana 2", "G3", "roja", "derecha", true],
+  ["g3-negra-izq", "Diana 3", "G3", "negra", "izquierda", true],
+  ["g3-negra-der", "Diana 4", "G3", "negra", "derecha", true],
+  ["g2-barra", "Diana 5", "G2", "", "junto a la barra", false]
 ];
 // Clave = día de la semana en que ABRE (0 = domingo ... 6 = sábado). Cierra en la madrugada siguiente.
 const HORARIO = { 0: ["17:00", "03:00"], 1: ["17:00", "03:00"], 2: ["17:00", "03:00"], 3: ["17:00", "03:00"], 4: ["17:00", "04:00"], 5: ["17:00", "04:30"], 6: ["17:00", "04:30"] };
@@ -51,7 +51,7 @@ $("cargar").onclick = async () => {
   $("res").innerHTML = "";
   try {
     const b = writeBatch(db);
-    DIANAS.forEach((d, i) => b.set(doc(db, "dartboards", d[0]), { nombre: d[1], modelo: d[2], color: d[3], posicion: d[4], orden: i + 1, activa: true }));
+    DIANAS.forEach((d, i) => b.set(doc(db, "dartboards", d[0]), { nombre: d[1], modelo: d[2], color: d[3], posicion: d[4], online: d[5], orden: i + 1, activa: true }));
     b.set(doc(db, "settings", "reservas"), { minAntelacionMin: 30, maxDiasAntelacion: 14, tramoMin: 15 });
     const dias = {};
     for (const k in HORARIO) dias[k] = { abre: HORARIO[k][0], cierra: HORARIO[k][1] };
@@ -63,7 +63,7 @@ $("cargar").onclick = async () => {
     $("res").append(t);
     snap.forEach((d) => {
       const li = document.createElement("li");
-      li.textContent = d.data().orden + ". " + d.data().nombre;
+      li.textContent = d.data().nombre + (d.data().online ? " (disponible para online)" : " (sin online)");
       $("res").append(li);
     });
   } catch (e) {
