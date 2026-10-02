@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Liga (administrador)</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:28px 0 6px;color:#ffd166}
+h3{font-size:1rem;margin:20px 0 0}
+select,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.mal{color:#ff8787;font-weight:700}
+.aviso{color:#ffd166}
+label.eq{display:flex;align-items:center;gap:10px;padding:8px 0}
+label.eq input{width:20px;height:20px}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Liga: equipos y bloqueos</h1>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <h2>1. Mis equipos de la liga online</h2>
+  <p id="infoEq"></p>
+  <div id="listaEq"></div>
+  <button id="guardarEq">Guardar mis equipos</button>
+
+  <h2>2. Bloquear dianas en noches de liga</h2>
+  <label for="dias">Calcular para los próximos</label>
+  <select id="dias"><option value="15">15 días</option><option value="30" selected>30 días</option><option value="60">60 días</option><option value="200">toda la temporada</option></select>
+  <button id="calcular">Calcular bloqueos</button>
+  <p id="resumen"></p>
+  <div id="noches"></div>
+  <button id="aplicar" class="oculto">Aplicar bloqueos</button>
+  <p id="msg" role="status"></p>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, query, where, orderBy, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MIN = 60000, Q = 15 * MIN;
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const pad = (n) => String(n).padStart(2, "0");
+const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+let dianas = [], filas = [], existentes = new Map(), nombresSD = [];
+
+// <logica>
+function intervalo(p) {
+  const ini = p.fechaMs, abre = ini - 30 * 60000;
+  if (p.categoria === "parejas") return [abre, ini + 100 * 60000];
+  const d = new Date(ini);
+  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
+  if (fin <= ini) fin = ini + 150 * 60000;
+  return [abre, fin];
+}
+function asignar(partidos, dianas) {
+  const orden = partidos.slice().sort((a, b) => a.nivel - b.nivel || (a.categoria === b.categoria ? 0 : a.categoria === "parejas" ? -1 : 1) || a.id.localeCompare(b.id));
+  const filas = [];
+  const libre = (dId, iv, salvo) => !filas.some((f) => f !== salvo && f.dianaId === dId && iv[0] < f.iv[1] && f.iv[0] < iv[1]);
+  for (const p of orden) {
+    const iv = intervalo(p), online = p.categoria === "equipos";
+    const fila = { p: p, iv: iv, dianaId: "", noche: p.dia };
+    let d = dianas.find((x) => (!online || x.online) && libre(x.id, iv, fila));
+    if (!d && online) {
+      for (let i = filas.length - 1; i >= 0 && !d; i--) {
+        const r = filas[i];
+        const g = dianas.find((x) => x.id === r.dianaId);
+        if (r.p.categoria === "equipos" || !g || !g.online || !libre(g.id, iv, r)) continue;
+        const h = dianas.find((x) => !x.online && libre(x.id, r.iv, r));
+        if (h) { r.dianaId = h.id; d = g; }
+      }
+    }
+    if (d) fila.dianaId = d.id;
+    filas.push(fila);
+  }
+  return filas;
+}
+// </logica>
+
+function revisar() {
+  for (const f of filas) {
+    f.avisos = [];
+    f.bloquea = false;
+    if (!f.dianaId) { f.avisos.push("Sin diana libre"); f.bloquea = true; continue; }
+    const d = dianas.find((x) => x.id === f.dianaId);
+    if (f.p.categoria === "equipos" && !d.online) f.avisos.push("Partida online en una diana sin online");
+    if (filas.some((g) => g !== f && g.dianaId === f.dianaId && g.noche === f.noche && f.iv[0] < g.iv[1] && g.iv[0] < f.iv[1])) { f.avisos.push("Coincide con otra partida en esta diana"); f.bloquea = true; }
+    for (let t = f.iv[0]; t < f.iv[1]; t += Q) {
+      const e = existentes.get(f.dianaId + "_" + t);
+      if (e && !(e.tipo === "liga" && e.partidoId === f.p.id)) {
+        f.avisos.push(e.tipo === "reserva" ? "Choca con una reserva (cancélala en Reservas y vuelve a calcular)" : "Choca con otro bloqueo de liga");
+        f.bloquea = true;
+        break;
+      }
+    }
+  }
+}
+
+function pintar() {
+  revisar();
+  const cont = $("noches");
+  cont.innerHTML = "";
+  const noches = [...new Set(filas.map((f) => f.noche))].sort();
+  for (const n of noches) {
+    const [y, m, d] = n.split("-").map(Number);
+    cont.append(el("h3", DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1]));
+    const delDia = filas.filter((f) => f.noche === n).sort((a, b) => a.iv[0] - b.iv[0]);
+    if (delDia.length > dianas.length) cont.append(el("p", "Hay más partidas que dianas esta noche.", "mal"));
+    for (const f of delDia) {
+      const c = el("div", "", "card");
+      c.append(el("strong", hhmm(f.iv[0]) + "–" + hhmm(f.iv[1]) + " · " + (f.p.categoria === "parejas" ? "Parejas" : "Equipos") + " N" + f.p.nivel));
+      c.append(el("small", f.p.local + " – " + f.p.visitante));
+      const s = document.createElement("select");
+      s.add(new Option("(sin diana)", ""));
+      dianas.forEach((x) => s.add(new Option(x.nombre + (x.online ? " · online" : ""), x.id)));
+      s.value = f.dianaId;
+      s.onchange = () => { f.dianaId = s.value; pintar(); };
+      c.append(s);
+      f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
+      cont.append(c);
+    }
+  }
+  const ok = filas.filter((f) => f.dianaId && !f.bloquea).length;
+  $("resumen").textContent = filas.length + " partidos en Sweet Dreams · " + ok + " listos para bloquear · " + (filas.length - ok) + " con aviso.";
+  $("aplicar").classList.toggle("oculto", !ok);
+  $("aplicar").textContent = "Aplicar bloqueos (" + ok + " partidos)";
+}
+
+$("calcular").onclick = async () => {
+  $("msg").textContent = "Calculando…";
+  $("noches").innerHTML = "";
+  try {
+    const hoy = new Date();
+    const hasta = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + Number($("dias").value));
+    const snap = await getDocs(query(collection(db, "liga_partidos"), where("dia", ">=", iso(hoy)), where("dia", "<=", iso(hasta))));
+    const sd = new Set(nombresSD.map(norm));
+    const partidos = snap.docs.map((d) => ({ id: d.id, ...d.data(), fechaMs: d.data().fecha.toMillis() }))
+      .filter((p) => p.categoria === "parejas" ? p.enSweetDreams : (sd.has(norm(p.local)) || sd.has(norm(p.visitante))));
+    existentes = new Map();
+    filas = [];
+    if (partidos.length) {
+      const a = Math.min(...partidos.map((p) => p.fechaMs)) - 31 * MIN, b = Math.max(...partidos.map((p) => p.fechaMs)) + 12 * 60 * MIN;
+      (await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(a)), where("inicio", "<", Timestamp.fromMillis(b))))).forEach((d) => existentes.set(d.id, d.data()));
+      for (const n of new Set(partidos.map((p) => p.dia))) filas.push(...asignar(partidos.filter((p) => p.dia === n), dianas));
+    }
+    $("msg").textContent = partidos.length ? "" : "No hay partidos de Sweet Dreams en ese periodo (¿has cargado ya los calendarios?).";
+    pintar();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+$("aplicar").onclick = async () => {
+  const buenas = filas.filter((f) => f.dianaId && !f.bloquea);
+  if (!buenas.length || !confirm("¿Bloquear las dianas de " + buenas.length + " partidos?")) return;
+  $("msg").textContent = "Guardando…";
+  try {
+    const ops = [], nuevos = new Set();
+    for (const f of buenas) for (let t = f.iv[0]; t < f.iv[1]; t += Q) nuevos.add(f.dianaId + "_" + t);
+    for (const f of buenas) {
+      for (const [id, e] of existentes) if (e.tipo === "liga" && e.partidoId === f.p.id && !nuevos.has(id)) ops.push({ del: doc(db, "slots", id) });
+      for (let t = f.iv[0]; t < f.iv[1]; t += Q) ops.push({ ref: doc(db, "slots", f.dianaId + "_" + t), datos: { dianaId: f.dianaId, inicio: Timestamp.fromMillis(t), uid: "liga", tipo: "liga", partidoId: f.p.id } });
+    }
+    for (let i = 0; i < ops.length; i += 400) {
+      const b = writeBatch(db);
+      ops.slice(i, i + 400).forEach((o) => (o.del ? b.delete(o.del) : b.set(o.ref, o.datos)));
+      await b.commit();
+    }
+    $("msg").textContent = "✔ Bloqueos guardados (" + nuevos.size + " tramos de 15 minutos).";
+    $("calcular").click();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+async function cargarEquipos() {
+  const [c, e] = await Promise.all([getDoc(doc(db, "liga_config", "equiposSweetDreams")), getDocs(query(collection(db, "liga_equipos"), where("categoria", "==", "equipos")))]);
+  nombresSD = c.exists() ? c.data().nombres || [] : [];
+  const todos = [...new Set([...e.docs.map((d) => d.data().nombre), ...nombresSD])].sort((a, b) => a.localeCompare(b));
+  const lista = $("listaEq");
+  lista.innerHTML = "";
+  $("infoEq").textContent = todos.length ? "Marca los equipos de Sweet Dreams. Todos sus partidos, de local o de visitante, ocupan una diana tuya." : "Todavía no hay equipos de la liga online cargados. Aparecerán aquí cuando se publique el calendario nuevo.";
+  $("guardarEq").classList.toggle("oculto", !todos.length);
+  for (const n of todos) {
+    const l = el("label", "", "eq");
+    const i = document.createElement("input");
+    i.type = "checkbox";
+    i.value = n;
+    i.checked = nombresSD.includes(n);
+    l.append(i, el("span", n));
+    lista.append(l);
+  }
+}
+
+$("guardarEq").onclick = async () => {
+  const nombres = [...document.querySelectorAll("#listaEq input:checked")].map((i) => i.value);
+  try {
+    await setDoc(doc(db, "liga_config", "equiposSweetDreams"), { nombres: nombres });
+    nombresSD = nombres;
+    $("msg").textContent = "✔ Guardados " + nombres.length + " equipos.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.activa);
+    await cargarEquipos();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
