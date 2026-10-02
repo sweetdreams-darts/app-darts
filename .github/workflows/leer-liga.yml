@@ -1,0 +1,32 @@
+name: Leer liga
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      prueba:
+        description: "Modo prueba (true = no guarda nada, solo muestra lo que leería)"
+        default: "true"
+      url_equipos:
+        description: "Dirección de la página de equipos (vacío = Liga actual)"
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  leer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/requirements.txt
+      - run: python scripts/leer_liga.py
+        env:
+          ROBOT_EMAIL: ${{ secrets.ROBOT_EMAIL }}
+          ROBOT_PASSWORD: ${{ secrets.ROBOT_PASSWORD }}
+          PRUEBA: ${{ github.event.inputs.prueba || 'false' }}
+          URL_EQUIPOS: ${{ github.event.inputs.url_equipos || '' }}
