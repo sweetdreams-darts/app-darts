@@ -5,38 +5,64 @@
 body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:560px}
 a{color:#ffd166}
-h2{font-size:1.15rem;margin:28px 0 6px;color:#ffd166}
+h2{font-size:1.15rem;margin:30px 0 6px;color:#ffd166}
 h3{font-size:1rem;margin:20px 0 0}
-select,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
+select,input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
 button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 .card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
 .card small{display:block;opacity:.85;margin-top:3px}
 .mal{color:#ff8787;font-weight:700}
 .aviso{color:#ffd166}
 label.eq{display:flex;align-items:center;gap:10px;padding:8px 0}
-label.eq input{width:20px;height:20px}
+label.eq input{width:20px;height:20px;margin:0}
+label.campo{display:block;margin-top:14px;font-weight:700}
 #msg{min-height:1.4em;color:#ffd166}
+#editor{position:fixed;inset:0;background:#14213d;padding:20px;overflow:auto;z-index:10}
 .oculto{display:none!important}
 </style></head>
 <body><main>
 <p><a href="admin.html">← Panel de administrador</a></p>
 <h1>Liga: equipos y bloqueos</h1>
 <p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
 <div id="panel" class="oculto">
   <h2>1. Mis equipos de la liga online</h2>
   <p id="infoEq"></p>
   <div id="listaEq"></div>
   <button id="guardarEq">Guardar mis equipos</button>
 
-  <h2>2. Bloquear dianas en noches de liga</h2>
-  <label for="dias">Calcular para los próximos</label>
-  <select id="dias"><option value="15">15 días</option><option value="30" selected>30 días</option><option value="60">60 días</option><option value="200">toda la temporada</option></select>
-  <button id="calcular">Calcular bloqueos</button>
+  <h2>2. Partidos nuevos por bloquear</h2>
+  <select id="dias"><option value="15">Próximos 15 días</option><option value="30" selected>Próximos 30 días</option><option value="60">Próximos 60 días</option><option value="200">Toda la temporada</option></select>
+  <button id="calcular">Calcular partidos nuevos</button>
   <p id="resumen"></p>
-  <div id="noches"></div>
+  <div id="nuevos"></div>
   <button id="aplicar" class="oculto">Aplicar bloqueos</button>
-  <p id="msg" role="status"></p>
+
+  <h2>3. Partidos bloqueados</h2>
+  <div id="bloqueados"></div>
+
+  <h2>4. Aplazadas pendientes</h2>
+  <div id="aplazadas"></div>
+  <button id="aniadir" class="sec">Añadir una partida a mano</button>
 </div>
+
+<div id="editor" class="oculto">
+  <h2 id="edTitulo"></h2>
+  <div id="edManual">
+    <label class="campo">Categoría<select id="edCat"><option value="parejas">Parejas</option><option value="equipos">Equipos (online)</option></select></label>
+    <label class="campo">Nivel<input id="edNivel" type="number" min="1" max="20"></label>
+    <label class="campo">Equipo local<input id="edLocal" maxlength="60"></label>
+    <label class="campo">Equipo visitante<input id="edVisitante" maxlength="60"></label>
+  </div>
+  <label class="campo">Fecha<input id="edFecha" type="date"></label>
+  <label class="campo">Hora de inicio del partido<input id="edHora" type="time" step="900"></label>
+  <label class="campo">Diana<select id="edDiana"></select></label>
+  <p id="edInfo"></p>
+  <button id="edGuardar">Guardar</button>
+  <button id="edCancelar" class="sec">Cancelar</button>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
@@ -58,32 +84,33 @@ const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "o
 const pad = (n) => String(n).padStart(2, "0");
 const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
 const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const diaBonito = (ms) => { const d = new Date(ms); return DIAS[d.getDay()] + " " + d.getDate() + " " + MESES[d.getMonth()]; };
 const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
 const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-let dianas = [], filas = [], existentes = new Map(), nombresSD = [];
+let dianas = [], nuevos = [], existentes = new Map(), bloqueos = new Map(), nombresSD = [], edit = null;
 
 // <logica>
-function intervalo(p) {
-  const ini = p.fechaMs, abre = ini - 30 * 60000;
-  if (p.categoria === "parejas") return [abre, ini + 100 * 60000];
-  const d = new Date(ini);
+function intervaloPara(cat, pMs) {
+  const base = 60000;
+  if (cat === "parejas") return [pMs - 30 * base, pMs + 90 * base];
+  const d = new Date(pMs);
   let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
-  if (fin <= ini) fin = ini + 150 * 60000;
-  return [abre, fin];
+  if (fin <= pMs) fin = pMs + 150 * base;
+  return [pMs - 30 * base, fin];
 }
-function asignar(partidos, dianas) {
-  const orden = partidos.slice().sort((a, b) => a.nivel - b.nivel || (a.categoria === b.categoria ? 0 : a.categoria === "parejas" ? -1 : 1) || a.id.localeCompare(b.id));
-  const filas = [];
+function asignar(partidos, dianas, fijos) {
+  const orden = partidos.slice().sort((a, b) => a.dia.localeCompare(b.dia) || a.nivel - b.nivel || (a.categoria === b.categoria ? 0 : a.categoria === "parejas" ? -1 : 1) || a.id.localeCompare(b.id));
+  const filas = fijos.map((f) => ({ p: f.p, iv: f.iv, dianaId: f.dianaId, fijo: true }));
   const libre = (dId, iv, salvo) => !filas.some((f) => f !== salvo && f.dianaId === dId && iv[0] < f.iv[1] && f.iv[0] < iv[1]);
   for (const p of orden) {
-    const iv = intervalo(p), online = p.categoria === "equipos";
-    const fila = { p: p, iv: iv, dianaId: "", noche: p.dia };
+    const iv = intervaloPara(p.categoria, p.fechaMs), online = p.categoria === "equipos";
+    const fila = { p: p, iv: iv, dianaId: "" };
     let d = dianas.find((x) => (!online || x.online) && libre(x.id, iv, fila));
     if (!d && online) {
       for (let i = filas.length - 1; i >= 0 && !d; i--) {
         const r = filas[i];
         const g = dianas.find((x) => x.id === r.dianaId);
-        if (r.p.categoria === "equipos" || !g || !g.online || !libre(g.id, iv, r)) continue;
+        if (r.fijo || r.p.categoria === "equipos" || !g || !g.online || !libre(g.id, iv, r)) continue;
         const h = dianas.find((x) => !x.online && libre(x.id, r.iv, r));
         if (h) { r.dianaId = h.id; d = g; }
       }
@@ -91,39 +118,70 @@ function asignar(partidos, dianas) {
     if (d) fila.dianaId = d.id;
     filas.push(fila);
   }
-  return filas;
+  return filas.filter((f) => !f.fijo);
 }
 // </logica>
 
-function revisar() {
-  for (const f of filas) {
+const idsSlots = (dId, iv) => { const r = []; for (let t = iv[0]; t < iv[1]; t += Q) r.push(dId + "_" + t); return r; };
+const choque = (dId, iv, propio, mapa) => {
+  for (const id of idsSlots(dId, iv)) {
+    const e = mapa.get(id);
+    if (e && !(e.tipo === "liga" && e.partidoId === propio)) return e.tipo === "reserva" ? "reserva" : "liga";
+  }
+  return "";
+};
+async function cargarSlots(a, b) {
+  const m = new Map();
+  (await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(a)), where("inicio", "<", Timestamp.fromMillis(b))))).forEach((d) => m.set(d.id, d.data()));
+  return m;
+}
+async function enviar(ops) {
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = writeBatch(db);
+    ops.slice(i, i + 400).forEach((o) => (o.del ? b.delete(o.del) : b.set(o.ref, o.datos)));
+    await b.commit();
+  }
+}
+function opsBloqueo(b, viejo) {
+  const ops = [];
+  const nuevosIds = new Set(b.estado === "activo" ? idsSlots(b.dianaId, [b.inicioMs, b.finMs]) : []);
+  if (viejo && viejo.estado === "activo") for (const id of idsSlots(viejo.dianaId, [viejo.inicioMs, viejo.finMs])) if (!nuevosIds.has(id)) ops.push({ del: doc(db, "slots", id) });
+  for (const id of nuevosIds) ops.push({ ref: doc(db, "slots", id), datos: { dianaId: b.dianaId, inicio: Timestamp.fromMillis(Number(id.split("_")[1])), uid: "liga", tipo: "liga", partidoId: b.id } });
+  const resto = Object.assign({}, b);
+  delete resto.id;
+  ops.push({ ref: doc(db, "liga_bloqueos", b.id), datos: resto });
+  return ops;
+}
+async function cargarBloqueos() {
+  bloqueos = new Map();
+  (await getDocs(collection(db, "liga_bloqueos"))).forEach((d) => bloqueos.set(d.id, { id: d.id, ...d.data() }));
+  pintarBloqueos();
+}
+const nombreDiana = (id) => (dianas.find((x) => x.id === id) || {}).nombre || "sin diana";
+const etiquetaPartido = (b) => (b.categoria === "parejas" ? "Parejas" : "Equipos") + (b.nivel ? " N" + b.nivel : "") + " · " + (b.local || "?") + " – " + (b.visitante || "?");
+
+// ---------- 2. Partidos nuevos ----------
+function revisarNuevos() {
+  for (const f of nuevos) {
     f.avisos = [];
     f.bloquea = false;
     if (!f.dianaId) { f.avisos.push("Sin diana libre"); f.bloquea = true; continue; }
     const d = dianas.find((x) => x.id === f.dianaId);
     if (f.p.categoria === "equipos" && !d.online) f.avisos.push("Partida online en una diana sin online");
-    if (filas.some((g) => g !== f && g.dianaId === f.dianaId && g.noche === f.noche && f.iv[0] < g.iv[1] && g.iv[0] < f.iv[1])) { f.avisos.push("Coincide con otra partida en esta diana"); f.bloquea = true; }
-    for (let t = f.iv[0]; t < f.iv[1]; t += Q) {
-      const e = existentes.get(f.dianaId + "_" + t);
-      if (e && !(e.tipo === "liga" && e.partidoId === f.p.id)) {
-        f.avisos.push(e.tipo === "reserva" ? "Choca con una reserva (cancélala en Reservas y vuelve a calcular)" : "Choca con otro bloqueo de liga");
-        f.bloquea = true;
-        break;
-      }
-    }
+    if (nuevos.some((g) => g !== f && g.dianaId === f.dianaId && f.iv[0] < g.iv[1] && g.iv[0] < f.iv[1])) { f.avisos.push("Coincide con otra partida en esta diana"); f.bloquea = true; }
+    const ch = choque(f.dianaId, f.iv, null, existentes);
+    if (ch) { f.avisos.push(ch === "reserva" ? "Choca con una reserva (cancélala en Reservas y vuelve a calcular)" : "Choca con otro bloqueo de liga"); f.bloquea = true; }
   }
 }
-
-function pintar() {
-  revisar();
-  const cont = $("noches");
+function pintarNuevos() {
+  revisarNuevos();
+  const cont = $("nuevos");
   cont.innerHTML = "";
-  const noches = [...new Set(filas.map((f) => f.noche))].sort();
+  const noches = [...new Set(nuevos.map((f) => f.p.dia))].sort();
   for (const n of noches) {
     const [y, m, d] = n.split("-").map(Number);
-    cont.append(el("h3", DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1]));
-    const delDia = filas.filter((f) => f.noche === n).sort((a, b) => a.iv[0] - b.iv[0]);
-    if (delDia.length > dianas.length) cont.append(el("p", "Hay más partidas que dianas esta noche.", "mal"));
+    cont.append(el("h3", diaBonito(new Date(y, m - 1, d).getTime())));
+    const delDia = nuevos.filter((f) => f.p.dia === n).sort((a, b) => a.iv[0] - b.iv[0]);
     for (const f of delDia) {
       const c = el("div", "", "card");
       c.append(el("strong", hhmm(f.iv[0]) + "–" + hhmm(f.iv[1]) + " · " + (f.p.categoria === "parejas" ? "Parejas" : "Equipos") + " N" + f.p.nivel));
@@ -132,61 +190,177 @@ function pintar() {
       s.add(new Option("(sin diana)", ""));
       dianas.forEach((x) => s.add(new Option(x.nombre + (x.online ? " · online" : ""), x.id)));
       s.value = f.dianaId;
-      s.onchange = () => { f.dianaId = s.value; pintar(); };
+      s.onchange = () => { f.dianaId = s.value; pintarNuevos(); };
       c.append(s);
       f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
       cont.append(c);
     }
   }
-  const ok = filas.filter((f) => f.dianaId && !f.bloquea).length;
-  $("resumen").textContent = filas.length + " partidos en Sweet Dreams · " + ok + " listos para bloquear · " + (filas.length - ok) + " con aviso.";
+  const ok = nuevos.filter((f) => f.dianaId && !f.bloquea).length;
+  $("resumen").textContent = nuevos.length ? nuevos.length + " partidos nuevos en Sweet Dreams · " + ok + " listos · " + (nuevos.length - ok) + " con aviso." : "";
   $("aplicar").classList.toggle("oculto", !ok);
   $("aplicar").textContent = "Aplicar bloqueos (" + ok + " partidos)";
 }
-
 $("calcular").onclick = async () => {
   $("msg").textContent = "Calculando…";
-  $("noches").innerHTML = "";
+  $("nuevos").innerHTML = "";
   try {
     const hoy = new Date();
     const hasta = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + Number($("dias").value));
     const snap = await getDocs(query(collection(db, "liga_partidos"), where("dia", ">=", iso(hoy)), where("dia", "<=", iso(hasta))));
     const sd = new Set(nombresSD.map(norm));
     const partidos = snap.docs.map((d) => ({ id: d.id, ...d.data(), fechaMs: d.data().fecha.toMillis() }))
-      .filter((p) => p.categoria === "parejas" ? p.enSweetDreams : (sd.has(norm(p.local)) || sd.has(norm(p.visitante))));
+      .filter((p) => !bloqueos.has(p.id) && (p.categoria === "parejas" ? p.enSweetDreams : (sd.has(norm(p.local)) || sd.has(norm(p.visitante)))));
     existentes = new Map();
-    filas = [];
+    nuevos = [];
     if (partidos.length) {
       const a = Math.min(...partidos.map((p) => p.fechaMs)) - 31 * MIN, b = Math.max(...partidos.map((p) => p.fechaMs)) + 12 * 60 * MIN;
-      (await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(a)), where("inicio", "<", Timestamp.fromMillis(b))))).forEach((d) => existentes.set(d.id, d.data()));
-      for (const n of new Set(partidos.map((p) => p.dia))) filas.push(...asignar(partidos.filter((p) => p.dia === n), dianas));
+      existentes = await cargarSlots(a, b);
+      const fijos = [...bloqueos.values()].filter((x) => x.estado === "activo").map((x) => ({ p: { categoria: x.categoria }, iv: [x.inicioMs, x.finMs], dianaId: x.dianaId }));
+      nuevos = asignar(partidos, dianas, fijos);
     }
-    $("msg").textContent = partidos.length ? "" : "No hay partidos de Sweet Dreams en ese periodo (¿has cargado ya los calendarios?).";
-    pintar();
+    $("msg").textContent = partidos.length ? "" : "No hay partidos nuevos de Sweet Dreams en ese periodo.";
+    pintarNuevos();
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 };
-
 $("aplicar").onclick = async () => {
-  const buenas = filas.filter((f) => f.dianaId && !f.bloquea);
+  const buenas = nuevos.filter((f) => f.dianaId && !f.bloquea);
   if (!buenas.length || !confirm("¿Bloquear las dianas de " + buenas.length + " partidos?")) return;
   $("msg").textContent = "Guardando…";
   try {
-    const ops = [], nuevos = new Set();
-    for (const f of buenas) for (let t = f.iv[0]; t < f.iv[1]; t += Q) nuevos.add(f.dianaId + "_" + t);
+    const ops = [];
     for (const f of buenas) {
-      for (const [id, e] of existentes) if (e.tipo === "liga" && e.partidoId === f.p.id && !nuevos.has(id)) ops.push({ del: doc(db, "slots", id) });
-      for (let t = f.iv[0]; t < f.iv[1]; t += Q) ops.push({ ref: doc(db, "slots", f.dianaId + "_" + t), datos: { dianaId: f.dianaId, inicio: Timestamp.fromMillis(t), uid: "liga", tipo: "liga", partidoId: f.p.id } });
+      const p = f.p;
+      ops.push(...opsBloqueo({ id: p.id, origen: "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, dianaId: f.dianaId, partidoMs: p.fechaMs, inicioMs: f.iv[0], finMs: f.iv[1], estado: "activo", dia: p.dia, nota: "" }, null));
     }
-    for (let i = 0; i < ops.length; i += 400) {
-      const b = writeBatch(db);
-      ops.slice(i, i + 400).forEach((o) => (o.del ? b.delete(o.del) : b.set(o.ref, o.datos)));
-      await b.commit();
-    }
-    $("msg").textContent = "✔ Bloqueos guardados (" + nuevos.size + " tramos de 15 minutos).";
-    $("calcular").click();
+    await enviar(ops);
+    $("msg").textContent = "✔ Bloqueados " + buenas.length + " partidos.";
+    nuevos = [];
+    pintarNuevos();
+    await cargarBloqueos();
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 };
 
+// ---------- 3 y 4. Bloqueados y aplazadas ----------
+function pintarBloqueos() {
+  const act = $("bloqueados"), apl = $("aplazadas");
+  act.innerHTML = "";
+  apl.innerHTML = "";
+  const todos = [...bloqueos.values()].sort((a, b) => a.partidoMs - b.partidoMs);
+  let ultimo = "", n = 0;
+  for (const b of todos) {
+    if (b.estado === "activo" && b.finMs >= Date.now()) {
+      n++;
+      const dia = diaBonito(b.partidoMs);
+      if (dia !== ultimo) { act.append(el("h3", dia)); ultimo = dia; }
+      const c = el("div", "", "card");
+      c.append(el("strong", "Partido " + hhmm(b.partidoMs) + " · " + nombreDiana(b.dianaId)));
+      c.append(el("small", etiquetaPartido(b)));
+      c.append(el("small", "Bloqueo de " + hhmm(b.inicioMs) + " a " + hhmm(b.finMs) + (b.origen === "manual" ? " · añadida a mano" : "")));
+      const e = el("button", "Cambiar fecha, hora o diana", "sec");
+      e.onclick = () => abrirEditor("cambiar", b);
+      const a = el("button", "Aplazar (liberar la diana)", "sec");
+      a.onclick = () => aplazar(b);
+      c.append(e, a);
+      act.append(c);
+    } else if (b.estado === "aplazado") {
+      const c = el("div", "", "card");
+      c.append(el("strong", etiquetaPartido(b)));
+      c.append(el("small", "Aplazada. Fecha original: " + diaBonito(b.partidoMs) + " " + hhmm(b.partidoMs)));
+      const r = el("button", "Reprogramar");
+      r.onclick = () => abrirEditor("reprogramar", b);
+      const d = el("button", "Descartar", "sec");
+      d.onclick = () => descartar(b);
+      c.append(r, d);
+      apl.append(c);
+    }
+  }
+  if (!n) act.append(el("p", "No hay partidos bloqueados todavía."));
+  if (!apl.children.length) apl.append(el("p", "No hay partidas aplazadas pendientes."));
+}
+async function cambiarEstado(b, estado) {
+  const nuevo = Object.assign({}, b, { estado: estado });
+  await enviar(opsBloqueo(nuevo, b));
+  await cargarBloqueos();
+}
+async function aplazar(b) {
+  if (!confirm("¿Aplazar este partido y liberar su diana?\n" + etiquetaPartido(b))) return;
+  try { await cambiarEstado(b, "aplazado"); $("msg").textContent = "✔ Diana liberada. El partido queda en aplazadas pendientes."; }
+  catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+async function descartar(b) {
+  if (!confirm("¿Descartar esta partida? Ya no volverá a aparecer.\n" + etiquetaPartido(b))) return;
+  try { await cambiarEstado(b, "descartado"); }
+  catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+
+// ---------- Editor ----------
+function abrirEditor(modo, b) {
+  edit = { modo: modo, b: b };
+  $("edTitulo").textContent = modo === "nuevo" ? "Añadir una partida a mano" : modo === "reprogramar" ? "Reprogramar partida" : "Cambiar partido";
+  $("edManual").classList.toggle("oculto", modo !== "nuevo");
+  const base = b ? new Date(b.partidoMs) : new Date();
+  $("edFecha").value = iso(base);
+  $("edHora").value = b ? hhmm(b.partidoMs) : "20:30";
+  $("edDiana").innerHTML = "";
+  $("edInfo").textContent = b ? etiquetaPartido(b) : "";
+  $("editor").classList.remove("oculto");
+  edRevisar();
+}
+async function edRevisar() {
+  const f = $("edFecha").value, h = $("edHora").value;
+  if (!f || !h) return;
+  const [y, m, d] = f.split("-").map(Number), [hh, mi] = h.split(":").map(Number);
+  const pMs = new Date(y, m - 1, d, hh, mi).getTime();
+  const cat = edit.modo === "nuevo" ? $("edCat").value : edit.b.categoria;
+  const iv = intervaloPara(cat, pMs);
+  const mapa = await cargarSlots(iv[0], iv[1]);
+  const prev = $("edDiana").value || (edit.b && edit.b.dianaId) || "";
+  $("edDiana").innerHTML = "";
+  const libres = [];
+  for (const x of dianas) {
+    const ch = choque(x.id, iv, edit.b ? edit.b.id : null, mapa);
+    if (!ch) libres.push(x);
+    const o = new Option(x.nombre + (x.online ? " · online" : "") + " · " + (ch ? "ocupada (" + ch + ")" : "libre"), x.id);
+    o.disabled = !!ch;
+    $("edDiana").add(o);
+  }
+  const actual = libres.find((x) => x.id === prev) || libres[0];
+  if (actual) $("edDiana").value = actual.id;
+  const rango = "Se bloqueará de " + hhmm(iv[0]) + " a " + hhmm(iv[1]) + ". ";
+  $("edInfo").textContent = !libres.length ? rango + "Ninguna diana está libre en ese horario." :
+    libres.some((x) => x.id === prev) ? rango + "✔ " + nombreDiana(prev) + " está libre." :
+    rango + (prev ? nombreDiana(prev) + " no está libre. " : "") + "Libres: " + libres.map((x) => x.nombre).join(", ") + ".";
+}
+$("edFecha").onchange = edRevisar;
+$("edHora").onchange = edRevisar;
+$("edCat").onchange = edRevisar;
+$("edCancelar").onclick = () => { $("editor").classList.add("oculto"); edit = null; };
+$("aniadir").onclick = () => { $("edNivel").value = ""; $("edLocal").value = ""; $("edVisitante").value = ""; abrirEditor("nuevo", null); };
+$("edGuardar").onclick = async () => {
+  const f = $("edFecha").value, h = $("edHora").value, dianaId = $("edDiana").value;
+  if (!f || !h || !dianaId) { $("edInfo").textContent = "Elige fecha, hora y una diana libre."; return; }
+  const [y, m, d] = f.split("-").map(Number), [hh, mi] = h.split(":").map(Number);
+  const pMs = new Date(y, m - 1, d, hh, mi).getTime();
+  const e = edit, nuevoM = e.modo === "nuevo";
+  const cat = nuevoM ? $("edCat").value : e.b.categoria;
+  const iv = intervaloPara(cat, pMs);
+  try {
+    const mapa = await cargarSlots(iv[0], iv[1]);
+    const ch = choque(dianaId, iv, e.b ? e.b.id : null, mapa);
+    if (ch) { $("edInfo").textContent = "Esa diana está ocupada (" + ch + ") en ese horario."; return; }
+    const b = { id: e.b ? e.b.id : "manual-" + Date.now(), origen: e.b ? e.b.origen : "manual", categoria: cat, nivel: nuevoM ? Number($("edNivel").value) || 0 : e.b.nivel,
+      local: nuevoM ? $("edLocal").value.trim() : e.b.local, visitante: nuevoM ? $("edVisitante").value.trim() : e.b.visitante,
+      dianaId: dianaId, partidoMs: pMs, inicioMs: iv[0], finMs: iv[1], estado: "activo", dia: iso(new Date(pMs)), nota: e.b ? e.b.nota || "" : "" };
+    await enviar(opsBloqueo(b, e.b || null));
+    $("editor").classList.add("oculto");
+    edit = null;
+    $("msg").textContent = "✔ Guardado: " + diaBonito(pMs) + " " + hhmm(pMs) + " · " + nombreDiana(dianaId) + ".";
+    await cargarBloqueos();
+  } catch (er) { $("edInfo").textContent = "Error: " + (er.code || er.message); }
+};
+
+// ---------- 1. Mis equipos ----------
 async function cargarEquipos() {
   const [c, e] = await Promise.all([getDoc(doc(db, "liga_config", "equiposSweetDreams")), getDocs(query(collection(db, "liga_equipos"), where("categoria", "==", "equipos")))]);
   nombresSD = c.exists() ? c.data().nombres || [] : [];
@@ -205,7 +379,6 @@ async function cargarEquipos() {
     lista.append(l);
   }
 }
-
 $("guardarEq").onclick = async () => {
   const nombres = [...document.querySelectorAll("#listaEq input:checked")].map((i) => i.value);
   try {
@@ -223,9 +396,10 @@ onAuthStateChanged(auth, async (u) => {
     if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
     dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.activa);
     await cargarEquipos();
+    await cargarBloqueos();
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
 });
 </script>
-</main></body></html>
+</main></body></html> 
