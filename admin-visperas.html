@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Vísperas de festivo</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+a{color:#ffd166}
+input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#ff8787;border:1px solid #ff8787}
+.fila{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#1d2f52;border-radius:12px;padding:10px 14px;margin-top:8px}
+.fila button{width:auto;margin:0;padding:8px 14px}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Vísperas de festivo</h1>
+<p>En las vísperas, el bar abre hasta las 04:30 y la app permite reservar hasta esa hora. Aquí ves y cambias esos días.</p>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <button id="oficiales">Cargar vísperas de los festivos oficiales (Valladolid, hasta enero 2027)</button>
+  <input id="fecha" type="date">
+  <button id="aniadir">Añadir esta víspera</button>
+  <div id="lista"></div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const FESTIVOS = ["2026-10-12", "2026-11-02", "2026-12-07", "2026-12-08", "2026-12-25", "2027-01-01", "2027-01-06"];
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const diaAntes = (s) => { const [y, m, d] = s.split("-").map(Number); return iso(new Date(y, m - 1, d - 1)); };
+let fechas = [];
+
+function bonita(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " de " + MESES[m - 1] + " de " + y;
+}
+async function guardar(texto) {
+  fechas = [...new Set(fechas)].sort();
+  try {
+    await setDoc(doc(db, "settings", "visperas"), { fechas: fechas });
+    $("msg").textContent = "✔ " + texto;
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+  pintar();
+}
+function pintar() {
+  const lista = $("lista");
+  lista.innerHTML = "";
+  const hoy = iso(new Date());
+  const futuras = fechas.filter((f) => f >= hoy);
+  if (!futuras.length) { const p = document.createElement("p"); p.textContent = "No hay vísperas guardadas desde hoy."; lista.append(p); }
+  for (const f of futuras) {
+    const fila = document.createElement("div");
+    fila.className = "fila";
+    const t = document.createElement("span");
+    t.textContent = bonita(f);
+    const b = document.createElement("button");
+    b.className = "sec";
+    b.textContent = "Quitar";
+    b.onclick = () => { fechas = fechas.filter((x) => x !== f); guardar("Víspera quitada."); };
+    fila.append(t, b);
+    lista.append(fila);
+  }
+}
+$("oficiales").onclick = () => { fechas = fechas.concat(FESTIVOS.map(diaAntes)); guardar("Vísperas de los festivos oficiales cargadas."); };
+$("aniadir").onclick = () => {
+  if (!$("fecha").value) { $("msg").textContent = "Elige una fecha."; return; }
+  fechas.push($("fecha").value);
+  guardar("Víspera añadida.");
+};
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    const v = await getDoc(doc(db, "settings", "visperas"));
+    fechas = v.exists() ? v.data().fechas || [] : [];
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    pintar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
