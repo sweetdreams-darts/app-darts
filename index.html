@@ -26,6 +26,9 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
 .zona{background:#0f1a30;border-radius:8px;padding:12px;margin-top:12px}
 .boton{display:block;margin-top:12px;padding:13px;border-radius:8px;background:var(--acento);color:#14213d;font-weight:700;text-align:center;text-decoration:none}
 .boton.sec{background:transparent;color:var(--claro);border:1px solid #3d5380}
+.chk{display:flex;align-items:flex-start;gap:10px;margin:14px 0 0}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+button.peligro{background:#ff8787;color:#14213d}
 .pie{text-align:center;opacity:.6;font-size:.85rem}
 .oculto{display:none!important}
 </style>
@@ -46,6 +49,7 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
     <input id="email" type="email" autocomplete="email" inputmode="email">
     <label for="pass">Contraseña (mínimo 6 caracteres)</label>
     <input id="pass" type="password" autocomplete="current-password">
+    <label id="campoAcepto" class="chk oculto"><input type="checkbox" id="acepto"><span>He leído y acepto la <a href="privacidad.html" target="_blank" rel="noopener" style="color:#ffd166">política de privacidad</a>.</span></label>
     <button id="enviar" type="submit">Entrar</button>
     <button id="cambiar" class="enlace" type="button">No tengo cuenta: crear una</button>
     <button id="olvido" class="enlace" type="button">He olvidado mi contraseña</button>
@@ -55,16 +59,28 @@ button.enlace{background:none;border:0;color:var(--acento);text-decoration:under
     <p style="margin-top:0">Hola, <strong id="uNombre"></strong></p>
     <p id="uEmail" style="opacity:.8"></p>
     <p>Tu rol: <span id="uRol" class="rol"></span></p>
-    <a class="boton" href="reservar.html">Reservar diana</a>
-    <a class="boton sec" href="mis-reservas.html">Mis reservas</a>
+    <div id="avisoVerif" class="zona oculto">Para reservar, verifica tu email. Te hemos enviado un enlace a <strong id="vEmail"></strong> (mira también en spam).
+      <button id="yaVerif" type="button">Ya lo he verificado</button>
+      <button id="reenviar" class="sec" type="button">Reenviar el email</button>
+    </div>
+    <div id="accionesReserva">
+      <a class="boton" href="reservar.html">Reservar diana</a>
+      <a class="boton sec" href="mis-reservas.html">Mis reservas</a>
+    </div>
     <div id="avisoUsuario" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
     <div id="zonaLiga" class="zona oculto"><strong>Zona Liga</strong><br><a class="boton" href="liga.html">Calendarios y locales</a>Clasificaciones y tu perfil, próximamente.</div>
     <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br><a href="admin.html" style="color:#ffd166">Abrir el panel</a> para dar o quitar acceso a la Zona Liga.</div>
     <button id="salir" class="sec" type="button">Cerrar sesión</button>
+    <button id="borrar" class="enlace oculto" type="button">Borrar mi cuenta</button>
+    <div id="boxBorrar" class="zona oculto">Se borrarán tu cuenta y tus reservas. No se puede deshacer. Para confirmar, escribe tu contraseña.
+      <input id="passBorrar" type="password" autocomplete="current-password">
+      <button id="borrarOk" class="peligro" type="button">Borrar definitivamente</button>
+      <button id="borrarNo" class="sec" type="button">Cancelar</button>
+    </div>
   </section>
 
   <p id="msg" role="status"></p>
-  <p class="pie">Versión 0.5</p>
+  <p class="pie">Versión 0.6</p>
 </main>
 
 <script>
@@ -76,8 +92,8 @@ setTimeout(function () {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
@@ -93,6 +109,7 @@ const $ = (id) => document.getElementById(id);
 const ROLES = { user: "Usuario", player: "Jugador oficial", admin: "Administrador" };
 let modoRegistro = false;
 let registrando = false;
+let fichaActual = null;
 
 function mensaje(t) { $("msg").textContent = t || ""; }
 
@@ -118,11 +135,19 @@ function ponerModo(reg) {
   $("enviar").textContent = reg ? "Crear cuenta" : "Entrar";
   $("cambiar").textContent = reg ? "Ya tengo cuenta: entrar" : "No tengo cuenta: crear una";
   $("campoNombre").classList.toggle("oculto", !reg);
+  $("campoAcepto").classList.toggle("oculto", !reg);
   $("pass").autocomplete = reg ? "new-password" : "current-password";
   mensaje("");
 }
 
 function mostrar(user, ficha) {
+  fichaActual = ficha;
+  const puede = user.emailVerified || ficha.role === "admin";
+  $("accionesReserva").classList.toggle("oculto", !puede);
+  $("avisoVerif").classList.toggle("oculto", puede);
+  $("vEmail").textContent = user.email;
+  $("borrar").classList.toggle("oculto", ficha.role === "admin");
+  $("boxBorrar").classList.add("oculto");
   $("uNombre").textContent = ficha.nombre;
   $("uEmail").textContent = user.email;
   $("uRol").textContent = ROLES[ficha.role] || ficha.role;
@@ -163,13 +188,15 @@ $("form").addEventListener("submit", async (ev) => {
   const nombre = $("nombre").value.trim().slice(0, 60);
   if (!email || !pass) return mensaje("Escribe tu email y tu contraseña.");
   if (modoRegistro && !nombre) return mensaje("Escribe tu nombre y apellidos.");
+  if (modoRegistro && !$("acepto").checked) return mensaje("Para crear la cuenta debes aceptar la política de privacidad.");
   $("enviar").disabled = true;
   try {
     if (modoRegistro) {
       registrando = true;
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       await updateProfile(cred.user, { displayName: nombre });
-      await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp() });
+      await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp(), acepto: serverTimestamp() });
+      sendEmailVerification(cred.user).catch(() => {});
       registrando = false;
       mostrar(cred.user, { nombre: nombre, role: "user" });
     } else {
@@ -197,6 +224,49 @@ $("olvido").addEventListener("click", async () => {
 $("salir").addEventListener("click", async () => {
   await signOut(auth);
   $("pass").value = "";
+});
+
+$("yaVerif").addEventListener("click", async () => {
+  try {
+    await auth.currentUser.reload();
+    await auth.currentUser.getIdToken(true);
+    mostrar(auth.currentUser, fichaActual);
+    if (!auth.currentUser.emailVerified) mensaje("Todavía no consta como verificado. Abre el enlace del email y vuelve a pulsar.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("reenviar").addEventListener("click", async () => {
+  try { await sendEmailVerification(auth.currentUser); mensaje("Email enviado de nuevo. Mira también en spam."); }
+  catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("borrar").addEventListener("click", () => { $("boxBorrar").classList.remove("oculto"); mensaje(""); });
+$("borrarNo").addEventListener("click", () => { $("boxBorrar").classList.add("oculto"); $("passBorrar").value = ""; });
+$("borrarOk").addEventListener("click", async () => {
+  const pass = $("passBorrar").value;
+  if (!pass) return mensaje("Escribe tu contraseña para confirmar.");
+  $("borrarOk").disabled = true;
+  try {
+    const u = auth.currentUser;
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, pass));
+    const ahora = Date.now();
+    const rs = await getDocs(query(collection(db, "reservations"), where("uid", "==", u.uid)));
+    for (const d of rs.docs) {
+      const x = d.data(), ini = x.inicio.toMillis(), fin = x.fin.toMillis();
+      if (fin > ahora) {
+        const ss = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(Math.max(ini, ahora + 60000))), where("inicio", "<", Timestamp.fromMillis(fin))));
+        const b = writeBatch(db);
+        ss.forEach((z) => { const y = z.data(); if (y.uid === u.uid && y.tipo === "reserva" && y.dianaId === x.dianaId) b.delete(z.ref); });
+        await b.commit();
+      }
+      await deleteDoc(d.ref);
+    }
+    await deleteDoc(doc(db, "users", u.uid));
+    await deleteUser(u);
+    $("passBorrar").value = "";
+    mensaje("Tu cuenta se ha borrado.");
+  } catch (e) { mensaje(errorTexto(e)); }
+  $("borrarOk").disabled = false;
 });
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
