@@ -19,7 +19,7 @@ select,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1p
 .oculto{display:none!important}
 </style></head>
 <body><main>
-<p><a href="./">← Volver a la app</a></p>
+<p><a href="./">← Volver a la app</a> · <a href="info.html">Preguntas y contacto</a></p>
 <h1>Reservar diana</h1>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
@@ -56,6 +56,9 @@ const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "o
 const pad = (n) => String(n).padStart(2, "0");
 const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
 const dur = (m) => ((m >= 60 ? Math.floor(m / 60) + " h " : "") + (m % 60 ? (m % 60) + " min" : "")).trim();
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const minutos = (t) => { const p = t.split(":").map(Number); return p[0] * 60 + p[1]; };
+let visperas = [];
 let user = null, dianas = [], cfg = null, horario = null, lista = [], jornada = null, dianaSel = null, ocupados = new Set();
 
 function mensaje(t, ok) { $("msg").textContent = t || ""; $("msg").className = ok ? "ok" : ""; }
@@ -64,8 +67,10 @@ function calcularJornadas() {
   const res = [], hoy = new Date();
   for (let i = -1; i <= cfg.max; i++) {
     const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + i);
-    const h = horario.dias[d.getDay()];
-    if (!h) continue;
+    const base = horario.dias[d.getDay()];
+    if (!base) continue;
+    const esVispera = visperas.includes(iso(d)) && horario.vispera;
+    const h = esVispera && minutos(horario.vispera.cierra) > minutos(base.cierra) ? { abre: base.abre, cierra: horario.vispera.cierra } : base;
     const [ah, am] = h.abre.split(":").map(Number);
     const [ch, cm] = h.cierra.split(":").map(Number);
     const abre = new Date(d.getFullYear(), d.getMonth(), d.getDate(), ah, am).getTime();
@@ -155,7 +160,7 @@ $("reservar").onclick = async () => {
     mensaje("✔ Reserva hecha: " + nombre + ", " + jornada.etiqueta + ", de " + hhmm(ini) + " a " + hhmm(fin) + ".", true);
   } catch (e) {
     mensaje(e.code === "permission-denied"
-      ? "No se ha podido reservar: alguien ha reservado ese hueco hace un momento, o ya no se cumple la antelación mínima. Elige otra hora."
+      ? "No se ha podido reservar: alguien ha reservado ese hueco hace un momento, o ya no se cumple la antelación mínima, o tu email todavía no está verificado. Elige otra hora."
       : "Error: " + (e.code || e.message));
   }
   await cargarOcupados();
@@ -167,14 +172,16 @@ onAuthStateChanged(auth, async (u) => {
   $("panel").classList.add("oculto");
   if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
   try {
-    const [d, r, h] = await Promise.all([
+    const [d, r, h, v] = await Promise.all([
       getDocs(query(collection(db, "dartboards"), orderBy("orden"))),
       getDoc(doc(db, "settings", "reservas")),
-      getDoc(doc(db, "settings", "horario"))
+      getDoc(doc(db, "settings", "horario")),
+      getDoc(doc(db, "settings", "visperas"))
     ]);
     dianas = d.docs.map((x) => ({ id: x.id, ...x.data() })).filter((x) => x.activa);
     cfg = { min: r.data().minAntelacionMin, max: r.data().maxDiasAntelacion, tramo: r.data().tramoMin };
     horario = h.data();
+    visperas = v.exists() ? (v.data().fechas || []) : [];
     lista = calcularJornadas();
     $("dia").innerHTML = "";
     lista.forEach((j, i) => $("dia").add(new Option(j.etiqueta, i)));
