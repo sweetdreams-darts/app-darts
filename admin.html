@@ -22,19 +22,21 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 <div id="panel" hidden>
   <a class="boton" href="admin-reservas.html">Ver y gestionar reservas</a>
   <a class="boton" href="admin-liga.html">Liga: equipos y bloqueos</a>
+  <a class="boton" href="admin-visperas.html">Vísperas de festivo</a>
   <p id="resumen"></p>
   <input id="buscar" type="search" placeholder="Buscar por nombre o email">
   <select id="filtro">
     <option value="todos">Todos</option>
     <option value="user">Solo usuarios (sin acceso a la Zona Liga)</option>
     <option value="player">Solo jugadores oficiales</option>
+    <option value="socio">Solo socios</option>
   </select>
   <div id="lista"></div>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, orderBy } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -73,23 +75,29 @@ function pintar() {
   const t = $("buscar").value.trim().toLowerCase();
   const f = $("filtro").value;
   const n = (r) => usuarios.filter((x) => x.role === r).length;
-  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("admin") + " administradores.";
+  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("admin") + " administradores, " + usuarios.filter((x) => x.socio).length + " socios.";
   const lista = $("lista");
   lista.innerHTML = "";
   for (const x of usuarios) {
-    if (f !== "todos" && x.role !== f) continue;
+    if (f === "socio") { if (!x.socio) continue; } else if (f !== "todos" && x.role !== f) continue;
     if (t && !((x.nombre || "") + " " + (x.email || "")).toLowerCase().includes(t)) continue;
     const fecha = x.creado && x.creado.toDate ? x.creado.toDate().toLocaleDateString("es-ES") : "";
     const c = el("div", "", "card");
     c.append(el("strong", x.nombre), el("small", x.email), el("small", "Registrado: " + fecha));
     const p = el("p");
     p.append(el("span", ROLES[x.role] || x.role, "rol"));
+    if (x.socio) p.append(" ", el("span", "Socio nº " + String(x.socioNum || 0).padStart(4, "0"), "rol"));
     c.append(p);
     if (x.role === "user" || x.role === "player") {
       const dar = x.role === "user";
       const b = el("button", dar ? "Dar acceso a la Zona Liga" : "Quitar acceso a la Zona Liga", dar ? "" : "sec");
       b.onclick = () => cambiar(x, dar ? "player" : "user");
       c.append(b);
+    }
+    if (x.role !== "robot") {
+      const s = el("button", x.socio ? "Quitar socio" : "Hacer socio", "sec");
+      s.onclick = () => cambiarSocio(x);
+      c.append(s);
     }
     lista.append(c);
   }
@@ -101,6 +109,18 @@ async function cambiar(x, nuevo) {
   try {
     await updateDoc(doc(db, "users", x.id), { role: nuevo });
     x.role = nuevo;
+    pintar();
+  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
+}
+
+async function cambiarSocio(x) {
+  const hacer = !x.socio;
+  if (!confirm((hacer ? "¿Hacer socio a " : "¿Quitar la condición de socio a ") + x.nombre + "?")) return;
+  try {
+    const num = x.socioNum || (Math.max(0, ...usuarios.map((u) => u.socioNum || 0)) + 1);
+    await updateDoc(doc(db, "users", x.id), hacer ? { socio: true, socioNum: num, socioDesde: serverTimestamp() } : { socio: false });
+    x.socio = hacer;
+    if (hacer) x.socioNum = num;
     pintar();
   } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
 }
