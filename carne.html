@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mi carné de socio</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:420px}
+.carne{position:relative;border-radius:20px;padding:22px 18px;text-align:center;background:linear-gradient(150deg,rgba(255,43,214,.28),rgba(21,13,39,.96) 45%,rgba(25,242,255,.22));border:1px solid rgba(255,43,214,.7);box-shadow:0 0 28px rgba(255,43,214,.45),0 0 60px rgba(25,242,255,.18)}
+.carne img.logo{max-width:70%;max-height:70px;filter:drop-shadow(0 0 10px rgba(255,43,214,.7))}
+.carne .tipo{margin:10px 0 0;font-family:"Bungee","Rubik",sans-serif;color:#ffe14d;letter-spacing:2px;text-shadow:0 0 10px rgba(255,225,77,.6)}
+.carne .nombre{margin:14px 0 2px;font-size:1.35rem;font-weight:700}
+.carne .num{margin:0;font-family:"Bungee","Rubik",sans-serif;font-size:1.6rem;color:#19f2ff;text-shadow:0 0 10px rgba(25,242,255,.7)}
+.carne .desde{margin:4px 0 0;color:#b9a8d9}
+#qr{display:inline-block;background:#fff;border-radius:16px;padding:14px;margin-top:18px;line-height:0}
+#qr img,#qr canvas{display:block}
+.nota{color:#b9a8d9;font-size:.9rem;margin-top:14px}
+.oculto{display:none!important}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <div class="carne">
+    <img class="logo" src="logo.png" alt="Sweet Dreams">
+    <p class="tipo">CARNÉ DE SOCIO</p>
+    <p class="nombre" id="nombre"></p>
+    <p class="num" id="num"></p>
+    <p class="desde" id="desde"></p>
+    <div id="qr"></div>
+    <p class="nota">Enseña este código en el bar.</p>
+  </div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const snap = await getDoc(doc(db, "users", u.uid));
+    const f = snap.exists() ? snap.data() : {};
+    if (!f.socio) { $("estado").textContent = "Este carné es solo para socios. Pregunta en el bar cómo hacerte socio."; return; }
+    $("nombre").textContent = f.nombre;
+    $("num").textContent = "Nº " + String(f.socioNum || 0).padStart(4, "0");
+    if (f.socioDesde && f.socioDesde.toDate) { const d = f.socioDesde.toDate(); $("desde").textContent = "Socio desde " + d.getDate() + " " + MESES[d.getMonth()] + " " + d.getFullYear(); }
+    $("qr").innerHTML = "";
+    if (window.QRCode) {
+      new QRCode($("qr"), { text: "SD-SOCIO:" + u.uid, width: 200, height: 200, colorDark: "#000000", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.H });
+    } else {
+      $("qr").style.lineHeight = "1.4";
+      $("qr").style.color = "#000";
+      $("qr").textContent = "Nº " + String(f.socioNum || 0).padStart(4, "0");
+    }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
