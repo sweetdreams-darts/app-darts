@@ -1,16 +1,16 @@
 {
-  "name": "Sweet Dreams Darts",
-  "short_name": "Darts",
-  "description": "App de dardos del bar Sweet Dreams",
+  "name": "Sweet Dreams",
+  "short_name": "Sweet Dreams",
+  "description": "App de Sweet Dreams: dardos, ofertas y más",
   "lang": "es",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#14213d",
-  "theme_color": "#14213d",
+  "background_color": "#0a0612",
+  "theme_color": "#0a0612",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
