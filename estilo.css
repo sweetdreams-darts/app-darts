@@ -49,3 +49,7 @@ button:disabled{opacity:.4;animation:none!important}
 @keyframes parpadeo{0%,18%,22%,60%,100%{opacity:1}20%,62%{opacity:.8}}
 @keyframes flotar{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+body{min-height:100vh}
+p,small,strong,li{overflow-wrap:anywhere}
+.tile strong{font-size:clamp(.78rem,3.7vw,1rem)}
