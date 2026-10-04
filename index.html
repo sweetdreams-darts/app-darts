@@ -58,7 +58,7 @@ button.enlace{margin-top:6px;padding:8px;font-weight:400}
     <div class="caja">
       <p style="margin:0">Hola, <strong id="uNombre"></strong></p>
       <p id="uEmail" style="margin:4px 0 8px;opacity:.8"></p>
-      <p style="margin:0">Tu rol: <span id="uRol" class="rol"></span></p>
+      <p style="margin:0">Tu rol: <span id="uRol" class="rol"></span> <span id="uSocio" class="rol oculto"></span></p>
     </div>
     <div id="avisoVerif" class="zona oculto">Para reservar, verifica tu email. Te hemos enviado un enlace a <strong id="vEmail"></strong> (mira también en spam).
       <button id="yaVerif" class="pri" type="button">Ya lo he verificado</button>
@@ -67,6 +67,7 @@ button.enlace{margin-top:6px;padding:8px;font-weight:400}
 
     <div class="tiles">
       <a class="tile t-rosa grande" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
+      <a id="tileCarne" class="tile t-violeta grande oculto" href="carne.html"><span class="emoji">🪪</span><strong>Mi carné de socio</strong><small>Tu código para el bar</small></a>
       <div class="tile t-amarillo bloq"><span class="emoji">🎁</span><strong>Ofertas</strong><small>Solo socios · Próximamente</small></div>
       <div class="tile t-violeta bloq"><span class="emoji">🎮</span><strong>Juegos</strong><small>Próximamente</small></div>
       <div class="tile t-cian bloq"><span class="emoji">📸</span><strong>Fotos</strong><small>Próximamente</small></div>
@@ -84,7 +85,7 @@ button.enlace{margin-top:6px;padding:8px;font-weight:400}
   </section>
 
   <p id="msg" role="status"></p>
-  <p class="pie">Versión 0.7</p>
+  <p class="pie">Versión 0.8</p>
 </main>
 
 <script>
@@ -155,6 +156,9 @@ function mostrar(user, ficha) {
   $("uNombre").textContent = ficha.nombre;
   $("uEmail").textContent = user.email;
   $("uRol").textContent = ROLES[ficha.role] || ficha.role;
+  $("tileCarne").classList.toggle("oculto", !ficha.socio);
+  $("uSocio").classList.toggle("oculto", !ficha.socio);
+  $("uSocio").textContent = "Socio nº " + String(ficha.socioNum || 0).padStart(4, "0");
   mensaje("");
   vista("vistaUsuario");
 }
