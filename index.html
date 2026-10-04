@@ -3,39 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sweet Dreams Darts</title>
-<meta name="theme-color" content="#14213d">
+<title>Sweet Dreams</title>
+<meta name="theme-color" content="#0a0612">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Darts">
+<meta name="apple-mobile-web-app-title" content="Sweet Dreams">
+<link rel="stylesheet" href="estilo.css">
 <style>
-:root{--fondo:#14213d;--panel:#1d2f52;--claro:#f1faee;--acento:#ffd166}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:var(--fondo);color:var(--claro);font-family:system-ui,sans-serif;display:flex;justify-content:center;padding:20px}
-main{width:100%;max-width:420px}
-h1{font-size:1.6rem;margin:8px 0 18px;text-align:center}
-.caja{background:var(--panel);border-radius:12px;padding:18px;margin-bottom:14px}
+body{margin:0;min-height:100vh;display:flex;justify-content:center;padding:20px}
+main{width:100%;max-width:440px}
 label{display:block;margin:12px 0 4px}
-input{width:100%;padding:12px;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:var(--claro);font-size:1rem}
-button{width:100%;margin-top:16px;padding:13px;border:0;border-radius:8px;background:var(--acento);color:#14213d;font-size:1rem;font-weight:700}
-button.sec{background:transparent;color:var(--claro);border:1px solid #3d5380}
-button.enlace{background:none;border:0;color:var(--acento);text-decoration:underline;font-weight:400;margin-top:8px;padding:8px}
-#msg{min-height:1.4em;color:var(--acento);text-align:center}
-.rol{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--acento);color:#14213d;font-weight:700}
-.zona{background:#0f1a30;border-radius:8px;padding:12px;margin-top:12px}
-.boton{display:block;margin-top:12px;padding:13px;border-radius:8px;background:var(--acento);color:#14213d;font-weight:700;text-align:center;text-decoration:none}
-.boton.sec{background:transparent;color:var(--claro);border:1px solid #3d5380}
+input{width:100%;padding:12px;font-size:1rem}
+button{width:100%;margin-top:14px;padding:13px;font-size:1rem}
+button.enlace{margin-top:6px;padding:8px;font-weight:400}
+.caja{padding:18px;margin-bottom:14px}
+.zona{padding:12px;margin-top:12px}
+.rol{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:700}
 .chk{display:flex;align-items:flex-start;gap:10px;margin:14px 0 0}
 .chk input{width:22px;height:22px;margin:0;flex:none}
-button.peligro{background:#ff8787;color:#14213d}
-.pie{text-align:center;opacity:.6;font-size:.85rem}
+#msg{min-height:1.4em;text-align:center}
+.pie{text-align:center;font-size:.85rem}
 .oculto{display:none!important}
 </style>
 </head>
 <body>
 <main>
-  <h1>Sweet Dreams Darts</h1>
+  <header class="marca">
+    <img id="logo" src="logo.png" alt="Sweet Dreams" onerror="this.remove();document.getElementById('h1marca').classList.remove('sr')">
+    <h1 id="h1marca" class="sr">Sweet Dreams</h1>
+  </header>
   <p id="cargando" style="text-align:center">Cargando…</p>
 
   <form id="form" class="caja oculto" novalidate>
@@ -43,44 +42,49 @@ button.peligro{background:#ff8787;color:#14213d}
     <div id="campoNombre" class="oculto">
       <label for="nombre">Nombre y apellidos</label>
       <input id="nombre" autocomplete="name" maxlength="60">
-      <small style="opacity:.8">Si juegas en la liga, escribe tu nombre y apellidos tal cual aparecen en la liga.</small>
+      <small>Si juegas en la liga, escribe tu nombre y apellidos tal cual aparecen en la liga.</small>
     </div>
     <label for="email">Email</label>
     <input id="email" type="email" autocomplete="email" inputmode="email">
     <label for="pass">Contraseña (mínimo 6 caracteres)</label>
     <input id="pass" type="password" autocomplete="current-password">
-    <label id="campoAcepto" class="chk oculto"><input type="checkbox" id="acepto"><span>He leído y acepto la <a href="privacidad.html" target="_blank" rel="noopener" style="color:#ffd166">política de privacidad</a>.</span></label>
-    <button id="enviar" type="submit">Entrar</button>
+    <label id="campoAcepto" class="chk oculto"><input type="checkbox" id="acepto"><span>He leído y acepto la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
+    <button id="enviar" class="pri" type="submit">Entrar</button>
     <button id="cambiar" class="enlace" type="button">No tengo cuenta: crear una</button>
     <button id="olvido" class="enlace" type="button">He olvidado mi contraseña</button>
   </form>
 
-  <section id="vistaUsuario" class="caja oculto">
-    <p style="margin-top:0">Hola, <strong id="uNombre"></strong></p>
-    <p id="uEmail" style="opacity:.8"></p>
-    <p>Tu rol: <span id="uRol" class="rol"></span></p>
+  <section id="vistaUsuario" class="oculto">
+    <div class="caja">
+      <p style="margin:0">Hola, <strong id="uNombre"></strong></p>
+      <p id="uEmail" style="margin:4px 0 8px;opacity:.8"></p>
+      <p style="margin:0">Tu rol: <span id="uRol" class="rol"></span></p>
+    </div>
     <div id="avisoVerif" class="zona oculto">Para reservar, verifica tu email. Te hemos enviado un enlace a <strong id="vEmail"></strong> (mira también en spam).
-      <button id="yaVerif" type="button">Ya lo he verificado</button>
-      <button id="reenviar" class="sec" type="button">Reenviar el email</button>
+      <button id="yaVerif" class="pri" type="button">Ya lo he verificado</button>
+      <button id="reenviar" type="button">Reenviar el email</button>
     </div>
-    <div id="accionesReserva">
-      <a class="boton" href="reservar.html">Reservar diana</a>
-      <a class="boton sec" href="mis-reservas.html">Mis reservas</a>
+
+    <div class="tiles">
+      <a class="tile t-rosa grande" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
+      <div class="tile t-amarillo bloq"><span class="emoji">🎁</span><strong>Ofertas</strong><small>Solo socios · Próximamente</small></div>
+      <div class="tile t-violeta bloq"><span class="emoji">🎮</span><strong>Juegos</strong><small>Próximamente</small></div>
+      <div class="tile t-cian bloq"><span class="emoji">📸</span><strong>Fotos</strong><small>Próximamente</small></div>
+      <a class="tile t-verde" href="info.html"><span class="emoji">💬</span><strong>Preguntas y contacto</strong><small>Dudas y cómo llegar</small></a>
+      <a id="tileAdmin" class="tile t-rojo grande oculto" href="admin.html"><span class="emoji">⚙️</span><strong>Panel de administrador</strong><small>Accesos, reservas y liga</small></a>
     </div>
-    <div id="avisoUsuario" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
-    <div id="zonaLiga" class="zona oculto"><strong>Zona Liga</strong><br><a class="boton" href="liga.html">Calendarios y locales</a>Clasificaciones y tu perfil, próximamente.</div>
-    <div id="zonaAdmin" class="zona oculto"><strong>Panel de administrador</strong><br><a href="admin.html" style="color:#ffd166">Abrir el panel</a> para dar o quitar acceso a la Zona Liga.</div>
-    <button id="salir" class="sec" type="button">Cerrar sesión</button>
+
+    <button id="salir" type="button">Cerrar sesión</button>
     <button id="borrar" class="enlace oculto" type="button">Borrar mi cuenta</button>
     <div id="boxBorrar" class="zona oculto">Se borrarán tu cuenta y tus reservas. No se puede deshacer. Para confirmar, escribe tu contraseña.
       <input id="passBorrar" type="password" autocomplete="current-password">
       <button id="borrarOk" class="peligro" type="button">Borrar definitivamente</button>
-      <button id="borrarNo" class="sec" type="button">Cancelar</button>
+      <button id="borrarNo" type="button">Cancelar</button>
     </div>
   </section>
 
   <p id="msg" role="status"></p>
-  <p class="pie">Versión 0.6</p>
+  <p class="pie">Versión 0.7</p>
 </main>
 
 <script>
@@ -143,17 +147,14 @@ function ponerModo(reg) {
 function mostrar(user, ficha) {
   fichaActual = ficha;
   const puede = user.emailVerified || ficha.role === "admin";
-  $("accionesReserva").classList.toggle("oculto", !puede);
   $("avisoVerif").classList.toggle("oculto", puede);
   $("vEmail").textContent = user.email;
+  $("tileAdmin").classList.toggle("oculto", ficha.role !== "admin");
   $("borrar").classList.toggle("oculto", ficha.role === "admin");
   $("boxBorrar").classList.add("oculto");
   $("uNombre").textContent = ficha.nombre;
   $("uEmail").textContent = user.email;
   $("uRol").textContent = ROLES[ficha.role] || ficha.role;
-  $("avisoUsuario").classList.toggle("oculto", ficha.role !== "user");
-  $("zonaLiga").classList.toggle("oculto", !["player", "admin"].includes(ficha.role));
-  $("zonaAdmin").classList.toggle("oculto", ficha.role !== "admin");
   mensaje("");
   vista("vistaUsuario");
 }
