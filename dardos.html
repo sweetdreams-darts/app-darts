@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Universo Dardos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Universo Dardos</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <div id="avisoVerif" class="zona oculto">Para reservar, primero verifica tu email desde el <a href="./">inicio</a>.</div>
+  <div class="tiles">
+    <a id="tReservar" class="tile t-rosa grande" href="reservar.html"><span class="emoji">🎯</span><strong>Reservar diana</strong><small>Elige día, diana y hora</small></a>
+    <a id="tMis" class="tile t-cian" href="mis-reservas.html"><span class="emoji">📅</span><strong>Mis reservas</strong><small>Ver o cancelar</small></a>
+    <a id="tLiga" class="tile t-amarillo" href="liga.html"><span class="emoji">🏆</span><strong>Zona Liga</strong><small>Calendarios y locales</small></a>
+    <div class="tile t-violeta bloq"><span class="emoji">🎲</span><strong>Torneos</strong><small>Próximamente</small></div>
+    <div class="tile t-verde bloq"><span class="emoji">📊</span><strong>Clasificaciones</strong><small>Próximamente</small></div>
+  </div>
+  <div id="avisoLiga" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    const rol = yo.exists() ? yo.data().role : "user";
+    const puede = u.emailVerified || rol === "admin";
+    const liga = ["player", "admin"].includes(rol);
+    $("tReservar").classList.toggle("bloq", !puede);
+    $("tMis").classList.toggle("bloq", !puede);
+    $("avisoVerif").classList.toggle("oculto", puede);
+    $("tLiga").classList.toggle("bloq", !liga);
+    $("avisoLiga").classList.toggle("oculto", liga);
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
