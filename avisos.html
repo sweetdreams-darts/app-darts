@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Avisos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+button{width:100%;padding:14px;font-size:1rem;margin-top:12px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="dardos.html">← Universo Dardos</a></p>
+<header class="marca"><h1>Avisos</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <div class="zona">
+    <p id="texto" style="margin-top:0"></p>
+    <button id="activar" class="pri" type="button">Activar avisos en este móvil</button>
+    <button id="desactivar" type="button">Desactivar avisos en este móvil</button>
+  </div>
+  <p id="info" style="color:var(--suave)"></p>
+</div>
+<p id="msg" role="status"></p>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getMessaging, getToken, deleteToken, isSupported } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-messaging.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const VAPID = "BFXvhN2NwufeJeYeBkRNGw6BRVYgOQdtJNT6RsTpC3vUnm4AjUmesbuWdBQO4UMExSwkZZ-oQM0sCUv3YXFuDtw";
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+let usuario = null, messaging = null, reg = null;
+
+function mensaje(t) { $("msg").textContent = t || ""; }
+async function miToken() { return getToken(messaging, { vapidKey: VAPID, serviceWorkerRegistration: reg }); }
+
+async function pintar() {
+  $("activar").classList.add("oculto");
+  $("desactivar").classList.add("oculto");
+  if (Notification.permission === "denied") {
+    $("texto").textContent = "Los avisos están bloqueados en este móvil. Para activarlos, entra en los ajustes del navegador o de la app, busca los permisos de notificaciones y permítelos para esta página.";
+    return;
+  }
+  let activo = false;
+  if (Notification.permission === "granted") {
+    try { activo = (await getDoc(doc(db, "push_tokens", await miToken()))).exists(); } catch (e) { activo = false; }
+  }
+  $("texto").textContent = activo ? "✔ Los avisos están activados en este móvil." : "Los avisos están desactivados en este móvil.";
+  $("activar").classList.toggle("oculto", activo);
+  $("desactivar").classList.toggle("oculto", !activo);
+}
+
+$("activar").onclick = async () => {
+  mensaje("");
+  try {
+    const permiso = await Notification.requestPermission();
+    if (permiso !== "granted") { mensaje("No has dado permiso para mostrar avisos."); await pintar(); return; }
+    const token = await miToken();
+    await setDoc(doc(db, "push_tokens", token), { uid: usuario.uid, creado: serverTimestamp() });
+    await reg.showNotification("Avisos activados", { body: "Así verás los avisos de Sweet Dreams.", icon: "icono-192.png" });
+    mensaje("✔ Avisos activados.");
+    await pintar();
+  } catch (e) { mensaje("No se han podido activar: " + (e.code || e.message)); }
+};
+
+$("desactivar").onclick = async () => {
+  mensaje("");
+  try {
+    const token = await miToken();
+    await deleteDoc(doc(db, "push_tokens", token));
+    await deleteToken(messaging);
+    mensaje("Avisos desactivados.");
+    await pintar();
+  } catch (e) { mensaje("No se han podido desactivar: " + (e.code || e.message)); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  usuario = u;
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    if (!("serviceWorker" in navigator) || !("Notification" in window) || !(await isSupported())) {
+      $("estado").textContent = "Este navegador no permite avisos. En iPhone, instala primero la app en la pantalla de inicio (hace falta iOS 16.4 o superior) y ábrela desde allí.";
+      return;
+    }
+    reg = await navigator.serviceWorker.ready;
+    messaging = getMessaging(app);
+    const rol = (await getDoc(doc(db, "users", u.uid))).data().role;
+    $("info").textContent = rol === "admin" ? "Recibirás un aviso cada vez que alguien haga una reserva nueva, y un recordatorio una hora antes de las tuyas." : "Recibirás un recordatorio una hora antes de tus reservas.";
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    await pintar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
