@@ -1,34 +1,40 @@
 <!DOCTYPE html>
-<link rel="stylesheet" href="estilo.css">
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Zona Liga</title>
-<meta name="theme-color" content="#14213d">
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
 <style>
-body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:520px}
-a{color:#ffd166}
-select,input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
+select,input[type=search]{width:100%;padding:12px;font-size:1rem;margin-top:10px}
 .tabs{display:flex;gap:8px}
-.tabs button{margin-top:0;font-weight:700}
-.tabs button.sel{background:#ffd166;color:#14213d;border-color:#ffd166}
-.fila{display:flex;gap:8px}
-.chk{display:flex;align-items:center;gap:8px;margin-top:12px}
-.chk input{width:auto;margin:0}
-h2{font-size:1.05rem;margin:22px 0 0;color:#ffd166}
-.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
-.card small{display:block;opacity:.8;margin-top:3px}
-.sd{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.8rem}
-a.mapa{display:block;margin-top:10px;padding:11px;border-radius:8px;background:#ffd166;color:#14213d;font-weight:700;text-align:center;text-decoration:none}
+.tabs button{flex:1;margin-top:0;padding:12px;font-size:1rem}
+.dos{display:flex;gap:8px}
+.chk{display:flex;align-items:center;gap:10px;margin-top:14px}
+.chk input{width:22px;height:22px;margin:0}
+h2{font-size:1.05rem;margin:22px 0 0}
+.card{padding:12px 14px;margin-top:8px}
+.card small{display:block;margin-top:3px}
+.sd{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;font-weight:700;font-size:.8rem}
+a.mapa{display:block;margin-top:10px;padding:11px;text-align:center;text-decoration:none}
 .oculto{display:none!important}
 </style></head>
 <body><main>
-<p><a href="./">← Volver a la app</a></p>
-<h1>Zona Liga</h1>
+<p><a href="dardos.html">← Universo Dardos</a></p>
+<header class="marca"><h1>Zona Liga</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
   <div class="tabs"><button id="tCal" class="sel">Calendarios</button><button id="tLoc">Locales</button></div>
   <section id="vCal">
-    <div class="fila"><select id="cat"><option value="parejas">Parejas</option><option value="equipos">Equipos (online)</option></select><select id="niv"></select></div>
-    <label class="chk" id="chkSD"><input type="checkbox" id="soloSD"> Solo partidos en Sweet Dreams</label>
+    <div class="dos"><select id="cat"><option value="parejas">Parejas</option><option value="equipos">Equipos (online)</option></select><select id="niv"></select></div>
+    <select id="equipo"></select>
+    <select id="rango">
+      <option value="7">Próximos 7 días</option>
+      <option value="14" selected>Próximos 14 días</option>
+      <option value="30">Próximos 30 días</option>
+      <option value="60">Próximos 60 días</option>
+      <option value="temporada">Toda la temporada</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="soloSD"> Solo partidos en Sweet Dreams</label>
     <p id="info"></p>
     <div id="partidos"></div>
   </section>
@@ -55,50 +61,132 @@ const $ = (id) => document.getElementById(id);
 const NIVELES = { parejas: 13, equipos: 10 };
 const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
-let datos = [], locales = [], localesCargados = false;
+const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+let datos = [], locales = [], localesCargados = false, nombresSD = new Set(), seq = 0;
 
-function fechaBonita(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1];
+// <logica>
+function filtrar(datos, o) {
+  const ult = {};
+  for (const x of datos) {
+    const k = x.categoria + "|" + x.nivel;
+    if (!ult[k] || x.fechaMs > ult[k].ms) ult[k] = { ms: x.fechaMs, temp: x.temporada };
+  }
+  const res = datos.filter((x) => {
+    if (x.categoria !== o.cat) return false;
+    if (o.nivel !== "todos" && x.nivel !== Number(o.nivel)) return false;
+    if (x.temporada !== ult[x.categoria + "|" + x.nivel].temp) return false;
+    if (o.desde && x.dia < o.desde) return false;
+    if (o.hasta && x.dia > o.hasta) return false;
+    if (o.sd) {
+      const es = x.categoria === "parejas" ? x.enSweetDreams : (o.nombresSD.has(norm(x.local)) || o.nombresSD.has(norm(x.visitante)));
+      if (!es) return false;
+    }
+    if (o.equipo && norm(x.local) !== o.equipo && norm(x.visitante) !== o.equipo) return false;
+    return true;
+  });
+  return res.sort((a, b) => a.fechaMs - b.fechaMs || a.nivel - b.nivel);
 }
+function equiposDe(datos, cat, nivel) {
+  const ult = {};
+  const delNivel = datos.filter((x) => x.categoria === cat && x.nivel === Number(nivel));
+  for (const x of delNivel) if (!ult.ms || x.fechaMs > ult.ms) { ult.ms = x.fechaMs; ult.temp = x.temporada; }
+  const set = new Set();
+  for (const x of delNivel) if (x.temporada === ult.temp) { set.add(x.local); set.add(x.visitante); }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+// </logica>
+
 function nombreTemporada(t) {
   const y = Number(t.slice(1));
   return t[0] === "I" ? "Invierno " + y + "/" + String(y + 1).slice(2) : "Primavera " + y;
 }
+function fechaBonita(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1];
+}
 function llenarNiveles() {
   $("niv").innerHTML = "";
+  $("niv").add(new Option("Todos los niveles", "todos"));
   for (let i = 1; i <= NIVELES[$("cat").value]; i++) $("niv").add(new Option("Nivel " + i, i));
-  $("chkSD").classList.toggle("oculto", $("cat").value !== "parejas");
 }
 
-async function cargarPartidos() {
+async function traer() {
+  const cat = $("cat").value, niv = $("niv").value, sd = $("soloSD").checked, rango = $("rango").value;
+  const col = collection(db, "liga_partidos");
+  let q, clave;
+  if (niv !== "todos") {
+    q = query(col, where("categoria", "==", cat), where("nivel", "==", Number(niv)));
+    clave = "n|" + cat + "|" + niv;
+  } else if (cat === "parejas" && sd) {
+    q = query(col, where("enSweetDreams", "==", true));
+    clave = "sd|parejas";
+  } else if (rango === "temporada" && sd) {
+    q = query(col, where("categoria", "==", cat));
+    clave = "c|" + cat;
+  } else {
+    const dias = rango === "temporada" ? 60 : Number(rango);
+    const hoy = new Date();
+    q = query(col, where("dia", ">=", iso(hoy)), where("dia", "<=", iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias))));
+    clave = "d|" + iso(hoy) + "|" + dias;
+  }
+  try {
+    const guardado = JSON.parse(sessionStorage.getItem("liga_" + clave) || "null");
+    if (guardado && Date.now() - guardado.t < 300000) return guardado.d;
+  } catch (e) {}
+  const d = (await getDocs(q)).docs.map((x) => { const v = x.data(); return { categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }; });
+  try { sessionStorage.setItem("liga_" + clave, JSON.stringify({ t: Date.now(), d: d })); } catch (e) {}
+  return d;
+}
+
+async function cargar() {
+  const mio = ++seq;
   $("info").textContent = "Cargando…";
   $("partidos").innerHTML = "";
   try {
-    const q = query(collection(db, "liga_partidos"), where("categoria", "==", $("cat").value), where("nivel", "==", Number($("niv").value)));
-    datos = (await getDocs(q)).docs.map((d) => d.data());
-    pintarPartidos();
+    const d = await traer();
+    if (mio !== seq) return;
+    datos = d;
+    const cat = $("cat").value, niv = $("niv").value;
+    const prev = $("equipo").value;
+    $("equipo").innerHTML = "";
+    if (niv === "todos") {
+      $("equipo").add(new Option("Elige un nivel para filtrar por equipo", ""));
+      $("equipo").disabled = true;
+    } else {
+      $("equipo").disabled = false;
+      $("equipo").add(new Option("Todos los equipos", ""));
+      for (const n of equiposDe(datos, cat, niv)) $("equipo").add(new Option(n, norm(n)));
+      if ([...$("equipo").options].some((o) => o.value === prev)) $("equipo").value = prev;
+    }
+    pintar();
   } catch (e) { $("info").textContent = "Error: " + (e.code || e.message); }
 }
 
-function pintarPartidos() {
+function pintar() {
   const cont = $("partidos");
   cont.innerHTML = "";
-  if (!datos.length) { $("info").textContent = "Todavía no hay calendario publicado para este nivel."; return; }
-  const ult = datos.reduce((a, b) => (a.fecha.toMillis() >= b.fecha.toMillis() ? a : b)).temporada;
-  const sd = $("cat").value === "parejas" && $("soloSD").checked;
-  const lista = datos.filter((x) => x.temporada === ult && (!sd || x.enSweetDreams)).sort((a, b) => a.fecha.toMillis() - b.fecha.toMillis());
-  $("info").textContent = nombreTemporada(ult) + " · " + lista.length + " partidos";
+  const rango = $("rango").value;
+  const hoy = new Date();
+  const desde = rango === "temporada" ? "" : iso(hoy);
+  const hasta = rango === "temporada" ? "" : iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + Number(rango)));
+  const lista = filtrar(datos, { cat: $("cat").value, nivel: $("niv").value, desde: desde, hasta: hasta, sd: $("soloSD").checked, nombresSD: nombresSD, equipo: $("equipo").value });
+  if (!datos.length) { $("info").textContent = "Todavía no hay calendario publicado para esta selección."; return; }
+  if (!lista.length) { $("info").textContent = "No hay partidos con estos filtros."; return; }
+  const temps = [...new Set(lista.map((x) => x.temporada))];
+  $("info").textContent = lista.length + " partidos" + (temps.length === 1 ? " · " + nombreTemporada(temps[0]) : "");
   let ultimo = "";
   for (const p of lista) {
-    const clave = p.jornada + "|" + p.dia;
-    if (clave !== ultimo) { cont.append(el("h2", "Jornada " + p.jornada + " · " + fechaBonita(p.dia) + " · " + p.hora)); ultimo = clave; }
+    if (p.dia !== ultimo) { cont.append(el("h2", fechaBonita(p.dia))); ultimo = p.dia; }
     const c = el("div", "", "card");
-    c.append(el("strong", p.local + " – " + p.visitante));
+    c.append(el("strong", p.hora + " · Nivel " + p.nivel + " · Jornada " + p.jornada));
+    c.append(el("div", p.local + " – " + p.visitante));
     if (p.sede) c.append(el("small", "Sede: " + p.sede));
     if (p.nota) c.append(el("small", p.nota));
-    if (p.enSweetDreams) c.append(el("span", "En Sweet Dreams", "sd"));
+    const esSD = p.categoria === "parejas" ? p.enSweetDreams : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)));
+    if (esSD) c.append(el("span", "En Sweet Dreams", "sd"));
     cont.append(c);
   }
 }
@@ -141,21 +229,27 @@ function pestana(cal) {
 }
 $("tCal").onclick = () => pestana(true);
 $("tLoc").onclick = () => pestana(false);
-$("cat").onchange = () => { llenarNiveles(); cargarPartidos(); };
-$("niv").onchange = cargarPartidos;
-$("soloSD").onchange = pintarPartidos;
+$("cat").onchange = () => { $("equipo").value = ""; llenarNiveles(); cargar(); };
+$("niv").onchange = () => { $("equipo").value = ""; cargar(); };
+$("rango").onchange = cargar;
+$("soloSD").onchange = cargar;
+$("equipo").onchange = pintar;
 $("buscar").oninput = pintarLocales;
 
 onAuthStateChanged(auth, async (u) => {
   $("panel").classList.add("oculto");
-  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
   try {
     const yo = await getDoc(doc(db, "users", u.uid));
     if (!yo.exists() || !["player", "admin"].includes(yo.data().role)) { $("estado").textContent = "La Zona Liga es solo para jugadores oficiales acreditados por el bar."; return; }
+    try {
+      const c = await getDoc(doc(db, "liga_config", "equiposSweetDreams"));
+      nombresSD = new Set(c.exists() ? (c.data().nombres || []).map(norm) : []);
+    } catch (e) { nombresSD = new Set(); }
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
     llenarNiveles();
-    cargarPartidos();
+    cargar();
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
 });
 </script>
