@@ -119,11 +119,17 @@ def revisar_nuevas(ultima):
 
 
 def recordatorios():
+    # Recordatorio a quien reservó: cuando faltan entre 5 y 65 minutos (una sola vez por reserva).
+    # No se manda si la reserva se acaba de hacer (hace menos de 2 minutos).
     ahora = int(time.time() * 1000)
-    docs = consulta("reservations", [("inicio", "GREATER_THAN_OR_EQUAL", {"timestampValue": iso(ahora + 55 * 60000)}),
+    docs = consulta("reservations", [("inicio", "GREATER_THAN_OR_EQUAL", {"timestampValue": iso(ahora + 5 * 60000)}),
                                      ("inicio", "LESS_THAN", {"timestampValue": iso(ahora + 65 * 60000)})])
+    print(f"  recordatorios: {len(docs)} reserva(s) que empiezan en los próximos 5 a 65 minutos")
     for d in docs:
         if campo(d, "recordado", "booleanValue"):
+            continue
+        creado = campo(d, "creado", "timestampValue")
+        if creado and ahora - ms_de(creado) < 2 * 60000:
             continue
         ini = ms_de(campo(d, "inicio", "timestampValue"))
         cuerpo = f"{nombre_de('dartboards', campo(d, 'dianaId'))} hoy a las {hora(ini)}"
@@ -142,6 +148,7 @@ def main():
         guardar_estado(ultima)
         print("Estado inicial creado")
     while True:
+        print(local(int(time.time() * 1000)).strftime("%H:%M"), "revisando reservas…")
         try:
             nueva = revisar_nuevas(ultima)
             if nueva != ultima:
