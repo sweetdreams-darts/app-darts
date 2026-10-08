@@ -13,42 +13,63 @@ button{width:100%;padding:13px;font-size:1rem;margin-top:10px}
 .fila3 button{margin-top:10px}
 .centro{text-align:center}
 .oculto{display:none!important}
-#tablero{display:grid;grid-template-columns:repeat(9,1fr);gap:3px;margin-top:8px}
-.cel{position:relative;aspect-ratio:1;border-radius:7px;border:1px solid var(--c);background:var(--f);overflow:hidden}
-.cel .nn{position:absolute;top:1px;left:3px;font-size:.55rem;opacity:.85}
-.cel .ic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.05rem;padding-bottom:5px}
-.cel .fichas{position:absolute;bottom:1px;left:0;right:0;display:flex;justify-content:center;gap:1px;flex-wrap:wrap}
-.cel .fi{width:9px;height:9px;border-radius:50%;border:1px solid #0a0612}
-.cel.actual{outline:2px solid #fff;box-shadow:0 0 12px #fff;z-index:2}
-.c-salida,.c-meta{--c:#fff;--f:rgba(255,255,255,.18)}
-.c-grupo{--c:#6c5a9c;--f:rgba(108,90,156,.22)}
-.c-posada{--c:#5b8cff;--f:rgba(91,140,255,.28)}
-.c-abeber{--c:#ff2bd6;--f:rgba(255,43,214,.28)}
-.c-duelo{--c:#19f2ff;--f:rgba(25,242,255,.25)}
-.c-oca{--c:#ffe14d;--f:rgba(255,225,77,.32)}
-.c-laberinto{--c:#5dff9a;--f:rgba(93,255,154,.25)}
-.c-reglas{--c:#8b5cff;--f:rgba(139,92,255,.3)}
-.c-cultural{--c:#ff9d2b;--f:rgba(255,157,43,.28)}
-.c-hipnosis{--c:#c084fc;--f:rgba(192,132,252,.3)}
-.c-carcel{--c:#9aa0b4;--f:rgba(154,160,180,.28)}
-.c-muerte{--c:#ff5c7a;--f:rgba(255,92,122,.35)}
-.c-patinazo{--c:#ffb3c1;--f:rgba(255,179,193,.28)}
+.escena{perspective:1100px;margin-top:6px;padding:0 2px 10px}
+.marco{padding:8px;border-radius:20px;background:linear-gradient(145deg,#3a1f6b,#1b0f36 55%,#4a1659);box-shadow:0 0 0 2px rgba(255,43,214,.55),0 0 26px rgba(255,43,214,.35),0 24px 34px rgba(0,0,0,.65);transform:rotateX(16deg);transform-origin:50% 100%;transform-style:preserve-3d}
+#tablero{position:relative;display:grid;grid-template-columns:repeat(9,1fr);gap:3px;transform-style:preserve-3d}
+.cel{position:relative;aspect-ratio:1;border-radius:7px;border:1px solid var(--c);background:linear-gradient(160deg,var(--f),rgba(8,4,18,.85));box-shadow:0 3px 0 rgba(0,0,0,.55),0 5px 7px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.18);overflow:hidden}
+.cel .nn{position:absolute;top:1px;left:3px;font-size:.55rem;opacity:.9;text-shadow:0 1px 2px #000}
+.cel .ic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.05rem;padding-bottom:3px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))}
+.cel.actual{outline:2px solid #fff;box-shadow:0 0 14px #fff,0 3px 0 rgba(0,0,0,.55);z-index:2}
+.cel.aterriza{animation:aterriza .55s ease-out}
+@keyframes aterriza{0%{box-shadow:0 0 0 0 rgba(255,255,255,.95)}100%{box-shadow:0 0 0 14px rgba(255,255,255,0)}}
+#fichas{position:absolute;inset:0;pointer-events:none;transform-style:preserve-3d}
+.peon{position:absolute;left:0;top:0;transition:transform .24s cubic-bezier(.4,.1,.3,1);will-change:transform;transform-style:preserve-3d}
+.peon.vuelo{transition:transform .75s cubic-bezier(.35,.05,.25,1)}
+.peon .cuerpo{position:relative;width:100%;height:100%;transform-origin:50% 100%}
+.peon.salta .cuerpo{animation:salto .24s ease-out}
+.peon.vuelo .cuerpo{animation:vuelo .75s ease-in-out}
+@keyframes salto{0%{transform:translateY(0) scale(1.08,.9)}45%{transform:translateY(-70%) scale(.94,1.1)}100%{transform:translateY(0) scale(1.08,.9)}}
+@keyframes vuelo{0%{transform:translateY(0) scale(1)}50%{transform:translateY(-160%) scale(1.15)}100%{transform:translateY(0) scale(1)}}
+.peon .sombra{position:absolute;left:8%;right:8%;bottom:-2px;height:20%;border-radius:50%;background:radial-gradient(rgba(0,0,0,.7),transparent 72%)}
+.peon .torso{position:absolute;left:6%;right:6%;bottom:2%;height:50%;background:radial-gradient(ellipse at 50% 20%,rgba(255,255,255,.9) 0,var(--col) 34%,rgba(0,0,0,.55) 100%);clip-path:polygon(28% 0,72% 0,100% 100%,0 100%);border-radius:45% 45% 55% 55%}
+.peon .cabeza{position:absolute;left:22%;right:22%;top:2%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 32% 28%,#fff 0,var(--col) 40%,rgba(0,0,0,.6) 100%);box-shadow:0 2px 3px rgba(0,0,0,.55)}
+.peon .letra{position:absolute;left:0;right:0;top:10%;text-align:center;font-size:.58rem;font-weight:900;color:rgba(0,0,0,.7);text-shadow:0 0 2px rgba(255,255,255,.8)}
 #leyenda{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .jug{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);font-size:.82rem}
 .jug.act{border-color:#ffe14d;box-shadow:0 0 10px rgba(255,225,77,.6)}
 .jug .pt{width:10px;height:10px;border-radius:50%}
 #norma{margin-top:10px;padding:10px 12px;font-size:.9rem}
-#dado{font-size:3.6rem;text-align:center;line-height:1;margin:6px 0}
+.escenaDado{height:128px;display:flex;align-items:center;justify-content:center;perspective:520px;margin:2px 0 4px}
+.salto{animation:saltoDado 1.15s ease-in-out}
+@keyframes saltoDado{0%{transform:translateY(0)}35%{transform:translateY(-34px)}70%{transform:translateY(0)}82%{transform:translateY(-9px)}100%{transform:translateY(0)}}
+#cubo{position:relative;width:78px;height:78px;transform-style:preserve-3d;transform:rotateX(-18deg) rotateY(22deg)}
+#cubo.rueda{transition:transform 1.1s cubic-bezier(.15,.7,.2,1)}
+.cara{position:absolute;width:78px;height:78px;border-radius:14px;background:linear-gradient(145deg,#ffffff,#d9d3ee 60%,#b9afd8);box-shadow:inset 0 0 10px rgba(80,50,140,.35);display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);padding:11px;backface-visibility:hidden;border:1px solid rgba(120,100,180,.5)}
+.cara i{display:block;width:100%;height:100%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ff7bd9,#c4119a 70%);box-shadow:inset 0 -2px 3px rgba(0,0,0,.35)}
+.cara.c1 i{background:radial-gradient(circle at 35% 30%,#ff7a7a,#c40d1b 70%)}
+.cara.f1{transform:translateZ(39px)}
+.cara.f6{transform:rotateY(180deg) translateZ(39px)}
+.cara.f2{transform:rotateY(90deg) translateZ(39px)}
+.cara.f5{transform:rotateY(-90deg) translateZ(39px)}
+.cara.f3{transform:rotateX(90deg) translateZ(39px)}
+.cara.f4{transform:rotateX(-90deg) translateZ(39px)}
+.sombraDado{width:70px;height:12px;border-radius:50%;background:radial-gradient(rgba(0,0,0,.55),transparent 70%);margin:-10px auto 4px}
 @keyframes brillo{0%{background-position:0% 50%}100%{background-position:300% 50%}}
 @keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
 button.tirar{font-family:"Bungee","Rubik",sans-serif!important;font-weight:400!important;font-size:1.25rem!important;padding:18px!important;color:#1a0610!important;background:linear-gradient(100deg,#ffe14d,#ff2bd6,#19f2ff,#ffe14d)!important;background-size:300% 100%!important;border:0!important;animation:brillo 3s linear infinite,latido 1.4s ease-in-out infinite!important}
 @media (prefers-reduced-motion:reduce){button.tirar{animation:none!important}}
+#carta.anim{animation:subirCarta .35s ease-out}
+@keyframes subirCarta{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 #carta .titulo{font-family:"Bungee","Rubik",sans-serif;font-size:1.25rem;color:var(--amarillo);text-shadow:0 0 10px rgba(255,225,77,.5);margin:0 0 6px}
 #carta .num{opacity:.75;font-size:.85rem}
 #carta .texto{font-size:1.05rem;margin:8px 0}
 #carta .aviso{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(255,225,77,.1);border:1px solid rgba(255,225,77,.4);font-size:.95rem}
 .chk{display:flex;align-items:center;gap:10px;margin-top:8px}
 .chk input{width:22px;height:22px;margin:0}
+@media (prefers-reduced-motion:reduce){.peon{transition:none!important}.peon .cuerpo,.cel.aterriza,.salto{animation:none!important}#cubo.rueda{transition:none!important}}
+.confeti{position:fixed;top:-12px;width:9px;height:14px;z-index:50;pointer-events:none;animation:cae linear forwards}
+@keyframes cae{to{transform:translateY(110vh) rotate(720deg)}}
+#sonido{width:auto;padding:6px 12px;font-size:.9rem;margin-top:8px}
 .pie{font-size:.8rem;opacity:.7;text-align:center;margin-top:18px}
 .reglas p{margin:6px 0}
 </style></head>
@@ -89,12 +110,13 @@ button.tirar{font-family:"Bungee","Rubik",sans-serif!important;font-weight:400!i
 </section>
 
 <section id="juego">
-  <div id="tablero"></div>
+  <div class="escena"><div class="marco"><div id="tablero"></div></div></div>
   <div id="leyenda"></div>
+  <button id="sonido" type="button">🔊 Sonido: sí</button>
   <div id="norma" class="zona oculto"></div>
   <div id="panel" class="zona" style="margin-top:12px">
     <div id="turnoTxt" style="font-size:1.1rem;font-weight:700"></div>
-    <div id="dado">🎲</div>
+    <div class="escenaDado"><div id="contenedorDado"><div id="cubo"></div></div></div><div class="sombraDado"></div>
     <div id="carta" class="oculto"></div>
     <div id="acciones"></div>
   </div>
@@ -123,13 +145,16 @@ const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) 
 const PANTALLAS = ["edad", "cfg", "juego", "fin"];
 const META = 62, COLS = 9;
 const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#5dff9a", "#8b5cff", "#ff9d2b", "#ff5c7a", "#ffffff"];
-const CARAS = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
 const UNIDADES = { sorbo: ["sorbo", "sorbos"], trago: ["trago", "tragos"], vaso: ["vaso", "vasos"] };
 const TEMAS = ["Marcas de coche", "Países de Europa", "Series de televisión", "Cantantes españoles", "Equipos de fútbol", "Frutas", "Capitales del mundo", "Películas de animación", "Cócteles", "Marcas de bebida", "Animales de granja", "Deportes", "Ciudades de España", "Instrumentos musicales", "Marcas de ropa", "Superhéroes", "Postres", "Profesiones", "Colores", "Juegos de mesa"];
+const PIPS = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+const ROT = { 1: [0, 0], 2: [0, -90], 3: [-90, 0], 4: [90, 0], 5: [0, 90], 6: [0, 180] };
 let modo = "alcohol", unidad = "trago", J = [], turno = 0, norma = "", ultima = null;
+let celdas = [], peones = [], visual = [], capa = null, baseX = 0, baseY = 0, sonidoOn = true, audio = null;
 
 // <motor>
 function destino(pos, d) { const p = pos + d; return p <= META ? p : META - (p - META); }
+function ruta(pos, d) { const r = []; let p = pos, dir = 1; for (let i = 0; i < d; i++) { if (p === META) dir = -1; p += dir; r.push(p); } return r; }
 function celda(n) { const f = Math.floor((n - 1) / COLS), k = (n - 1) % COLS; return { fila: f, col: f % 2 === 0 ? k : COLS - 1 - k }; }
 function d6() { return 1 + Math.floor(Math.random() * 6); }
 function medida(u, n) { return n + " " + UNIDADES[u][n === 1 ? 0 : 1]; }
@@ -144,6 +169,31 @@ function texto(c, modo, u) {
 function rivales(jugadores, i) { const r = []; jugadores.forEach((j, k) => { if (k !== i && !j.protegido) r.push(k); }); return r; }
 function duelo(rnd) { let x, y; do { x = rnd(); y = rnd(); } while (x === y); return { x: x, y: y }; }
 // </motor>
+
+// ---------- sonido ----------
+function beep(f, d, tipo, vol) {
+  if (!sonidoOn) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = tipo || "sine";
+    o.frequency.value = f;
+    g.gain.value = vol || 0.05;
+    o.connect(g);
+    g.connect(audio.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + d);
+    o.stop(audio.currentTime + d);
+  } catch (e) {}
+}
+function sonido(t) {
+  if (t === "paso") beep(520, 0.06, "triangle");
+  else if (t === "dado") [0, 1, 2, 3, 4, 5].forEach((i) => setTimeout(() => beep(170 + Math.random() * 140, 0.05, "square", 0.03), i * 130));
+  else if (t === "aterriza") beep(260, 0.18, "sine", 0.07);
+  else if (t === "vuelo") { beep(400, 0.1); setTimeout(() => beep(600, 0.12), 90); setTimeout(() => beep(800, 0.16), 180); }
+  else if (t === "gana") [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => beep(f, 0.25, "triangle", 0.08), i * 160));
+}
+function vibra(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
 
 function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
 
@@ -162,21 +212,98 @@ function pintarNombres(n) {
 }
 const numJ = () => $("nombres").querySelectorAll("input").length;
 
-function pintarTablero() {
+  // ---------- dado 3D ----------
+function construirDado() {
+  const cubo = $("cubo");
+  cubo.innerHTML = "";
+  for (let v = 1; v <= 6; v++) {
+    const cara = el("div", "", "cara f" + v + (v === 1 ? " c1" : ""));
+    PIPS[v].forEach((p) => {
+      const i = document.createElement("i");
+      i.style.gridRow = String(Math.ceil(p / 3));
+      i.style.gridColumn = String(((p - 1) % 3) + 1);
+      cara.append(i);
+    });
+    cubo.append(cara);
+  }
+  cubo.style.transform = "rotateX(-18deg) rotateY(22deg)";
+}
+
+function lanzar(cb) {
+  const v = d6();
+  const cubo = $("cubo"), cont = $("contenedorDado");
+  cont.classList.remove("salto");
+  void cont.offsetWidth;
+  cont.classList.add("salto");
+  cubo.classList.add("rueda");
+  baseX += 720;
+  baseY += 1080;
+  cubo.style.transform = "rotateX(-18deg) rotateY(22deg) rotateX(" + (baseX + ROT[v][0]) + "deg) rotateY(" + (baseY + ROT[v][1]) + "deg)";
+  sonido("dado");
+  setTimeout(() => cb(v), 1250);
+}
+
+// ---------- tablero y peones ----------
+function construirTablero() {
   const t = $("tablero");
   t.innerHTML = "";
-  const actual = J[turno] ? J[turno].pos : 0;
+  celdas = [];
   CASILLAS.forEach((c) => {
     const { fila, col } = celda(c.n);
-    const d = el("div", "", "cel c-" + c.t + (c.n === actual ? " actual" : ""));
+    const d = el("div", "", "cel c-" + c.t);
     d.style.gridRow = String(7 - fila);
     d.style.gridColumn = String(col + 1);
     d.append(el("span", String(c.n), "nn"), el("span", c.i, "ic"));
-    const f = el("div", "", "fichas");
-    J.forEach((j) => { if (j.pos === c.n) { const p = el("span", "", "fi"); p.style.background = j.color; f.append(p); } });
-    d.append(f);
+    celdas[c.n] = d;
     t.append(d);
   });
+  capa = el("div", "", "");
+  capa.id = "fichas";
+  t.append(capa);
+  peones = J.map((j) => {
+    const p = el("div", "", "peon");
+    p.style.setProperty("--col", j.color);
+    const cu = el("div", "", "cuerpo");
+    cu.append(el("div", "", "sombra"), el("div", "", "torso"), el("div", "", "cabeza"), el("div", j.nombre.slice(0, 1).toUpperCase(), "letra"));
+    p.append(cu);
+    capa.append(p);
+    return p;
+  });
+  visual = J.map(() => 1);
+}
+
+function ubicarTodos() {
+  if (!celdas[1]) return;
+  const cw = celdas[1].offsetWidth || 36, ch = celdas[1].offsetHeight || 36;
+  J.forEach((j, k) => {
+    const n = visual[k], c = celdas[n], p = peones[k];
+    const grupo = [];
+    visual.forEach((v, i) => { if (v === n) grupo.push(i); });
+    const idx = grupo.indexOf(k), m = grupo.length;
+    const s = m > 1 ? 0.78 : 1;
+    const pw = cw * 0.58 * s, ph = cw * 0.84 * s;
+    p.style.width = pw + "px";
+    p.style.height = ph + "px";
+    let dx = 0, dy = 0;
+    if (m > 1) {
+      const cols = Math.min(m, 4), fila = Math.floor(idx / 4);
+      dx = ((idx % 4) - (cols - 1) / 2) * cw * 0.27;
+      dy = fila * ch * 0.2 - (m > 4 ? ch * 0.08 : 0);
+    }
+    const x = (c.offsetLeft || 0) + cw / 2 - pw / 2 + dx;
+    const y = (c.offsetTop || 0) + ch * 0.9 - ph + dy;
+    p.style.transform = "translate(" + x + "px," + y + "px)";
+    p.style.zIndex = String(Math.round(y));
+  });
+  resaltar();
+}
+
+function resaltar() {
+  const act = visual[turno];
+  celdas.forEach((c, n) => { if (c) c.classList.toggle("actual", n === act); });
+}
+
+function pintarLeyenda() {
   const l = $("leyenda");
   l.innerHTML = "";
   J.forEach((j, k) => {
@@ -190,14 +317,42 @@ function pintarTablero() {
   else $("norma").classList.add("oculto");
 }
 
-function lanzar(cb) {
-  const dado = $("dado");
-  let k = 0;
-  const paso = () => {
-    if (k++ < 10) { dado.textContent = CARAS[d6() - 1]; setTimeout(paso, 70); }
-    else { const v = d6(); dado.textContent = CARAS[v - 1]; setTimeout(() => cb(v), 350); }
+function reflow(e) { void e.offsetWidth; }
+function aterrizar(n) {
+  const c = celdas[n];
+  if (!c) return;
+  c.classList.remove("aterriza");
+  reflow(c);
+  c.classList.add("aterriza");
+  sonido("aterriza");
+  vibra(25);
+}
+
+function recorrer(k, lista, cb) {
+  let i = 0;
+  const p = peones[k];
+  const sig = () => {
+    if (i >= lista.length) return cb();
+    const n = lista[i++];
+    p.classList.remove("salta");
+    reflow(p);
+    p.classList.add("salta");
+    visual[k] = n;
+    ubicarTodos();
+    sonido("paso");
+    setTimeout(sig, 270);
   };
-  paso();
+  sig();
+}
+
+function volarA(j, n, cb) {
+  const k = J.indexOf(j), p = peones[k];
+  j.pos = n;
+  p.classList.add("vuelo");
+  visual[k] = n;
+  ubicarTodos();
+  sonido("vuelo");
+  setTimeout(() => { p.classList.remove("vuelo"); aterrizar(n); pintarLeyenda(); cb(); }, 800);
 }
 
 function limpiarAcciones() { $("acciones").innerHTML = ""; }
@@ -210,6 +365,9 @@ function cartaBase(c, extraTxt) {
   carta.append(el("div", "Casilla " + c.n, "num"), el("p", c.i + " " + c.ti, "titulo"), el("p", texto(c, modo, unidad), "texto"));
   if (extraTxt) carta.append(el("div", extraTxt, "aviso"));
   carta.classList.remove("oculto");
+  carta.classList.remove("anim");
+  reflow(carta);
+  carta.classList.add("anim");
   return carta;
 }
 
@@ -218,7 +376,8 @@ function iniciarTurno() {
   const j = J[turno];
   j.protegido = false;
   j.hipnosis = false;
-  pintarTablero();
+  pintarLeyenda();
+  resaltar();
   $("turnoTxt").textContent = "Turno de " + j.nombre;
   limpiarAcciones();
   if (j.laberinto) return faseLaberinto(j);
@@ -234,9 +393,15 @@ function finTurno(repite) {
 function tirarYMover(j) {
   limpiarAcciones();
   lanzar((d) => {
+    $("turnoTxt").textContent = j.nombre + " ha sacado un " + d;
+    const k = J.indexOf(j);
+    const camino = ruta(j.pos, d);
     j.pos = destino(j.pos, d);
-    pintarTablero();
-    aplicar(j, j.pos);
+    recorrer(k, camino, () => {
+      aterrizar(j.pos);
+      pintarLeyenda();
+      aplicar(j, j.pos);
+    });
   });
 }
 
@@ -246,7 +411,7 @@ function faseLaberinto(j) {
   $("acciones").append(boton("🎲 Intentar salir", () => {
     limpiarAcciones();
     lanzar((d) => {
-      if (d >= 5) { j.laberinto = false; pintarTablero(); cartaBase(c, "¡Has salido del laberinto con un " + d + "! En tu próximo turno avanzas con normalidad."); }
+      if (d >= 5) { j.laberinto = false; pintarLeyenda(); cartaBase(c, "¡Has salido del laberinto con un " + d + "! En tu próximo turno avanzas con normalidad."); }
       else cartaBase(c, "Has sacado un " + d + ": sigues perdido. " + (modo === "sin" ? "Haz 10 segundos de baile." : "Bebes " + medida(unidad, 1) + "."));
       $("acciones").append(boton("Pasar el turno", () => finTurno(false), "pri"));
     });
@@ -264,7 +429,7 @@ function faseCarcel(j) {
 }
 function iniciarTurnoSinReset(j) {
   ocultarCarta();
-  pintarTablero();
+  pintarLeyenda();
   limpiarAcciones();
   $("acciones").append(boton("🎲 TIRAR EL DADO", () => tirarYMover(j), "tirar"));
 }
@@ -279,15 +444,16 @@ function aplicar(j, n) {
   const c = CASILLAS[n - 1];
   switch (c.t) {
     case "meta": return ganar(j);
-    case "oca": return carta(c, () => { j.pos = c.x; pintarTablero(); if (c.x === META) return ganar(j); finTurno(true); });
+    case "oca": return carta(c, () => { limpiarAcciones(); volarA(j, c.x, () => { if (c.x === META) return ganar(j); finTurno(true); }); });
     case "laberinto": j.laberinto = true; return carta(c, () => finTurno(false));
     case "posada": j.protegido = true; return carta(c, () => finTurno(false));
     case "hipnosis": j.hipnosis = true; return carta(c, () => finTurno(false));
-    case "muerte": return carta(c, () => { j.pos = 1; pintarTablero(); finTurno(false); });
+    case "muerte": return carta(c, () => { limpiarAcciones(); volarA(j, 1, () => finTurno(false)); });
     case "carcel": {
       J.forEach((o) => { if (o !== j && o.preso && o.pos === n) o.preso = 0; });
       const f = d6() + d6();
       j.preso = f;
+      pintarLeyenda();
       return carta(c, () => finTurno(false), "Tu fianza: " + (modo === "sin" ? f + " pruebas de 10 segundos" : medida(unidad, f)) + ". Si había alguien preso aquí, queda libre.");
     }
     case "patinazo":
@@ -296,11 +462,11 @@ function aplicar(j, n) {
         limpiarAcciones();
         $("acciones").append(
           boton(modo === "sin" ? "Aguanto a la pata coja" : "Bebo " + medida(unidad, 4) + " de golpe", () => finTurno(false), "pri"),
-          boton("Retrocedo a la casilla 12", () => { j.pos = 12; pintarTablero(); aplicar(j, 12); })
+          boton("Retrocedo a la casilla 12", () => { limpiarAcciones(); volarA(j, 12, () => aplicar(j, 12)); })
         );
         return;
       }
-      return carta(c, () => { j.pos = c.x; pintarTablero(); aplicar(j, c.x); });
+      return carta(c, () => { limpiarAcciones(); volarA(j, c.x, () => aplicar(j, c.x)); });
     case "duelo": return faseDuelo(j, c);
     case "cultural": return faseCultural(j, c);
     case "reglas": return faseReglas(j, c);
@@ -367,10 +533,26 @@ function faseDuelo(j, c) {
   $("acciones").append(go);
 }
 
+function confeti() {
+  const f = $("fin");
+  for (let i = 0; i < 70; i++) {
+    const c = el("span", "", "confeti");
+    c.style.left = Math.round(Math.random() * 100) + "vw";
+    c.style.background = COLORES[i % COLORES.length];
+    c.style.animationDuration = (2.2 + Math.random() * 2.2) + "s";
+    c.style.animationDelay = (Math.random() * 0.8) + "s";
+    f.append(c);
+    setTimeout(() => { if (c.remove) c.remove(); }, 5200);
+  }
+}
+
 function ganar(j) {
   $("ganador").textContent = j.nombre + " gana la partida";
   $("premioFin").textContent = modo === "sin" ? "El campeón elige un reto para todos los demás." : "El campeón reparte " + medida(unidad, 3) + " como prefiera.";
   pantalla("fin");
+  sonido("gana");
+  vibra([80, 50, 80, 50, 160]);
+  confeti();
 }
 
 function nuevaPartida(nombres) {
@@ -378,7 +560,10 @@ function nuevaPartida(nombres) {
   turno = 0;
   norma = "";
   pantalla("juego");
-  iniciarTurno();
+  construirDado();
+  construirTablero();
+  const listo = () => { ubicarTodos(); iniciarTurno(); };
+  if (window.requestAnimationFrame) window.requestAnimationFrame(listo); else listo();
 }
 
 $("soyMayor").onclick = () => { pintarNombres(Math.max(2, numJ() || 2)); pantalla("cfg"); };
@@ -386,6 +571,7 @@ $("masJ").onclick = () => { if (numJ() < 8) pintarNombres(numJ() + 1); };
 $("menosJ").onclick = () => { if (numJ() > 2) pintarNombres(numJ() - 1); };
 $("modo").onchange = () => { $("unidadCaja").classList.toggle("oculto", $("modo").value === "sin"); };
 $("verReglas").onclick = () => $("reglas").classList.toggle("oculto");
+$("sonido").onclick = () => { sonidoOn = !sonidoOn; $("sonido").textContent = sonidoOn ? "🔊 Sonido: sí" : "🔇 Sonido: no"; };
 $("empezar").onclick = () => {
   modo = $("modo").value;
   unidad = $("unidad").value;
@@ -395,5 +581,6 @@ $("empezar").onclick = () => {
 };
 $("otra").onclick = () => nuevaPartida(ultima);
 $("alMenu").onclick = () => { window.location.href = "juegos.html"; };
+window.addEventListener("resize", () => { if (J.length) ubicarTodos(); });
 </script>
 </main></body></html>
