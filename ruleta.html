@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ruleta de socios</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+.caja{position:relative;width:320px;max-width:92%;margin:18px auto}
+#rueda{width:100%;height:auto;display:block;border-radius:50%;box-shadow:0 0 24px rgba(255,43,214,.55),0 0 50px rgba(25,242,255,.25);transition:transform 5.5s cubic-bezier(.12,.7,.1,1)}
+.puntero{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:26px solid #ffe14d;filter:drop-shadow(0 0 8px rgba(255,225,77,.8));z-index:2}
+button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
+.premio{text-align:center;padding:16px;margin-top:16px}
+.premio .nombre{font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem;color:var(--amarillo);text-shadow:0 0 12px rgba(255,225,77,.6);margin:6px 0}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="ofertas.html">← Ofertas</a></p>
+<header class="marca"><h1>Ruleta</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <div class="caja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
+  <button id="girar" class="pri grande" type="button">¡Girar la ruleta!</button>
+  <p id="aviso" style="text-align:center;opacity:.85">Solo puedes girar una vez. Si te toca premio, enséñaselo al camarero para canjearlo.</p>
+  <div id="premio" class="zona premio oculto"></div>
+  <p id="msg" role="status"></p>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#8b5cff", "#5dff9a", "#ff5c7a"];
+let usuario = null, config = null, premios = [];
+
+// <logica>
+function resultado(ms, premios) {
+  const total = premios.reduce((s, p) => s + p.peso, 0);
+  const x = ((ms % 1000) / 1000) * total;
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
+  return { idx: idx, angulo: (360 * x) / total };
+}
+// </logica>
+
+function dibujar(lista) {
+  const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2;
+  g.clearRect(0, 0, c.width, c.height);
+  const total = lista.reduce((s, p) => s + p.peso, 0);
+  let a0 = 0;
+  lista.forEach((p, i) => {
+    const a1 = a0 + (p.peso / total) * Math.PI * 2;
+    g.beginPath();
+    g.moveTo(R, R);
+    g.arc(R, R, R - 4, a0 - Math.PI / 2, a1 - Math.PI / 2);
+    g.closePath();
+    g.fillStyle = COLORES[i % COLORES.length];
+    g.fill();
+    g.strokeStyle = "#0a0612";
+    g.lineWidth = 4;
+    g.stroke();
+    g.save();
+    g.translate(R, R);
+    g.rotate((a0 + a1) / 2 - Math.PI / 2);
+    g.fillStyle = "#0a0612";
+    g.font = "bold 30px Rubik, sans-serif";
+    g.textAlign = "right";
+    g.textBaseline = "middle";
+    const t = p.nombre.length > 16 ? p.nombre.slice(0, 15) + "…" : p.nombre;
+    g.fillText(t, R - 28, 0);
+    g.restore();
+    a0 = a1;
+  });
+  g.beginPath();
+  g.arc(R, R, 34, 0, Math.PI * 2);
+  g.fillStyle = "#0a0612";
+  g.fill();
+  g.strokeStyle = "#ffe14d";
+  g.lineWidth = 6;
+  g.stroke();
+}
+
+function girarA(angulo, tras) {
+  const r = $("rueda");
+  const final = 360 * 6 + (360 - angulo);
+  r.style.transform = "rotate(" + final + "deg)";
+  setTimeout(tras, 5700);
+}
+
+function mostrarPremio(nombre, canjeado, cuando) {
+  const p = $("premio");
+  p.innerHTML = "";
+  const a = document.createElement("div");
+  a.textContent = canjeado ? "Tu premio (ya canjeado):" : "¡Te ha tocado!";
+  const b = document.createElement("div");
+  b.className = "nombre";
+  b.textContent = nombre;
+  const c = document.createElement("div");
+  c.textContent = canjeado ? "Canjeado" + (cuando ? " el " + cuando : "") + "." : "Enséñaselo al camarero para canjearlo. Pendiente de canjear.";
+  p.append(a, b, c);
+  p.classList.remove("oculto");
+}
+
+async function girar() {
+  $("girar").disabled = true;
+  $("msg").textContent = "";
+  try {
+    await setDoc(doc(db, "ruleta_giros", usuario.uid), { uid: usuario.uid, giro: serverTimestamp(), version: config.version });
+    const s = await getDoc(doc(db, "ruleta_giros", usuario.uid));
+    const r = resultado(s.data().giro.toMillis(), premios);
+    $("girar").classList.add("oculto");
+    $("aviso").classList.add("oculto");
+    girarA(r.angulo, () => mostrarPremio(premios[r.idx].nombre, false, ""));
+  } catch (e) {
+    $("msg").textContent = "No se ha podido girar: " + (e.code === "permission-denied" ? "ya has girado o la ruleta no está disponible." : (e.code || e.message));
+  }
+}
+$("girar").onclick = girar;
+
+onAuthStateChanged(auth, async (u) => {
+  usuario = u;
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const f = (await getDoc(doc(db, "users", u.uid))).data() || {};
+    if (f.socio !== true && f.role !== "admin") { $("estado").textContent = "La ruleta es solo para socios. Pregunta en el bar cómo hacerte socio."; return; }
+    const mio = await getDoc(doc(db, "ruleta_giros", u.uid));
+    if (mio.exists()) {
+      const g = mio.data();
+      const v = await getDoc(doc(db, "ruleta_versiones", String(g.version)));
+      premios = v.data().premios;
+      const r = resultado(g.giro.toMillis(), premios);
+      dibujar(premios);
+      $("rueda").style.transition = "none";
+      $("rueda").style.transform = "rotate(" + (360 * 6 + (360 - r.angulo)) + "deg)";
+      $("girar").classList.add("oculto");
+      $("aviso").classList.add("oculto");
+      mostrarPremio(premios[r.idx].nombre, g.canjeado === true, g.canjeadoEn && g.canjeadoEn.toDate ? g.canjeadoEn.toDate().toLocaleDateString("es-ES") : "");
+    } else {
+      const c = await getDoc(doc(db, "ruleta_config", "actual"));
+      if (!c.exists() || c.data().activa !== true) { $("estado").textContent = "La ruleta no está disponible ahora mismo. Vuelve pronto."; return; }
+      config = c.data();
+      const v = await getDoc(doc(db, "ruleta_versiones", String(config.version)));
+      premios = v.data().premios;
+      dibujar(premios);
+    }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
