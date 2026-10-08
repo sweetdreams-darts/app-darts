@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fotos (administrador)</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+label{display:block;margin-top:14px;font-weight:700}
+input,select,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;margin-top:16px}
+#msg{min-height:1.4em;color:#ffd166}
+#prog{margin-top:12px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="fotos.html">← Fotos</a> · <a href="admin.html">Panel</a></p>
+<h1>Subir fotos</h1>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <label for="archivos">Elige una o varias fotos</label>
+  <input id="archivos" type="file" accept="image/*" multiple>
+  <label for="titulo">Título o pie de foto (opcional, para todas)</label>
+  <input id="titulo" maxlength="80" placeholder="Por ejemplo: Noche de liga">
+  <label for="quien">¿Quién las ve?</label>
+  <select id="quien"><option value="fotos">Todos los usuarios</option><option value="fotos_socios">Solo socios</option></select>
+  <button id="subir">Subir fotos</button>
+  <p id="prog"></p>
+  <p id="msg" role="status"></p>
+  <p style="opacity:.8">Las fotos se reducen automáticamente para que carguen rápido. Si en una foto se reconoce a personas, asegúrate de que están de acuerdo en que se publique.</p>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+
+function reducir(file, max, calidad, tope) {
+  return new Promise((ok, mal) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k);
+      c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      let q = calidad, d = c.toDataURL("image/jpeg", q);
+      while (d.length > tope && q > 0.3) { q -= 0.1; d = c.toDataURL("image/jpeg", q); }
+      ok(d);
+    };
+    img.onerror = () => mal(new Error("No se ha podido leer la foto " + file.name));
+    img.src = url;
+  });
+}
+
+$("subir").onclick = async () => {
+  const archivos = [...$("archivos").files];
+  if (!archivos.length) { $("msg").textContent = "Elige al menos una foto."; return; }
+  const col = $("quien").value;
+  $("subir").disabled = true;
+  $("msg").textContent = "";
+  let hechas = 0;
+  try {
+    for (const f of archivos) {
+      $("prog").textContent = "Subiendo " + (hechas + 1) + " de " + archivos.length + "…";
+      const miniatura = await reducir(f, 420, 0.72, 70000);
+      const grande = await reducir(f, 1100, 0.74, 450000);
+      const ref = doc(collection(db, col));
+      const b = writeBatch(db);
+      b.set(ref, { titulo: $("titulo").value.trim(), thumb: miniatura, creado: serverTimestamp() });
+      b.set(doc(db, col + "_g", ref.id), { imagen: grande });
+      await b.commit();
+      hechas++;
+    }
+    $("prog").textContent = "";
+    $("msg").textContent = "✔ Subidas " + hechas + " fotos.";
+    $("archivos").value = "";
+  } catch (e) {
+    $("prog").textContent = "";
+    $("msg").textContent = "Se subieron " + hechas + " fotos. Error: " + (e.code || e.message);
+  }
+  $("subir").disabled = false;
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
