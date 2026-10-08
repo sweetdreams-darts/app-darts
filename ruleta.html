@@ -5,10 +5,14 @@
 <style>
 body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:480px}
-.caja{position:relative;width:320px;max-width:92%;margin:18px auto}
+.ruedaCaja{position:relative;width:320px;max-width:92%;margin:22px auto 18px}
 #rueda{width:100%;height:auto;display:block;border-radius:50%;box-shadow:0 0 24px rgba(255,43,214,.55),0 0 50px rgba(25,242,255,.25);transition:transform 5.5s cubic-bezier(.12,.7,.1,1)}
 .puntero{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:26px solid #ffe14d;filter:drop-shadow(0 0 8px rgba(255,225,77,.8));z-index:2}
-button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
+@keyframes brillo{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+@keyframes latido{0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,225,77,.55),0 0 30px rgba(255,43,214,.4)}50%{transform:scale(1.04);box-shadow:0 0 34px rgba(255,43,214,.85),0 0 54px rgba(255,225,77,.65)}}
+button#girar{width:100%;margin-top:10px;font-family:"Bungee","Rubik",sans-serif!important;font-weight:400!important;font-size:1.4rem!important;letter-spacing:.03em;padding:20px!important;color:#1a0610!important;background:linear-gradient(100deg,#ffe14d,#ff2bd6,#19f2ff,#ffe14d)!important;background-size:300% 100%!important;border:0!important;animation:brillo 3s linear infinite,latido 1.4s ease-in-out infinite!important}
+button#girar:disabled{opacity:.6;animation:none!important}
+@media (prefers-reduced-motion:reduce){button#girar{animation:none!important}}
 .premio{text-align:center;padding:16px;margin-top:16px}
 .premio .nombre{font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem;color:var(--amarillo);text-shadow:0 0 12px rgba(255,225,77,.6);margin:6px 0}
 .oculto{display:none!important}
@@ -18,8 +22,8 @@ button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
 <header class="marca"><h1>Ruleta</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
-  <div class="caja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
-  <button id="girar" class="pri grande" type="button">¡Girar la ruleta!</button>
+  <div class="ruedaCaja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
+  <button id="girar" type="button">¡GIRAR LA RULETA!</button>
   <p id="aviso" style="text-align:center;opacity:.85">Solo puedes girar una vez. Si te toca premio, enséñaselo al camarero para canjearlo.</p>
   <div id="premio" class="zona premio oculto"></div>
   <p id="msg" role="status"></p>
@@ -52,39 +56,46 @@ let usuario = null, config = null, premios = [];
 function resultado(ms, premios) {
   const total = premios.reduce((s, p) => s + p.peso, 0);
   const x = ((ms % 1000) / 1000) * total;
-  let acum = 0, idx = premios.length - 1;
-  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
-  return { idx: idx, angulo: (360 * x) / total };
+  let acum = 0, idx = premios.length - 1, frac = 0.5;
+  for (let i = 0; i < premios.length; i++) {
+    if (x < acum + premios[i].peso) { idx = i; frac = (x - acum) / premios[i].peso; break; }
+    acum += premios[i].peso;
+  }
+  return { idx: idx, angulo: (idx + 0.1 + 0.8 * frac) * (360 / premios.length) };
 }
 // </logica>
 
 function dibujar(lista) {
-  const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2;
+  const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2, n = lista.length;
   g.clearRect(0, 0, c.width, c.height);
-  const total = lista.reduce((s, p) => s + p.peso, 0);
-  let a0 = 0;
+  const paso = (Math.PI * 2) / n;
   lista.forEach((p, i) => {
-    const a1 = a0 + (p.peso / total) * Math.PI * 2;
+    const a0 = i * paso, a1 = a0 + paso, m = (a0 + a1) / 2;
+    let color = COLORES[i % COLORES.length];
+    if (n > 1 && i === n - 1 && i % COLORES.length === 0) color = COLORES[2];
     g.beginPath();
     g.moveTo(R, R);
     g.arc(R, R, R - 4, a0 - Math.PI / 2, a1 - Math.PI / 2);
     g.closePath();
-    g.fillStyle = COLORES[i % COLORES.length];
+    g.fillStyle = color;
     g.fill();
     g.strokeStyle = "#0a0612";
     g.lineWidth = 4;
     g.stroke();
     g.save();
     g.translate(R, R);
-    g.rotate((a0 + a1) / 2 - Math.PI / 2);
+    g.rotate(m - Math.PI / 2);
+    const izquierda = m > Math.PI;
+    if (izquierda) g.rotate(Math.PI);
     g.fillStyle = "#0a0612";
-    g.font = "bold 30px Rubik, sans-serif";
-    g.textAlign = "right";
     g.textBaseline = "middle";
-    const t = p.nombre.length > 16 ? p.nombre.slice(0, 15) + "…" : p.nombre;
-    g.fillText(t, R - 28, 0);
+    g.textAlign = izquierda ? "left" : "right";
+    const t = p.nombre.length > 26 ? p.nombre.slice(0, 25) + "…" : p.nombre;
+    let tam = 30;
+    g.font = "bold " + tam + "px Rubik, sans-serif";
+    while (g.measureText(t).width > R - 28 - 52 && tam > 15) { tam -= 2; g.font = "bold " + tam + "px Rubik, sans-serif"; }
+    g.fillText(t, izquierda ? -(R - 28) : R - 28, 0);
     g.restore();
-    a0 = a1;
   });
   g.beginPath();
   g.arc(R, R, 34, 0, Math.PI * 2);
