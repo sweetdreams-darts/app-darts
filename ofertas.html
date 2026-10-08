@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ofertas</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+.oferta{padding:14px;margin-top:14px}
+.oferta img{width:100%;border-radius:12px;display:block;margin-bottom:10px}
+.oferta h2{margin:0 0 6px;font-size:1.1rem}
+.oferta p{margin:6px 0;white-space:pre-line}
+.etq{display:inline-block;padding:2px 10px;border-radius:999px;font-weight:700;font-size:.8rem;margin-bottom:8px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Ofertas</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <a id="gestionar" class="boton oculto" href="admin-ofertas.html">Gestionar ofertas</a>
+  <p id="aviso" class="oculto" style="color:var(--suave)">Hay ofertas exclusivas para socios. Pregunta en el bar cómo hacerte socio.</p>
+  <div id="lista"></div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const bonita = (s) => { const [y, m, d] = s.split("-").map(Number); return d + " " + MESES[m - 1] + " " + y; };
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const f = (await getDoc(doc(db, "users", u.uid))).data() || {};
+    const admin = f.role === "admin", ve = admin || f.socio === true;
+    const col = collection(db, "ofertas");
+    const q = ve ? query(col, where("activa", "==", true)) : query(col, where("activa", "==", true), where("soloSocios", "==", false));
+    const hoy = iso(new Date());
+    const ofs = (await getDocs(q)).docs.map((d) => d.data()).filter((o) => o.desde <= hoy && (!o.hasta || o.hasta >= hoy));
+    ofs.sort((a, b) => (b.desde < a.desde ? -1 : 1));
+    $("gestionar").classList.toggle("oculto", !admin);
+    $("aviso").classList.toggle("oculto", ve);
+    const lista = $("lista");
+    lista.innerHTML = "";
+    if (!ofs.length) lista.append(el("p", "Ahora mismo no hay ofertas. Vuelve pronto."));
+    for (const o of ofs) {
+      const c = el("div", "", "oferta zona");
+      if (o.soloSocios) c.append(el("span", "Solo socios", "etq rol"));
+      if (o.imagen) { const i = document.createElement("img"); i.src = o.imagen; i.alt = o.titulo; c.append(i); }
+      c.append(el("h2", o.titulo));
+      if (o.texto) c.append(el("p", o.texto));
+      c.append(el("small", o.hasta ? "Válida hasta el " + bonita(o.hasta) : "Sin fecha de fin"));
+      lista.append(c);
+    }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
