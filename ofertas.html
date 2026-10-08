@@ -10,6 +10,16 @@ main{width:100%;max-width:480px}
 .oferta h2{margin:0 0 6px;font-size:1.1rem}
 .oferta p{margin:6px 0;white-space:pre-line}
 .etq{display:inline-block;padding:2px 10px;border-radius:999px;font-weight:700;font-size:.8rem;margin-bottom:8px}
+@keyframes brilloFondo{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+@keyframes latidoB{0%,100%{box-shadow:0 0 16px rgba(255,225,77,.5),0 0 32px rgba(255,43,214,.35)}50%{box-shadow:0 0 28px rgba(255,225,77,.85),0 0 52px rgba(255,43,214,.7)}}
+@keyframes girarEmoji{to{transform:rotate(360deg)}}
+a.ruletaBanner{display:flex;align-items:center;gap:14px;padding:16px 18px;margin:0 0 14px;border-radius:18px;text-decoration:none;color:#1a0610!important;background:linear-gradient(100deg,#ffe14d,#ff9d2b,#ff2bd6,#8b5cff,#ffe14d)!important;background-size:300% 100%!important;border:2px solid #fff3b0!important;animation:brilloFondo 5s linear infinite,latidoB 1.6s ease-in-out infinite!important}
+.ruletaBanner .re{font-size:2.6rem;line-height:1;display:inline-block;animation:girarEmoji 4s linear infinite}
+.ruletaBanner .rt{display:flex;flex-direction:column;flex:1}
+.ruletaBanner strong{font-family:"Bungee","Rubik",sans-serif;font-weight:400;font-size:1.2rem;letter-spacing:.02em;color:#1a0610}
+.ruletaBanner small{color:#2a0a20!important;font-weight:600;font-size:.85rem}
+.ruletaBanner .rf{font-size:1.4rem;font-weight:900}
+@media (prefers-reduced-motion:reduce){a.ruletaBanner,.ruletaBanner .re{animation:none!important}}
 .oculto{display:none!important}
 </style></head>
 <body><main>
@@ -17,7 +27,7 @@ main{width:100%;max-width:480px}
 <header class="marca"><h1>Ofertas</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
-  <a id="aRuleta" class="boton oculto" href="ruleta.html">🎡 Ruleta de socios</a>
+  <a id="aRuleta" class="ruletaBanner oculto" href="ruleta.html"><span class="re">🎡</span><span class="rt"><strong>Ruleta de socios</strong><small id="rbSub">¡Gira una vez y gana un premio!</small></span><span class="rf">▶</span></a>
   <a id="gestionar" class="boton oculto" href="admin-ofertas.html">Gestionar ofertas</a>
   <a id="aRuletaAdmin" class="boton oculto" href="admin-ruleta.html">Gestionar la ruleta</a>
   <p id="aviso" class="oculto" style="color:var(--suave)">Hay ofertas exclusivas para socios. Pregunta en el bar cómo hacerte socio.</p>
@@ -58,6 +68,12 @@ onAuthStateChanged(auth, async (u) => {
     $("gestionar").classList.toggle("oculto", !admin);
     $("aRuletaAdmin").classList.toggle("oculto", !admin);
     $("aRuleta").classList.toggle("oculto", !ve);
+    if (ve) {
+      try {
+        const [g, c] = await Promise.all([getDoc(doc(db, "ruleta_giros", u.uid)), getDoc(doc(db, "ruleta_config", "actual"))]);
+        $("rbSub").textContent = g.exists() ? "Ya has girado · mira tu premio" : (c.exists() && c.data().activa === true ? "¡Gira una vez y gana un premio!" : "Ahora mismo no está disponible");
+      } catch (e) {}
+    }
     $("aviso").classList.toggle("oculto", ve);
     const lista = $("lista");
     lista.innerHTML = "";
