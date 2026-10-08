@@ -111,7 +111,7 @@ function llenarConfig() {
   for (const c of Object.keys(BANCO)) cat.add(new Option(c, c));
   const n = $("nPreg");
   n.innerHTML = "";
-  const opciones = modo === "solo" ? [5, 10, 15] : [3, 5, 8];
+  const opciones = modo === "solo" ? [10, 20, 30, 40] : [5, 10, 15];
   for (const v of opciones) n.add(new Option(modo === "solo" ? v + " preguntas" : v + " preguntas por jugador", v));
   n.value = modo === "solo" ? 10 : 5;
   $("nTxt").textContent = modo === "solo" ? "Número de preguntas" : "Preguntas por jugador";
