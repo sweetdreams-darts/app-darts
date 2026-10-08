@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fotos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h2{font-size:1.05rem;margin:22px 0 8px}
+.rejilla{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.rejilla img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block;cursor:pointer;border:1px solid rgba(255,43,214,.35)}
+button.mas{width:100%;margin-top:12px;padding:12px;font-size:1rem}
+#visor{position:fixed;inset:0;background:rgba(5,2,10,.96);z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px}
+#visor img{max-width:100%;max-height:70vh;border-radius:12px}
+#visor p{margin:10px 0 0;text-align:center}
+#visor .fila2{display:flex;gap:10px;width:100%;max-width:420px}
+#visor button{flex:1;margin-top:14px;padding:12px;font-size:1rem}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Fotos</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <a id="gestionar" class="boton oculto" href="admin-fotos.html">Subir y gestionar fotos</a>
+  <h2>Fotos del bar</h2>
+  <div id="rejilla" class="rejilla"></div>
+  <p id="vacio" class="oculto">Todavía no hay fotos. Vuelve pronto.</p>
+  <button id="mas" class="mas oculto">Ver más</button>
+  <div id="bloqueSocios" class="oculto">
+    <h2>Solo socios</h2>
+    <div id="rejillaS" class="rejilla"></div>
+    <p id="vacioS" class="oculto">Todavía no hay fotos para socios.</p>
+    <button id="masS" class="mas oculto">Ver más</button>
+  </div>
+</div>
+<div id="visor" class="oculto">
+  <img id="grande" alt="">
+  <p id="pie"></p>
+  <div class="fila2"><button id="cerrar">Cerrar</button><button id="borrar" class="peligro oculto">Borrar</button></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, deleteDoc, query, orderBy, limit, startAfter } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const POR_PAGINA = 24;
+let esAdmin = false, abierta = null;
+const estado = { fotos: { ultimo: null, ids: 0 }, fotos_socios: { ultimo: null, ids: 0 } };
+
+async function cargar(col, rejilla, vacio, mas) {
+  const e = estado[col];
+  const q = e.ultimo ? query(collection(db, col), orderBy("creado", "desc"), startAfter(e.ultimo), limit(POR_PAGINA)) : query(collection(db, col), orderBy("creado", "desc"), limit(POR_PAGINA));
+  const snap = await getDocs(q);
+  snap.forEach((d) => {
+    const v = d.data();
+    const i = document.createElement("img");
+    i.src = v.thumb;
+    i.alt = v.titulo || "Foto";
+    i.loading = "lazy";
+    i.onclick = () => abrir(col, d.id, v);
+    $(rejilla).append(i);
+    e.ids++;
+  });
+  if (snap.docs.length) e.ultimo = snap.docs[snap.docs.length - 1];
+  $(mas).classList.toggle("oculto", snap.docs.length < POR_PAGINA);
+  $(vacio).classList.toggle("oculto", e.ids > 0);
+}
+
+async function abrir(col, id, v) {
+  abierta = { col: col, id: id };
+  $("grande").src = v.thumb;
+  $("pie").textContent = v.titulo || "";
+  $("borrar").classList.toggle("oculto", !esAdmin);
+  $("visor").classList.remove("oculto");
+  try {
+    const g = await getDoc(doc(db, col + "_g", id));
+    if (g.exists() && abierta && abierta.id === id) $("grande").src = g.data().imagen;
+  } catch (e) {}
+}
+
+$("cerrar").onclick = () => { $("visor").classList.add("oculto"); abierta = null; };
+$("borrar").onclick = async () => {
+  if (!abierta || !confirm("¿Borrar esta foto?")) return;
+  try {
+    await deleteDoc(doc(db, abierta.col, abierta.id));
+    await deleteDoc(doc(db, abierta.col + "_g", abierta.id));
+    $("visor").classList.add("oculto");
+    abierta = null;
+    location.reload();
+  } catch (e) { alert("No se pudo borrar: " + (e.code || e.message)); }
+};
+$("mas").onclick = () => cargar("fotos", "rejilla", "vacio", "mas");
+$("masS").onclick = () => cargar("fotos_socios", "rejillaS", "vacioS", "masS");
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const f = (await getDoc(doc(db, "users", u.uid))).data() || {};
+    esAdmin = f.role === "admin";
+    const socio = esAdmin || f.socio === true;
+    $("gestionar").classList.toggle("oculto", !esAdmin);
+    $("bloqueSocios").classList.toggle("oculto", !socio);
+    $("rejilla").innerHTML = "";
+    $("rejillaS").innerHTML = "";
+    estado.fotos = { ultimo: null, ids: 0 };
+    estado.fotos_socios = { ultimo: null, ids: 0 };
+    await cargar("fotos", "rejilla", "vacio", "mas");
+    if (socio) await cargar("fotos_socios", "rejillaS", "vacioS", "masS");
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
