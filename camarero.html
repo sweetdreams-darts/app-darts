@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel de camarero</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h2{font-size:1.1rem;margin:26px 0 6px}
+input{width:100%;padding:12px;font-size:1rem;margin-top:8px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:10px}
+video{width:100%;border-radius:14px;background:#000;margin-top:10px}
+.res{padding:16px;margin-top:14px;text-align:center;border-radius:14px}
+.res.ok{border:2px solid #5dff9a!important;box-shadow:0 0 18px rgba(93,255,154,.35)!important}
+.res.nok{border:2px solid #ff5c7a!important;box-shadow:0 0 18px rgba(255,92,122,.35)!important}
+.res .est{font-size:1.2rem;font-weight:700}
+.res .nom{font-size:1.4rem;font-weight:700;margin:6px 0}
+.res .premio{margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,225,77,.12);border:1px solid rgba(255,225,77,.5)}
+.res .premio strong{display:block;font-family:"Bungee","Rubik",sans-serif;font-weight:400;font-size:1.3rem;color:#ffe14d;margin:4px 0}
+.card{padding:12px 14px;margin-top:10px}
+.card small{display:block;margin-top:3px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Camarero</h1></header>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <h2>Comprobar socio</h2>
+  <button id="abrir" class="pri" type="button">Abrir cámara y leer el carné</button>
+  <button id="parar" class="oculto" type="button">Parar la cámara</button>
+  <video id="video" playsinline muted class="oculto"></video>
+  <canvas id="lienzo" class="oculto"></canvas>
+  <p style="margin-bottom:0">O busca por número de socio</p>
+  <input id="num" type="number" inputmode="numeric" placeholder="Número de socio, por ejemplo 1">
+  <button id="buscar" type="button">Buscar</button>
+  <div id="resultado"></div>
+
+  <h2>Premios pendientes de canjear</h2>
+  <div id="pendientes"></div>
+  <button id="recargar" type="button">Actualizar la lista</button>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, updateDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let flujo = null, detector = null, bucle = null, pausa = 0, versiones = new Map();
+
+// <logica>
+function uidDeQR(texto) {
+  const t = String(texto || "").trim();
+  return t.startsWith("SD-SOCIO:") && t.length > 12 ? t.slice(9) : "";
+}
+function resultado(ms, premios) {
+  const total = premios.reduce((s, p) => s + p.peso, 0);
+  const x = ((ms % 1000) / 1000) * total;
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) {
+    if (x < acum + premios[i].peso) { idx = i; break; }
+    acum += premios[i].peso;
+  }
+  return idx;
+}
+// </logica>
+
+async function premiosDe(v) {
+  const k = String(v);
+  if (!versiones.has(k)) { const s = await getDoc(doc(db, "ruleta_versiones", k)); versiones.set(k, s.exists() ? s.data().premios : []); }
+  return versiones.get(k);
+}
+async function datosGiro(g) {
+  const lista = await premiosDe(g.version);
+  return lista.length ? lista[resultado(g.giro.toMillis(), lista)].nombre : "(premio desconocido)";
+}
+const fecha = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleDateString("es-ES") : "");
+
+async function canjear(uid) {
+  try {
+    await updateDoc(doc(db, "ruleta_giros", uid), { canjeado: true, canjeadoEn: serverTimestamp() });
+    $("msg").textContent = "✔ Premio marcado como canjeado.";
+    await mostrarSocio(uid, null);
+    await cargarPendientes();
+  } catch (e) { $("msg").textContent = "No se ha podido canjear: " + (e.code || e.message); }
+}
+
+async function mostrarSocio(uid, datos) {
+  const r = $("resultado");
+  r.innerHTML = "";
+  let f = datos;
+  if (!f) {
+    try { const s = await getDoc(doc(db, "users", uid)); f = s.exists() ? s.data() : null; }
+    catch (e) { f = null; }
+  }
+  if (!f || f.socio !== true) {
+    const c = el("div", "", "res zona nok");
+    c.append(el("div", "✘ NO ES SOCIO", "est"), el("small", "O el código no es de un socio actual."));
+    r.append(c);
+    if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+    return;
+  }
+  const c = el("div", "", "res zona ok");
+  c.append(el("div", "✔ SOCIO ACTIVO", "est"), el("div", f.nombre || "(sin nombre)", "nom"));
+  if (f.socioNum) c.append(el("small", "Socio nº " + String(f.socioNum).padStart(4, "0")));
+  try {
+    const g = await getDoc(doc(db, "ruleta_giros", uid));
+    const p = el("div", "", "premio");
+    if (!g.exists()) {
+      p.append(el("small", "Todavía no ha girado la ruleta."));
+    } else {
+      const d = g.data(), nombre = await datosGiro(d);
+      if (d.canjeado === true) {
+        p.append(el("small", "Premio de la ruleta (ya canjeado" + (d.canjeadoEn ? " el " + fecha(d.canjeadoEn) : "") + "):"), el("strong", nombre));
+      } else {
+        p.append(el("small", "🎁 Premio de la ruleta pendiente:"), el("strong", nombre));
+        const b = el("button", "Marcar como canjeado", "pri");
+        b.type = "button";
+        b.onclick = () => canjear(uid);
+        p.append(b);
+      }
+    }
+    c.append(p);
+  } catch (e) { c.append(el("small", "No se ha podido leer la ruleta: " + (e.code || e.message))); }
+  r.append(c);
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+async function cargarPendientes() {
+  const cont = $("pendientes");
+  cont.innerHTML = "";
+  try {
+    const snap = await getDocs(collection(db, "ruleta_giros"));
+    const pend = snap.docs.filter((d) => d.data().canjeado !== true).sort((a, b) => b.data().giro.toMillis() - a.data().giro.toMillis());
+    if (!pend.length) { cont.append(el("p", "No hay premios pendientes.")); return; }
+    for (const d of pend) {
+      const g = d.data(), nombre = await datosGiro(g);
+      let u = null;
+      try { const s = await getDoc(doc(db, "users", d.id)); u = s.exists() ? s.data() : null; } catch (e) { u = null; }
+      const c = el("div", "", "card");
+      c.append(el("strong", nombre));
+      c.append(el("small", (u && u.nombre ? u.nombre : "Socio") + (u && u.socioNum ? " · socio nº " + String(u.socioNum).padStart(4, "0") : "")));
+      const b = el("button", "Marcar como canjeado", "pri");
+      b.type = "button";
+      b.onclick = () => canjear(d.id);
+      c.append(b);
+      cont.append(c);
+    }
+  } catch (e) { cont.append(el("p", "No se ha podido leer la lista: " + (e.code || e.message))); }
+}
+
+async function cargarJsQR() {
+  if (window.jsQR) return;
+  await new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+    s.onload = ok;
+    s.onerror = () => mal(new Error("No se ha podido cargar el lector de códigos"));
+    document.head.append(s);
+  });
+}
+async function abrir() {
+  $("msg").textContent = "";
+  try {
+    flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    $("video").srcObject = flujo;
+    $("video").classList.remove("oculto");
+    await $("video").play();
+    $("abrir").classList.add("oculto");
+    $("parar").classList.remove("oculto");
+    detector = null;
+    if ("BarcodeDetector" in window) {
+      try {
+        const formatos = await BarcodeDetector.getSupportedFormats();
+        if (formatos.includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] });
+      } catch (e) { detector = null; }
+    }
+    if (!detector) await cargarJsQR();
+    bucle = setInterval(leer, 300);
+  } catch (e) {
+    $("msg").textContent = "No se ha podido abrir la cámara: " + (e.message || e.name) + ". Comprueba que has dado permiso a la cámara.";
+    parar();
+  }
+}
+function parar() {
+  clearInterval(bucle);
+  if (flujo) flujo.getTracks().forEach((t) => t.stop());
+  flujo = null;
+  $("video").classList.add("oculto");
+  $("parar").classList.add("oculto");
+  $("abrir").classList.remove("oculto");
+}
+async function leer() {
+  const v = $("video");
+  if (!flujo || v.readyState < 2 || Date.now() < pausa) return;
+  let texto = "";
+  try {
+    if (detector) {
+      const r = await detector.detect(v);
+      if (r.length) texto = r[0].rawValue;
+    } else if (window.jsQR) {
+      const c = $("lienzo"), k = Math.min(1, 640 / v.videoWidth);
+      c.width = Math.round(v.videoWidth * k);
+      c.height = Math.round(v.videoHeight * k);
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(v, 0, 0, c.width, c.height);
+      const im = g.getImageData(0, 0, c.width, c.height);
+      const r = window.jsQR(im.data, im.width, im.height);
+      if (r) texto = r.data;
+    }
+  } catch (e) { return; }
+  const uid = uidDeQR(texto);
+  if (texto && !uid) { pausa = Date.now() + 2000; $("resultado").innerHTML = ""; $("resultado").append(el("div", "Ese código no es un carné de socio de Sweet Dreams.", "res zona nok")); return; }
+  if (uid) { pausa = Date.now() + 3000; mostrarSocio(uid, null); }
+}
+
+$("abrir").onclick = abrir;
+$("parar").onclick = parar;
+$("recargar").onclick = cargarPendientes;
+$("buscar").onclick = async () => {
+  const n = Number($("num").value);
+  if (!n) { $("msg").textContent = "Escribe un número de socio."; return; }
+  $("msg").textContent = "";
+  try {
+    const s = await getDocs(query(collection(db, "users"), where("socio", "==", true), where("socioNum", "==", n)));
+    if (s.empty) await mostrarSocio("", { socio: false });
+    else await mostrarSocio(s.docs[0].id, s.docs[0].data());
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    const rol = yo.exists() ? yo.data().role : "";
+    if (rol !== "staff" && rol !== "admin") { $("estado").textContent = "Esta página es solo para el personal del bar."; return; }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    await cargarPendientes();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
