@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ocalimocho</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+section{display:none}
+section.ver{display:block}
+select,input[type=text]{width:100%;padding:12px;font-size:1rem;margin-top:10px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:10px}
+.fila3{display:flex;gap:8px}
+.fila3 button{margin-top:10px}
+.centro{text-align:center}
+.oculto{display:none!important}
+#tablero{display:grid;grid-template-columns:repeat(9,1fr);gap:3px;margin-top:8px}
+.cel{position:relative;aspect-ratio:1;border-radius:7px;border:1px solid var(--c);background:var(--f);overflow:hidden}
+.cel .nn{position:absolute;top:1px;left:3px;font-size:.55rem;opacity:.85}
+.cel .ic{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.05rem;padding-bottom:5px}
+.cel .fichas{position:absolute;bottom:1px;left:0;right:0;display:flex;justify-content:center;gap:1px;flex-wrap:wrap}
+.cel .fi{width:9px;height:9px;border-radius:50%;border:1px solid #0a0612}
+.cel.actual{outline:2px solid #fff;box-shadow:0 0 12px #fff;z-index:2}
+.c-salida,.c-meta{--c:#fff;--f:rgba(255,255,255,.18)}
+.c-grupo{--c:#6c5a9c;--f:rgba(108,90,156,.22)}
+.c-posada{--c:#5b8cff;--f:rgba(91,140,255,.28)}
+.c-abeber{--c:#ff2bd6;--f:rgba(255,43,214,.28)}
+.c-duelo{--c:#19f2ff;--f:rgba(25,242,255,.25)}
+.c-oca{--c:#ffe14d;--f:rgba(255,225,77,.32)}
+.c-laberinto{--c:#5dff9a;--f:rgba(93,255,154,.25)}
+.c-reglas{--c:#8b5cff;--f:rgba(139,92,255,.3)}
+.c-cultural{--c:#ff9d2b;--f:rgba(255,157,43,.28)}
+.c-hipnosis{--c:#c084fc;--f:rgba(192,132,252,.3)}
+.c-carcel{--c:#9aa0b4;--f:rgba(154,160,180,.28)}
+.c-muerte{--c:#ff5c7a;--f:rgba(255,92,122,.35)}
+.c-patinazo{--c:#ffb3c1;--f:rgba(255,179,193,.28)}
+#leyenda{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.jug{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.25);font-size:.82rem}
+.jug.act{border-color:#ffe14d;box-shadow:0 0 10px rgba(255,225,77,.6)}
+.jug .pt{width:10px;height:10px;border-radius:50%}
+#norma{margin-top:10px;padding:10px 12px;font-size:.9rem}
+#dado{font-size:3.6rem;text-align:center;line-height:1;margin:6px 0}
+@keyframes brillo{0%{background-position:0% 50%}100%{background-position:300% 50%}}
+@keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+button.tirar{font-family:"Bungee","Rubik",sans-serif!important;font-weight:400!important;font-size:1.25rem!important;padding:18px!important;color:#1a0610!important;background:linear-gradient(100deg,#ffe14d,#ff2bd6,#19f2ff,#ffe14d)!important;background-size:300% 100%!important;border:0!important;animation:brillo 3s linear infinite,latido 1.4s ease-in-out infinite!important}
+@media (prefers-reduced-motion:reduce){button.tirar{animation:none!important}}
+#carta .titulo{font-family:"Bungee","Rubik",sans-serif;font-size:1.25rem;color:var(--amarillo);text-shadow:0 0 10px rgba(255,225,77,.5);margin:0 0 6px}
+#carta .num{opacity:.75;font-size:.85rem}
+#carta .texto{font-size:1.05rem;margin:8px 0}
+#carta .aviso{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(255,225,77,.1);border:1px solid rgba(255,225,77,.4);font-size:.95rem}
+.chk{display:flex;align-items:center;gap:10px;margin-top:8px}
+.chk input{width:22px;height:22px;margin:0}
+.pie{font-size:.8rem;opacity:.7;text-align:center;margin-top:18px}
+.reglas p{margin:6px 0}
+</style></head>
+<body><main>
+<p><a href="juegos.html">← Juegos</a></p>
+<header class="marca"><h1>Ocalimocho</h1></header>
+
+<section id="edad" class="ver zona centro">
+  <p style="font-size:2rem;margin:0">🔞</p>
+  <p><strong>Este juego es solo para mayores de 18 años.</strong></p>
+  <p>Si bebes, hazlo con moderación y no conduzcas después. Si prefieres no beber, hay un modo sin alcohol con retos.</p>
+  <button id="soyMayor" class="pri" type="button">Tengo 18 años o más</button>
+  <a class="boton sec" href="juegos.html" style="display:block;margin-top:10px;text-align:center;padding:13px">Volver</a>
+</section>
+
+<section id="cfg" class="zona">
+  <h2 style="margin-top:0">Jugadores (de 2 a 8)</h2>
+  <div id="nombres"></div>
+  <div class="fila3"><button id="masJ" type="button">Añadir jugador</button><button id="menosJ" type="button">Quitar</button></div>
+  <p style="margin-bottom:0">Modo de juego</p>
+  <select id="modo"><option value="alcohol">Con alcohol (beber)</option><option value="sin">Sin alcohol (retos)</option></select>
+  <div id="unidadCaja">
+    <p style="margin-bottom:0">Cuando toque beber, la medida es</p>
+    <select id="unidad"><option value="sorbo">Sorbos</option><option value="trago" selected>Tragos</option><option value="vaso">Vasos</option></select>
+  </div>
+  <button id="empezar" class="pri" type="button">¡A jugar!</button>
+  <button id="verReglas" type="button">Cómo se juega</button>
+  <div id="reglas" class="reglas oculto">
+    <p>Se juega con una ficha por persona y un dado. Gana quien llega primero a la casilla 62.</p>
+    <p>Tira el dado y avanza. Si te pasas de la meta, rebotas hacia atrás lo que te sobre.</p>
+    <p><strong>Ocas (8, 18, 28, 38, 48 y 58):</strong> saltas a la siguiente oca y vuelves a tirar. Desde la 58 saltas directo a la meta.</p>
+    <p><strong>Posada del abstemio:</strong> este turno estás a salvo de órdenes y retos.</p>
+    <p><strong>Laberinto:</strong> hasta que no saques un 5 o un 6 no sales.</p>
+    <p><strong>Cárcel:</strong> pagas la fianza o esperas a que otro jugador caiga en tu casilla.</p>
+    <p><strong>Muerte (60):</strong> vuelves a la salida.</p>
+    <p>El resto de casillas traen una orden. Cada casilla indica qué hacer.</p>
+  </div>
+</section>
+
+<section id="juego">
+  <div id="tablero"></div>
+  <div id="leyenda"></div>
+  <div id="norma" class="zona oculto"></div>
+  <div id="panel" class="zona" style="margin-top:12px">
+    <div id="turnoTxt" style="font-size:1.1rem;font-weight:700"></div>
+    <div id="dado">🎲</div>
+    <div id="carta" class="oculto"></div>
+    <div id="acciones"></div>
+  </div>
+  <p class="pie">Bebe con responsabilidad. Si lo necesitas, cambia a modo sin alcohol al empezar otra partida.</p>
+</section>
+
+<section id="fin" class="zona centro">
+  <p style="font-size:3rem;margin:0">🏆</p>
+  <h2 id="ganador"></h2>
+  <p id="premioFin"></p>
+  <button id="otra" class="pri" type="button">Jugar otra vez</button>
+  <button id="alMenu" type="button">Volver a los juegos</button>
+</section>
+
+<script>
+window.addEventListener("error", function (e) {
+  var m = document.createElement("p");
+  m.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+  document.querySelector("main").prepend(m);
+});
+</script>
+<script type="module">
+import { CASILLAS } from "./ocalimocho-datos.js";
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const PANTALLAS = ["edad", "cfg", "juego", "fin"];
+const META = 62, COLS = 9;
+const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#5dff9a", "#8b5cff", "#ff9d2b", "#ff5c7a", "#ffffff"];
+const CARAS = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+const UNIDADES = { sorbo: ["sorbo", "sorbos"], trago: ["trago", "tragos"], vaso: ["vaso", "vasos"] };
+const TEMAS = ["Marcas de coche", "Países de Europa", "Series de televisión", "Cantantes españoles", "Equipos de fútbol", "Frutas", "Capitales del mundo", "Películas de animación", "Cócteles", "Marcas de bebida", "Animales de granja", "Deportes", "Ciudades de España", "Instrumentos musicales", "Marcas de ropa", "Superhéroes", "Postres", "Profesiones", "Colores", "Juegos de mesa"];
+let modo = "alcohol", unidad = "trago", J = [], turno = 0, norma = "", ultima = null;
+
+// <motor>
+function destino(pos, d) { const p = pos + d; return p <= META ? p : META - (p - META); }
+function celda(n) { const f = Math.floor((n - 1) / COLS), k = (n - 1) % COLS; return { fila: f, col: f % 2 === 0 ? k : COLS - 1 - k }; }
+function d6() { return 1 + Math.floor(Math.random() * 6); }
+function medida(u, n) { return n + " " + UNIDADES[u][n === 1 ? 0 : 1]; }
+function texto(c, modo, u) {
+  const t = modo === "sin" ? c.r : c.b;
+  return t.replace(/\{v(\d+)\}/g, (_, n) => medida(u, Number(n)))
+    .replace(/\{vx\}/g, () => medida(u, c.x))
+    .replace(/\{u\}/g, UNIDADES[u][1])
+    .replace(/\{retar\}/g, () => c.x === 1 ? "1 jugador" : c.x + " jugadores")
+    .replace(/\{x\}/g, c.x);
+}
+function rivales(jugadores, i) { const r = []; jugadores.forEach((j, k) => { if (k !== i && !j.protegido) r.push(k); }); return r; }
+function duelo(rnd) { let x, y; do { x = rnd(); y = rnd(); } while (x === y); return { x: x, y: y }; }
+// </motor>
+
+function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
+
+function pintarNombres(n) {
+  const caja = $("nombres");
+  const prev = [...caja.querySelectorAll("input")].map((i) => i.value);
+  caja.innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.maxLength = 16;
+    inp.placeholder = "Jugador " + (i + 1);
+    inp.value = prev[i] || "";
+    caja.append(inp);
+  }
+}
+const numJ = () => $("nombres").querySelectorAll("input").length;
+
+function pintarTablero() {
+  const t = $("tablero");
+  t.innerHTML = "";
+  const actual = J[turno] ? J[turno].pos : 0;
+  CASILLAS.forEach((c) => {
+    const { fila, col } = celda(c.n);
+    const d = el("div", "", "cel c-" + c.t + (c.n === actual ? " actual" : ""));
+    d.style.gridRow = String(7 - fila);
+    d.style.gridColumn = String(col + 1);
+    d.append(el("span", String(c.n), "nn"), el("span", c.i, "ic"));
+    const f = el("div", "", "fichas");
+    J.forEach((j) => { if (j.pos === c.n) { const p = el("span", "", "fi"); p.style.background = j.color; f.append(p); } });
+    d.append(f);
+    t.append(d);
+  });
+  const l = $("leyenda");
+  l.innerHTML = "";
+  J.forEach((j, k) => {
+    const x = el("div", "", "jug" + (k === turno ? " act" : ""));
+    const p = el("span", "", "pt");
+    p.style.background = j.color;
+    x.append(p, el("span", j.nombre + " · " + j.pos + (j.protegido ? " 🛡️" : "") + (j.hipnosis ? " 🌀" : "") + (j.laberinto ? " 🌿" : "") + (j.preso ? " ⛓️" : "")));
+    l.append(x);
+  });
+  if (norma) { $("norma").classList.remove("oculto"); $("norma").textContent = "📜 Norma vigente: " + norma; }
+  else $("norma").classList.add("oculto");
+}
+
+function lanzar(cb) {
+  const dado = $("dado");
+  let k = 0;
+  const paso = () => {
+    if (k++ < 10) { dado.textContent = CARAS[d6() - 1]; setTimeout(paso, 70); }
+    else { const v = d6(); dado.textContent = CARAS[v - 1]; setTimeout(() => cb(v), 350); }
+  };
+  paso();
+}
+
+function limpiarAcciones() { $("acciones").innerHTML = ""; }
+function boton(txt, fn, cls) { const b = el("button", txt, cls || ""); b.type = "button"; b.onclick = fn; return b; }
+function ocultarCarta() { $("carta").classList.add("oculto"); $("carta").innerHTML = ""; }
+
+function cartaBase(c, extraTxt) {
+  const carta = $("carta");
+  carta.innerHTML = "";
+  carta.append(el("div", "Casilla " + c.n, "num"), el("p", c.i + " " + c.ti, "titulo"), el("p", texto(c, modo, unidad), "texto"));
+  if (extraTxt) carta.append(el("div", extraTxt, "aviso"));
+  carta.classList.remove("oculto");
+  return carta;
+}
+
+function iniciarTurno() {
+  ocultarCarta();
+  const j = J[turno];
+  j.protegido = false;
+  j.hipnosis = false;
+  pintarTablero();
+  $("turnoTxt").textContent = "Turno de " + j.nombre;
+  limpiarAcciones();
+  if (j.laberinto) return faseLaberinto(j);
+  if (j.preso) return faseCarcel(j);
+  $("acciones").append(boton("🎲 TIRAR EL DADO", () => tirarYMover(j), "tirar"));
+}
+
+function finTurno(repite) {
+  if (!repite) turno = (turno + 1) % J.length;
+  iniciarTurno();
+}
+
+function tirarYMover(j) {
+  limpiarAcciones();
+  lanzar((d) => {
+    j.pos = destino(j.pos, d);
+    pintarTablero();
+    aplicar(j, j.pos);
+  });
+}
+
+function faseLaberinto(j) {
+  const c = CASILLAS[j.pos - 1];
+  cartaBase(c, "Estás perdido en el laberinto. Saca un 5 o un 6 para salir.");
+  $("acciones").append(boton("🎲 Intentar salir", () => {
+    limpiarAcciones();
+    lanzar((d) => {
+      if (d >= 5) { j.laberinto = false; pintarTablero(); cartaBase(c, "¡Has salido del laberinto con un " + d + "! En tu próximo turno avanzas con normalidad."); }
+      else cartaBase(c, "Has sacado un " + d + ": sigues perdido. " + (modo === "sin" ? "Haz 10 segundos de baile." : "Bebes " + medida(unidad, 1) + "."));
+      $("acciones").append(boton("Pasar el turno", () => finTurno(false), "pri"));
+    });
+  }, "tirar"));
+}
+
+function faseCarcel(j) {
+  const c = CASILLAS[j.pos - 1];
+  const f = j.preso;
+  cartaBase(c, "Fianza pendiente: " + (modo === "sin" ? f + " pruebas de 10 segundos" : medida(unidad, f)) + ".");
+  $("acciones").append(
+    boton(modo === "sin" ? "He cumplido la fianza: tirar" : "He bebido la fianza: tirar", () => { j.preso = 0; iniciarTurnoSinReset(j); }, "pri"),
+    boton("Espero a que caiga alguien aquí (paso turno)", () => finTurno(false))
+  );
+}
+function iniciarTurnoSinReset(j) {
+  ocultarCarta();
+  pintarTablero();
+  limpiarAcciones();
+  $("acciones").append(boton("🎲 TIRAR EL DADO", () => tirarYMover(j), "tirar"));
+}
+
+function carta(c, siguiente, extraTxt, etiqueta) {
+  cartaBase(c, extraTxt);
+  limpiarAcciones();
+  $("acciones").append(boton(etiqueta || "Hecho", siguiente, "pri"));
+}
+
+function aplicar(j, n) {
+  const c = CASILLAS[n - 1];
+  switch (c.t) {
+    case "meta": return ganar(j);
+    case "oca": return carta(c, () => { j.pos = c.x; pintarTablero(); if (c.x === META) return ganar(j); finTurno(true); });
+    case "laberinto": j.laberinto = true; return carta(c, () => finTurno(false));
+    case "posada": j.protegido = true; return carta(c, () => finTurno(false));
+    case "hipnosis": j.hipnosis = true; return carta(c, () => finTurno(false));
+    case "muerte": return carta(c, () => { j.pos = 1; pintarTablero(); finTurno(false); });
+    case "carcel": {
+      J.forEach((o) => { if (o !== j && o.preso && o.pos === n) o.preso = 0; });
+      const f = d6() + d6();
+      j.preso = f;
+      return carta(c, () => finTurno(false), "Tu fianza: " + (modo === "sin" ? f + " pruebas de 10 segundos" : medida(unidad, f)) + ". Si había alguien preso aquí, queda libre.");
+    }
+    case "patinazo":
+      if (c.x === 12) {
+        cartaBase(c);
+        limpiarAcciones();
+        $("acciones").append(
+          boton(modo === "sin" ? "Aguanto a la pata coja" : "Bebo " + medida(unidad, 4) + " de golpe", () => finTurno(false), "pri"),
+          boton("Retrocedo a la casilla 12", () => { j.pos = 12; pintarTablero(); aplicar(j, 12); })
+        );
+        return;
+      }
+      return carta(c, () => { j.pos = c.x; pintarTablero(); aplicar(j, c.x); });
+    case "duelo": return faseDuelo(j, c);
+    case "cultural": return faseCultural(j, c);
+    case "reglas": return faseReglas(j, c);
+    default: return carta(c, () => finTurno(false));
+  }
+}
+
+function faseCultural(j, c) {
+  cartaBase(c);
+  limpiarAcciones();
+  const tema = el("div", "", "aviso");
+  tema.textContent = "¿Sin ideas? Pulsa para que te sugiera un tema.";
+  $("carta").append(tema);
+  $("acciones").append(
+    boton("💡 Sugiéreme un tema", () => { tema.textContent = "Tema: " + TEMAS[Math.floor(Math.random() * TEMAS.length)]; }),
+    boton("Hecho", () => finTurno(false), "pri")
+  );
+}
+
+function faseReglas(j, c) {
+  cartaBase(c);
+  limpiarAcciones();
+  const inp = document.createElement("input");
+  inp.type = "text";
+  inp.maxLength = 80;
+  inp.placeholder = "Escribe la nueva norma (opcional)";
+  $("carta").append(inp);
+  $("acciones").append(boton("Guardar norma y seguir", () => { if (inp.value.trim()) norma = inp.value.trim(); finTurno(false); }, "pri"));
+}
+
+function faseDuelo(j, c) {
+  const i = J.indexOf(j);
+  const posibles = rivales(J, i);
+  const k = Math.min(c.x, posibles.length);
+  cartaBase(c);
+  limpiarAcciones();
+  if (!k) {
+    $("carta").append(el("div", "Nadie puede ser retado ahora mismo (están a salvo en la posada).", "aviso"));
+    $("acciones").append(boton("Hecho", () => finTurno(false), "pri"));
+    return;
+  }
+  $("carta").append(el("div", "Elige " + (k === 1 ? "1 rival" : k + " rivales") + ":", "aviso"));
+  const marcas = [];
+  posibles.forEach((idx) => {
+    const l = el("label", "", "chk");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = String(idx);
+    l.append(cb, el("span", J[idx].nombre));
+    $("carta").append(l);
+    marcas.push(cb);
+  });
+  const go = boton("⚔️ ¡Duelo!", () => {
+    const elegidos = marcas.filter((m) => m.checked).map((m) => Number(m.value));
+    if (elegidos.length !== k) { go.textContent = "Elige exactamente " + k + " y pulsa de nuevo"; return; }
+    limpiarAcciones();
+    elegidos.forEach((idx) => {
+      const r = duelo(d6);
+      const pierdeJ = r.x < r.y ? j : J[idx];
+      $("carta").append(el("div", j.nombre + " saca " + r.x + " · " + J[idx].nombre + " saca " + r.y + " → " + pierdeJ.nombre + (modo === "sin" ? " hace una prueba de 10 segundos." : " bebe " + medida(unidad, 1) + "."), "aviso"));
+    });
+    $("acciones").append(boton("Hecho", () => finTurno(false), "pri"));
+  }, "tirar");
+  $("acciones").append(go);
+}
+
+function ganar(j) {
+  $("ganador").textContent = j.nombre + " gana la partida";
+  $("premioFin").textContent = modo === "sin" ? "El campeón elige un reto para todos los demás." : "El campeón reparte " + medida(unidad, 3) + " como prefiera.";
+  pantalla("fin");
+}
+
+function nuevaPartida(nombres) {
+  J = nombres.map((nombre, k) => ({ nombre: nombre, color: COLORES[k % COLORES.length], pos: 1, protegido: false, hipnosis: false, laberinto: false, preso: 0 }));
+  turno = 0;
+  norma = "";
+  pantalla("juego");
+  iniciarTurno();
+}
+
+$("soyMayor").onclick = () => { pintarNombres(Math.max(2, numJ() || 2)); pantalla("cfg"); };
+$("masJ").onclick = () => { if (numJ() < 8) pintarNombres(numJ() + 1); };
+$("menosJ").onclick = () => { if (numJ() > 2) pintarNombres(numJ() - 1); };
+$("modo").onchange = () => { $("unidadCaja").classList.toggle("oculto", $("modo").value === "sin"); };
+$("verReglas").onclick = () => $("reglas").classList.toggle("oculto");
+$("empezar").onclick = () => {
+  modo = $("modo").value;
+  unidad = $("unidad").value;
+  const nombres = [...$("nombres").querySelectorAll("input")].map((i, k) => i.value.trim() || "Jugador " + (k + 1));
+  ultima = nombres;
+  nuevaPartida(nombres);
+};
+$("otra").onclick = () => nuevaPartida(ultima);
+$("alMenu").onclick = () => { window.location.href = "juegos.html"; };
+</script>
+</main></body></html>
