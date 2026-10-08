@@ -65,23 +65,24 @@ const pad = (n) => String(n).padStart(2, "0");
 const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
 const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
-let datos = [], locales = [], localesCargados = false, nombresSD = new Set(), seq = 0;
+let datos = [], locales = [], localesCargados = false, nombresSD = new Set(), seq = 0, cambios = new Map();
 
 // <logica>
 function filtrar(datos, o) {
   const ult = {};
   for (const x of datos) {
+    if (x.extra) continue;
     const k = x.categoria + "|" + x.nivel;
     if (!ult[k] || x.fechaMs > ult[k].ms) ult[k] = { ms: x.fechaMs, temp: x.temporada };
   }
   const res = datos.filter((x) => {
     if (x.categoria !== o.cat) return false;
     if (o.nivel !== "todos" && x.nivel !== Number(o.nivel)) return false;
-    if (x.temporada !== ult[x.categoria + "|" + x.nivel].temp) return false;
+    if (!x.extra && x.temporada !== ult[x.categoria + "|" + x.nivel].temp) return false;
     if (o.desde && x.dia < o.desde) return false;
     if (o.hasta && x.dia > o.hasta) return false;
     if (o.sd) {
-      const es = x.categoria === "parejas" ? x.enSweetDreams : (o.nombresSD.has(norm(x.local)) || o.nombresSD.has(norm(x.visitante)));
+      const es = x.extra ? true : x.categoria === "parejas" ? x.enSweetDreams : (o.nombresSD.has(norm(x.local)) || o.nombresSD.has(norm(x.visitante)));
       if (!es) return false;
     }
     if (o.equipo && norm(x.local) !== o.equipo && norm(x.visitante) !== o.equipo) return false;
@@ -89,9 +90,24 @@ function filtrar(datos, o) {
   });
   return res.sort((a, b) => a.fechaMs - b.fechaMs || a.nivel - b.nivel);
 }
+function ajustar(datos, cambios) {
+  const res = [];
+  for (const x of datos) {
+    const c = cambios.get(x.id);
+    if (c && c.estado === "movido") {
+      res.push(Object.assign({}, x, { dia: c.dia, hora: c.hora, fechaMs: new Date(c.dia + "T" + c.hora + ":00").getTime(), cambio: "Cambiado de fecha (antes: " + c.diaOriginal.slice(8) + "/" + c.diaOriginal.slice(5, 7) + " a las " + c.horaOriginal + ")" }));
+    } else if (c && c.estado === "aplazado") {
+      res.push(Object.assign({}, x, { cambio: "Aplazado: pendiente de nueva fecha" }));
+    } else res.push(x);
+  }
+  for (const [id, c] of cambios) {
+    if (c.estado === "extra") res.push({ id: id, extra: true, categoria: c.categoria, nivel: c.nivel, temporada: "", jornada: 0, dia: c.dia, hora: c.hora, local: c.local, visitante: c.visitante, sede: "Sweet Dreams", nota: "", enSweetDreams: true, fechaMs: new Date(c.dia + "T" + c.hora + ":00").getTime(), cambio: "" });
+  }
+  return res;
+}
 function equiposDe(datos, cat, nivel) {
   const ult = {};
-  const delNivel = datos.filter((x) => x.categoria === cat && x.nivel === Number(nivel));
+  const delNivel = datos.filter((x) => !x.extra && x.categoria === cat && x.nivel === Number(nivel));
   for (const x of delNivel) if (!ult.ms || x.fechaMs > ult.ms) { ult.ms = x.fechaMs; ult.temp = x.temporada; }
   const set = new Set();
   for (const x of delNivel) if (x.temporada === ult.temp) { set.add(x.local); set.add(x.visitante); }
@@ -136,7 +152,7 @@ async function traer() {
     const guardado = JSON.parse(sessionStorage.getItem("liga_" + clave) || "null");
     if (guardado && Date.now() - guardado.t < 300000) return guardado.d;
   } catch (e) {}
-  const d = (await getDocs(q)).docs.map((x) => { const v = x.data(); return { categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }; });
+  const d = (await getDocs(q)).docs.map((x) => { const v = x.data(); return { id: x.id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }; });
   try { sessionStorage.setItem("liga_" + clave, JSON.stringify({ t: Date.now(), d: d })); } catch (e) {}
   return d;
 }
@@ -148,7 +164,19 @@ async function cargar() {
   try {
     const d = await traer();
     if (mio !== seq) return;
-    datos = d;
+    datos = d.slice();
+    const cat0 = $("cat").value;
+    if ($("niv").value === "todos" && !(cat0 === "parejas" && $("soloSD").checked)) {
+      const hoy0 = new Date(), r0 = $("rango").value;
+      const hasta0 = r0 === "temporada" ? "9999" : iso(new Date(hoy0.getFullYear(), hoy0.getMonth(), hoy0.getDate() + Number(r0)));
+      const ya = new Set(datos.map((x) => x.id));
+      for (const [id, c] of cambios) {
+        if (c.estado === "movido" && !ya.has(id) && c.dia >= iso(hoy0) && c.dia <= hasta0) {
+          const s = await getDoc(doc(db, "liga_partidos", id));
+          if (s.exists()) { const v = s.data(); datos.push({ id: id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }); }
+        }
+      }
+    }
     const cat = $("cat").value, niv = $("niv").value;
     const prev = $("equipo").value;
     $("equipo").innerHTML = "";
@@ -172,7 +200,7 @@ function pintar() {
   const hoy = new Date();
   const desde = rango === "temporada" ? "" : iso(hoy);
   const hasta = rango === "temporada" ? "" : iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + Number(rango)));
-  const lista = filtrar(datos, { cat: $("cat").value, nivel: $("niv").value, desde: desde, hasta: hasta, sd: $("soloSD").checked, nombresSD: nombresSD, equipo: $("equipo").value });
+  const lista = filtrar(ajustar(datos, cambios), { cat: $("cat").value, nivel: $("niv").value, desde: desde, hasta: hasta, sd: $("soloSD").checked, nombresSD: nombresSD, equipo: $("equipo").value });
   if (!datos.length) { $("info").textContent = "Todavía no hay calendario publicado para esta selección."; return; }
   if (!lista.length) { $("info").textContent = "No hay partidos con estos filtros."; return; }
   const temps = [...new Set(lista.map((x) => x.temporada))];
@@ -181,11 +209,12 @@ function pintar() {
   for (const p of lista) {
     if (p.dia !== ultimo) { cont.append(el("h2", fechaBonita(p.dia))); ultimo = p.dia; }
     const c = el("div", "", "card");
-    c.append(el("strong", p.hora + " · Nivel " + p.nivel + " · Jornada " + p.jornada));
+    c.append(el("strong", p.hora + " · " + (p.nivel ? "Nivel " + p.nivel : "Sin nivel") + " · " + (p.extra ? "Partido añadido" : "Jornada " + p.jornada)));
     c.append(el("div", p.local + " – " + p.visitante));
     if (p.sede) c.append(el("small", "Sede: " + p.sede));
     if (p.nota) c.append(el("small", p.nota));
-    const esSD = p.categoria === "parejas" ? p.enSweetDreams : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)));
+    if (p.cambio) c.append(el("span", p.cambio, "sd"));
+    const esSD = p.extra ? true : p.categoria === "parejas" ? p.enSweetDreams : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)));
     if (esSD) c.append(el("span", "En Sweet Dreams", "sd"));
     cont.append(c);
   }
@@ -246,6 +275,10 @@ onAuthStateChanged(auth, async (u) => {
       const c = await getDoc(doc(db, "liga_config", "equiposSweetDreams"));
       nombresSD = new Set(c.exists() ? (c.data().nombres || []).map(norm) : []);
     } catch (e) { nombresSD = new Set(); }
+    try {
+      cambios = new Map();
+      (await getDocs(collection(db, "liga_config"))).forEach((d) => { if (d.id.startsWith("cambio_")) cambios.set(d.id.slice(7), d.data()); });
+    } catch (e) { cambios = new Map(); }
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
     llenarNiveles();
