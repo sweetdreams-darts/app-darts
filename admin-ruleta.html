@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ruleta (administrador)</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:28px 0 6px;color:#ffd166}
+input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:8px;font-family:inherit}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;margin-top:12px}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:transparent;color:#ff8787;border:1px solid #ff8787}
+.fila{display:flex;gap:8px;align-items:center}
+.fila input[type=number]{width:90px;flex:none}
+.fila button{width:auto;margin-top:8px;padding:12px 14px;flex:none}
+.chk{display:flex;align-items:center;gap:10px}
+.chk input{width:22px;height:22px;margin:0}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:10px}
+.card small{display:block;opacity:.85;margin-top:3px}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="ofertas.html">← Ofertas</a> · <a href="admin.html">Panel</a></p>
+<h1>Ruleta (administrador)</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <h2>Premios de la ruleta</h2>
+  <label class="chk"><input id="activa" type="checkbox"> Ruleta activa para los socios</label>
+  <p style="opacity:.85;margin-bottom:0">Pon cada premio y su "peso": cuanto mayor, más probable. Por ejemplo, un premio de peso 30 sale seis veces más que uno de peso 5. <span id="ver"></span></p>
+  <div id="filas"></div>
+  <button id="aniadir" class="sec">Añadir premio</button>
+  <button id="ejemplo" class="sec">Cargar ejemplo para editar</button>
+  <button id="guardar">Guardar premios y ruleta</button>
+
+  <h2>Giros de los socios</h2>
+  <input id="buscar" type="search" placeholder="Buscar por nombre del socio">
+  <div id="giros"></div>
+  <button id="reiniciar" class="mal">Reiniciar todos los giros (nueva campaña)</button>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, writeBatch, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let premios = [], version = 0, giros = [], usuarios = new Map(), versiones = new Map();
+
+// <logica>
+function resultado(ms, premios) {
+  const total = premios.reduce((s, p) => s + p.peso, 0);
+  const x = ((ms % 1000) / 1000) * total;
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
+  return { idx: idx, angulo: (360 * x) / total };
+}
+// </logica>
+
+function pintarFilas() {
+  const c = $("filas");
+  c.innerHTML = "";
+  premios.forEach((p, i) => {
+    const f = el("div", "", "fila");
+    const n = document.createElement("input");
+    n.value = p.nombre;
+    n.maxLength = 40;
+    n.placeholder = "Nombre del premio";
+    n.oninput = () => { p.nombre = n.value; };
+    const w = document.createElement("input");
+    w.type = "number";
+    w.min = 1;
+    w.max = 1000;
+    w.value = p.peso;
+    w.oninput = () => { p.peso = Number(w.value); };
+    const q = el("button", "✕", "mal");
+    q.onclick = () => { premios.splice(i, 1); pintarFilas(); };
+    f.append(n, w, q);
+    c.append(f);
+  });
+  $("ver").textContent = version ? "Versión actual de la ruleta: " + version + "." : "Todavía no hay ruleta creada.";
+}
+$("aniadir").onclick = () => { premios.push({ nombre: "", peso: 10 }); pintarFilas(); };
+$("ejemplo").onclick = () => {
+  premios = [{ nombre: "Chupito gratis", peso: 30 }, { nombre: "Caña gratis", peso: 20 }, { nombre: "Refresco gratis", peso: 20 }, { nombre: "10% de descuento", peso: 15 }, { nombre: "Otra vez será", peso: 10 }, { nombre: "Premio gordo", peso: 5 }];
+  pintarFilas();
+};
+
+$("guardar").onclick = async () => {
+  const lista = premios.map((p) => ({ nombre: String(p.nombre || "").trim(), peso: Math.round(Number(p.peso)) }));
+  if (lista.length < 2) { $("msg").textContent = "Pon al menos 2 premios."; return; }
+  if (lista.some((p) => !p.nombre || !(p.peso >= 1 && p.peso <= 1000))) { $("msg").textContent = "Cada premio necesita un nombre y un peso entre 1 y 1000."; return; }
+  try {
+    const nueva = version + 1;
+    const b = writeBatch(db);
+    b.set(doc(db, "ruleta_versiones", String(nueva)), { premios: lista, creado: serverTimestamp() });
+    b.set(doc(db, "ruleta_config", "actual"), { version: nueva, activa: $("activa").checked });
+    await b.commit();
+    version = nueva;
+    premios = lista;
+    versiones.set(String(nueva), lista);
+    pintarFilas();
+    $("msg").textContent = "✔ Guardado. Los giros que ya hicieron los socios conservan los premios con los que giraron.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+async function premiosDe(v) {
+  const k = String(v);
+  if (!versiones.has(k)) { const s = await getDoc(doc(db, "ruleta_versiones", k)); versiones.set(k, s.exists() ? s.data().premios : []); }
+  return versiones.get(k);
+}
+
+async function cargarGiros() {
+  const [g, u] = await Promise.all([getDocs(collection(db, "ruleta_giros")), getDocs(collection(db, "users"))]);
+  usuarios = new Map();
+  u.forEach((d) => usuarios.set(d.id, d.data()));
+  giros = [];
+  for (const d of g.docs) {
+    const x = d.data();
+    const lista = await premiosDe(x.version);
+    const nombre = lista.length ? lista[resultado(x.giro.toMillis(), lista).idx].nombre : "(premio desconocido)";
+    giros.push({ id: d.id, premio: nombre, giro: x.giro.toDate(), canjeado: x.canjeado === true, canjeadoEn: x.canjeadoEn && x.canjeadoEn.toDate ? x.canjeadoEn.toDate() : null });
+  }
+  giros.sort((a, b) => b.giro - a.giro);
+  pintarGiros();
+}
+
+function pintarGiros() {
+  const t = $("buscar").value.trim().toLowerCase();
+  const c = $("giros");
+  c.innerHTML = "";
+  const visibles = giros.filter((x) => { const u = usuarios.get(x.id) || {}; return !t || (u.nombre || "").toLowerCase().includes(t); });
+  if (!visibles.length) c.append(el("p", "Todavía no hay giros."));
+  for (const estado of [false, true]) {
+    const grupo = visibles.filter((x) => x.canjeado === estado);
+    if (!grupo.length) continue;
+    c.append(el("h2", estado ? "Canjeados (" + grupo.length + ")" : "Pendientes de canjear (" + grupo.length + ")"));
+    for (const x of grupo) {
+      const u = usuarios.get(x.id) || {};
+      const card = el("div", "", "card");
+      card.append(el("strong", x.premio));
+      card.append(el("small", (u.nombre || "Cuenta desconocida") + (u.socioNum ? " · socio nº " + String(u.socioNum).padStart(4, "0") : "")));
+      card.append(el("small", "Giró el " + x.giro.toLocaleString("es-ES") + (x.canjeado && x.canjeadoEn ? " · canjeado el " + x.canjeadoEn.toLocaleString("es-ES") : "")));
+      const b = el("button", x.canjeado ? "Deshacer canjeado" : "Marcar como canjeado", x.canjeado ? "sec" : "");
+      b.onclick = async () => {
+        try { await updateDoc(doc(db, "ruleta_giros", x.id), x.canjeado ? { canjeado: false, canjeadoEn: null } : { canjeado: true, canjeadoEn: serverTimestamp() }); await cargarGiros(); }
+        catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+      };
+      const r = el("button", "Reiniciar su giro (podrá girar otra vez)", "mal");
+      r.onclick = async () => { if (confirm("¿Reiniciar el giro de " + (u.nombre || "esta persona") + "? Podrá girar de nuevo.")) { await deleteDoc(doc(db, "ruleta_giros", x.id)); await cargarGiros(); } };
+      card.append(b, r);
+      c.append(card);
+    }
+  }
+}
+$("buscar").oninput = pintarGiros;
+
+$("reiniciar").onclick = async () => {
+  if (!giros.length) { $("msg").textContent = "No hay giros que reiniciar."; return; }
+  if (!confirm("¿Reiniciar TODOS los giros? Todos los socios podrán girar otra vez y se perderá el historial.")) return;
+  if (!confirm("¿Seguro? Esta acción no se puede deshacer.")) return;
+  try {
+    for (let i = 0; i < giros.length; i += 400) {
+      const b = writeBatch(db);
+      giros.slice(i, i + 400).forEach((x) => b.delete(doc(db, "ruleta_giros", x.id)));
+      await b.commit();
+    }
+    await cargarGiros();
+    $("msg").textContent = "✔ Giros reiniciados.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    const c = await getDoc(doc(db, "ruleta_config", "actual"));
+    if (c.exists()) {
+      version = c.data().version;
+      $("activa").checked = c.data().activa === true;
+      premios = (await premiosDe(version)).map((p) => ({ nombre: p.nombre, peso: p.peso }));
+    }
+    pintarFilas();
+    await cargarGiros();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
