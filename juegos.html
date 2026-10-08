@@ -5,11 +5,247 @@
 <style>
 body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:480px}
+section{display:none}
+section.ver{display:block}
+select,input[type=text]{width:100%;padding:12px;font-size:1rem;margin-top:10px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
+.op{text-align:left;padding:14px;font-size:1.05rem}
+.op.bien{background:rgba(93,255,154,.2)!important;border-color:#5dff9a!important;color:#5dff9a!important}
+.op.mala{background:rgba(255,92,122,.2)!important;border-color:#ff5c7a!important;color:#ff5c7a!important}
+.fila3{display:flex;gap:8px}
+.fila3 button{margin-top:10px}
+.marcador{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pregunta{font-size:1.2rem;font-weight:700;margin:14px 0 4px}
+.barra{height:8px;border-radius:99px;background:rgba(255,255,255,.12);margin-top:10px;overflow:hidden}
+.barra div{height:100%;width:100%;background:linear-gradient(90deg,#ff2bd6,#19f2ff)}
+.chk{display:flex;align-items:center;gap:10px;margin-top:14px}
+.chk input{width:22px;height:22px;margin:0}
+.puesto{display:flex;justify-content:space-between;padding:10px 14px;margin-top:8px;font-size:1.1rem}
+.grande{font-family:"Bungee","Rubik",sans-serif;font-size:1.8rem;text-align:center;margin:14px 0}
+.centro{text-align:center}
+#msg{min-height:1.4em;color:var(--amarillo)}
 </style></head>
 <body><main>
 <p><a href="./">← Inicio</a></p>
 <header class="marca"><h1>Juegos</h1></header>
-<div class="tiles">
-  <div class="tile t-violeta grande bloq"><span class="emoji">🎮</span><strong>Retos y juegos</strong><small>Estamos preparándolos. Muy pronto.</small></div>
-</div>
+<p id="msg" role="status"></p>
+
+<section id="menu" class="ver">
+  <div class="tiles">
+    <a id="bSolo" class="tile t-violeta grande" href="#"><span class="emoji">🧠</span><strong>Trivial en solitario</strong><small>Elige una categoría y pon a prueba tu cabeza</small></a>
+    <a id="bVarios" class="tile t-rosa grande" href="#"><span class="emoji">👥</span><strong>Trivial por turnos</strong><small>Varias personas con un solo móvil</small></a>
+  </div>
+</section>
+
+<section id="cfg" class="zona">
+  <h2 id="cfgTitulo"></h2>
+  <div id="jugadoresCaja">
+    <p style="margin-bottom:0">Jugadores (de 2 a 8)</p>
+    <div id="nombres"></div>
+    <div class="fila3"><button id="masJ" type="button">Añadir jugador</button><button id="menosJ" type="button">Quitar</button></div>
+  </div>
+  <p style="margin-bottom:0">Categoría</p>
+  <select id="cat"></select>
+  <p id="nTxt" style="margin-bottom:0"></p>
+  <select id="nPreg"></select>
+  <label class="chk"><input id="tiempo" type="checkbox"> Con tiempo (20 segundos por pregunta)</label>
+  <button id="empezar" class="pri" type="button">¡Empezar!</button>
+  <button id="cfgAtras" type="button">Atrás</button>
+</section>
+
+<section id="pase" class="zona centro">
+  <p>Pasa el móvil a</p>
+  <div id="paseNombre" class="grande"></div>
+  <button id="listo" class="pri" type="button">Estoy listo</button>
+</section>
+
+<section id="juego">
+  <div class="marcador"><strong id="quien"></strong><span id="punt"></span></div>
+  <div id="progreso" style="opacity:.8"></div>
+  <div class="barra" id="barraCaja"><div id="barra"></div></div>
+  <p id="pregunta" class="pregunta"></p>
+  <div id="opciones"></div>
+  <button id="siguiente" class="pri" type="button" style="display:none">Siguiente</button>
+</section>
+
+<section id="fin" class="zona">
+  <h2>Resultado</h2>
+  <div id="resultado"></div>
+  <button id="otra" class="pri" type="button">Jugar otra vez</button>
+  <button id="alMenu" type="button">Volver a los juegos</button>
+</section>
+
+<script type="module">
+import { BANCO } from "./preguntas.js";
+const $ = (id) => document.getElementById(id);
+const PANTALLAS = ["menu", "cfg", "pase", "juego", "fin"];
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let modo = "solo", jugadores = [], cola = [], idx = 0, temporizador = null, ultimaConfig = null;
+
+// <logica>
+function mezclar(a) {
+  const r = a.slice();
+  for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; }
+  return r;
+}
+function armarCola(banco, cat, total) {
+  const base = cat === "todas" ? Object.values(banco).flat() : banco[cat];
+  let lista = [];
+  while (lista.length < total) lista = lista.concat(mezclar(base));
+  return lista.slice(0, total).map((q) => ({ p: q[0], correcta: q[1], opciones: mezclar(q.slice(1)) }));
+}
+function clasificar(js) {
+  const orden = js.slice().sort((a, b) => b.puntos - a.puntos);
+  let puesto = 0, prev = null;
+  return orden.map((j, i) => { if (j.puntos !== prev) { puesto = i + 1; prev = j.puntos; } return { nombre: j.nombre, puntos: j.puntos, puesto: puesto }; });
+}
+// </logica>
+
+function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
+
+function llenarConfig() {
+  const cat = $("cat");
+  cat.innerHTML = "";
+  cat.add(new Option("Todas las categorías mezcladas", "todas"));
+  for (const c of Object.keys(BANCO)) cat.add(new Option(c, c));
+  const n = $("nPreg");
+  n.innerHTML = "";
+  const opciones = modo === "solo" ? [5, 10, 15] : [3, 5, 8];
+  for (const v of opciones) n.add(new Option(modo === "solo" ? v + " preguntas" : v + " preguntas por jugador", v));
+  n.value = modo === "solo" ? 10 : 5;
+  $("nTxt").textContent = modo === "solo" ? "Número de preguntas" : "Preguntas por jugador";
+  $("jugadoresCaja").style.display = modo === "solo" ? "none" : "block";
+  $("cfgTitulo").textContent = modo === "solo" ? "Trivial en solitario" : "Trivial por turnos";
+}
+function pintarNombres(n) {
+  const caja = $("nombres");
+  const prev = [...caja.querySelectorAll("input")].map((i) => i.value);
+  caja.innerHTML = "";
+  for (let i = 0; i < n; i++) {
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.maxLength = 20;
+    inp.placeholder = "Jugador " + (i + 1);
+    inp.value = prev[i] || "";
+    caja.append(inp);
+  }
+}
+const numJugadores = () => $("nombres").querySelectorAll("input").length;
+
+function abrirCfg(m) {
+  modo = m;
+  llenarConfig();
+  if (m === "varios") pintarNombres(Math.max(2, numJugadores() || 2));
+  $("msg").textContent = "";
+  pantalla("cfg");
+}
+
+function empezar() {
+  const cat = $("cat").value, n = Number($("nPreg").value), conTiempo = $("tiempo").checked;
+  if (modo === "solo") {
+    jugadores = [{ nombre: "Tú", puntos: 0 }];
+    cola = armarCola(BANCO, cat, n);
+  } else {
+    const nombres = [...$("nombres").querySelectorAll("input")].map((i, k) => i.value.trim() || "Jugador " + (k + 1));
+    jugadores = nombres.map((nombre) => ({ nombre: nombre, puntos: 0 }));
+    cola = armarCola(BANCO, cat, n * jugadores.length);
+  }
+  ultimaConfig = { modo: modo, cat: cat, n: n, tiempo: conTiempo };
+  idx = 0;
+  $("msg").textContent = "";
+  siguientePregunta();
+}
+
+function jugadorActual() { return jugadores[idx % jugadores.length]; }
+
+function siguientePregunta() {
+  clearInterval(temporizador);
+  if (idx >= cola.length) return terminar();
+  if (modo === "varios" && jugadores.length > 1) {
+    $("paseNombre").textContent = jugadorActual().nombre;
+    pantalla("pase");
+  } else mostrarPregunta();
+}
+
+function mostrarPregunta() {
+  const q = cola[idx];
+  $("quien").textContent = modo === "solo" ? "Pregunta" : jugadorActual().nombre;
+  $("punt").textContent = modo === "solo" ? jugadores[0].puntos + " puntos" : jugadorActual().puntos + " puntos";
+  $("progreso").textContent = modo === "solo" ? (idx + 1) + " de " + cola.length : "Pregunta " + (idx + 1) + " de " + cola.length;
+  $("pregunta").textContent = q.p;
+  $("siguiente").style.display = "none";
+  const caja = $("opciones");
+  caja.innerHTML = "";
+  q.opciones.forEach((o) => {
+    const b = el("button", o, "op");
+    b.type = "button";
+    b.onclick = () => responder(o, b);
+    caja.append(b);
+  });
+  const tiempo = ultimaConfig.tiempo;
+  $("barraCaja").style.display = tiempo ? "block" : "none";
+  if (tiempo) {
+    let resto = 200;
+    $("barra").style.width = "100%";
+    temporizador = setInterval(() => {
+      resto--;
+      $("barra").style.width = (resto / 2) + "%";
+      if (resto <= 0) { clearInterval(temporizador); responder(null, null); }
+    }, 100);
+  }
+  pantalla("juego");
+}
+
+function responder(texto, boton) {
+  clearInterval(temporizador);
+  const q = cola[idx];
+  const bien = texto === q.correcta;
+  if (bien) jugadorActual().puntos++;
+  [...$("opciones").children].forEach((b) => {
+    b.disabled = true;
+    if (b.textContent === q.correcta) b.classList.add("bien");
+    else if (b === boton) b.classList.add("mala");
+  });
+  $("punt").textContent = jugadorActual().puntos + " puntos";
+  if (navigator.vibrate) navigator.vibrate(bien ? 40 : [60, 40, 60]);
+  $("siguiente").textContent = idx + 1 >= cola.length ? "Ver resultado" : "Siguiente";
+  $("siguiente").style.display = "block";
+}
+
+function terminar() {
+  const caja = $("resultado");
+  caja.innerHTML = "";
+  if (modo === "solo") {
+    const p = jugadores[0].puntos, t = cola.length, r = p / t;
+    caja.append(el("div", p + " de " + t, "grande"));
+    caja.append(el("p", r === 1 ? "¡Perfecto! Eres una máquina." : r >= 0.7 ? "¡Muy bien! Sabes un montón." : r >= 0.4 ? "No está mal. Otra ronda para mejorar." : "Hoy no es tu día. ¡La revancha es gratis!", "centro"));
+  } else {
+    const medallas = ["🥇", "🥈", "🥉"];
+    for (const j of clasificar(jugadores)) {
+      const f = el("div", "", "puesto zona");
+      f.append(el("span", (medallas[j.puesto - 1] || j.puesto + "º") + " " + j.nombre), el("strong", j.puntos + " pts"));
+      caja.append(f);
+    }
+  }
+  pantalla("fin");
+}
+
+$("bSolo").onclick = (e) => { e.preventDefault(); abrirCfg("solo"); };
+$("bVarios").onclick = (e) => { e.preventDefault(); abrirCfg("varios"); };
+$("masJ").onclick = () => { if (numJugadores() < 8) pintarNombres(numJugadores() + 1); };
+$("menosJ").onclick = () => { if (numJugadores() > 2) pintarNombres(numJugadores() - 1); };
+$("cfgAtras").onclick = () => pantalla("menu");
+$("empezar").onclick = empezar;
+$("listo").onclick = mostrarPregunta;
+$("siguiente").onclick = () => { idx++; siguientePregunta(); };
+$("otra").onclick = () => {
+  modo = ultimaConfig.modo;
+  const nombres = jugadores.map((j) => j.nombre);
+  if (modo === "solo") { jugadores = [{ nombre: "Tú", puntos: 0 }]; cola = armarCola(BANCO, ultimaConfig.cat, ultimaConfig.n); }
+  else { jugadores = nombres.map((nombre) => ({ nombre: nombre, puntos: 0 })); cola = armarCola(BANCO, ultimaConfig.cat, ultimaConfig.n * jugadores.length); }
+  idx = 0;
+  siguientePregunta();
+};
+$("alMenu").onclick = () => pantalla("menu");
+</script>
 </main></body></html>
