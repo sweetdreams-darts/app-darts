@@ -17,7 +17,9 @@ main{width:100%;max-width:480px}
 <header class="marca"><h1>Ofertas</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
+  <a id="aRuleta" class="boton oculto" href="ruleta.html">🎡 Ruleta de socios</a>
   <a id="gestionar" class="boton oculto" href="admin-ofertas.html">Gestionar ofertas</a>
+  <a id="aRuletaAdmin" class="boton oculto" href="admin-ruleta.html">Gestionar la ruleta</a>
   <p id="aviso" class="oculto" style="color:var(--suave)">Hay ofertas exclusivas para socios. Pregunta en el bar cómo hacerte socio.</p>
   <div id="lista"></div>
 </div>
@@ -54,6 +56,8 @@ onAuthStateChanged(auth, async (u) => {
     const ofs = (await getDocs(q)).docs.map((d) => d.data()).filter((o) => o.desde <= hoy && (!o.hasta || o.hasta >= hoy));
     ofs.sort((a, b) => (b.desde < a.desde ? -1 : 1));
     $("gestionar").classList.toggle("oculto", !admin);
+    $("aRuletaAdmin").classList.toggle("oculto", !admin);
+    $("aRuleta").classList.toggle("oculto", !ve);
     $("aviso").classList.toggle("oculto", ve);
     const lista = $("lista");
     lista.innerHTML = "";
