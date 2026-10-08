@@ -24,13 +24,17 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
   <a class="boton" href="admin-liga.html">Liga: equipos y bloqueos</a>
   <a class="boton" href="admin-visperas.html">Vísperas de festivo</a>
   <a class="boton" href="admin-ofertas.html">Ofertas</a>
+  <a class="boton" href="admin-ruleta.html">Ruleta de socios</a>
+  <a class="boton" href="admin-fotos.html">Subir fotos</a>
   <a class="boton" href="admin-escaner.html">Escáner de carné</a>
+  <a class="boton" href="camarero.html">Panel de camarero (canjes)</a>
   <p id="resumen"></p>
   <input id="buscar" type="search" placeholder="Buscar por nombre o email">
   <select id="filtro">
     <option value="todos">Todos</option>
     <option value="user">Solo usuarios (sin acceso a la Zona Liga)</option>
     <option value="player">Solo jugadores oficiales</option>
+    <option value="staff">Solo camareros</option>
     <option value="socio">Solo socios</option>
   </select>
   <div id="lista"></div>
@@ -50,7 +54,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
-const ROLES = { user: "Usuario", player: "Jugador oficial", admin: "Administrador" };
+const ROLES = { user: "Usuario", player: "Jugador oficial", staff: "Camarero", admin: "Administrador" };
 const el = (tag, txt, cls) => {
   const e = document.createElement(tag);
   if (txt) e.textContent = txt;
@@ -77,7 +81,7 @@ function pintar() {
   const t = $("buscar").value.trim().toLowerCase();
   const f = $("filtro").value;
   const n = (r) => usuarios.filter((x) => x.role === r).length;
-  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("admin") + " administradores, " + usuarios.filter((x) => x.socio).length + " socios.";
+  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("staff") + " camareros, " + n("admin") + " administradores, " + usuarios.filter((x) => x.socio).length + " socios.";
   const lista = $("lista");
   lista.innerHTML = "";
   for (const x of usuarios) {
@@ -95,6 +99,14 @@ function pintar() {
       const b = el("button", dar ? "Dar acceso a la Zona Liga" : "Quitar acceso a la Zona Liga", dar ? "" : "sec");
       b.onclick = () => cambiar(x, dar ? "player" : "user");
       c.append(b);
+      const cam = el("button", "Hacer camarero", "sec");
+      cam.onclick = () => cambiar(x, "staff");
+      c.append(cam);
+    }
+    if (x.role === "staff") {
+      const q = el("button", "Quitar rol de camarero", "sec");
+      q.onclick = () => cambiar(x, "user");
+      c.append(q);
     }
     if (x.role !== "robot") {
       const s = el("button", x.socio ? "Quitar socio" : "Hacer socio", "sec");
@@ -106,7 +118,9 @@ function pintar() {
 }
 
 async function cambiar(x, nuevo) {
-  const txt = (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + x.nombre + "?";
+  const txt = nuevo === "staff" ? "¿Hacer camarero a " + x.nombre + "? Podrá comprobar carnés de socio y canjear premios de la ruleta." :
+    x.role === "staff" ? "¿Quitar el rol de camarero a " + x.nombre + "?" :
+    (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + x.nombre + "?";
   if (!confirm(txt)) return;
   try {
     await updateDoc(doc(db, "users", x.id), { role: nuevo });
