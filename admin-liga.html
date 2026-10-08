@@ -63,6 +63,12 @@ label.campo{display:block;margin-top:14px;font-weight:700}
   <button id="edCancelar" class="sec">Cancelar</button>
 </div>
 
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
@@ -204,6 +210,16 @@ function pintarNuevos() {
       c.append(el("small", f.p.local + " – " + f.p.visitante));
       const s = document.createElement("select");
       s.add(new Option("(sin diana)", ""));
+      dianas.forEach((x) => s.add(new Option(x.nombre + (x.online ? " · online" : ""), x.id)));
+      s.value = f.dianaId;
+      s.onchange = () => { f.dianaId = s.value; pintarNuevos(); };
+      c.append(s);
+      f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
+      cont.append(c);
+    }
+  }
+  const ok = nuevos.filter((f) => f.dianaId && !f.bloquea).length;
+  $("resumen").textContent = nuevos.length ? nuevos.length + " partidos nuevos en Sweet Dreams · " + ok + " listos · " + (nuevos.length - ok) + " con aviso." : "";
   $("aplicar").classList.toggle("oculto", !ok);
   $("aplicar").textContent = "Aplicar bloqueos (" + ok + " partidos)";
 }
@@ -249,6 +265,8 @@ $("aplicar").onclick = async () => {
 
 // ---------- 3 y 4. Bloqueados y aplazadas ----------
 function pintarBloqueos() {
+  const act = $("bloqueados"), apl = $("aplazadas");
+  act.innerHTML = "";
   apl.innerHTML = "";
   const todos = [...bloqueos.values()].sort((a, b) => a.partidoMs - b.partidoMs);
   let ultimo = "", n = 0;
@@ -283,7 +301,8 @@ function pintarBloqueos() {
   if (!apl.children.length) apl.append(el("p", "No hay partidas aplazadas pendientes."));
 }
 async function cambiarEstado(b, estado) {
-  const nuevo = Object.assign({}, b, { estado: estado });
+  const nuevo = Object.assign({}, b, { estado: estado, dianaId: estado === "activo" ? b.dianaId : "" });
+  nuevo.dianaId = estado === "activo" ? b.dianaId : b.dianaId;
   await enviar([...opsBloqueo(nuevo, b), ...(await opsCambio(nuevo))]);
   await cargarBloqueos();
 }
@@ -339,6 +358,9 @@ async function edRevisar() {
 $("edFecha").onchange = edRevisar;
 $("edHora").onchange = edRevisar;
 $("edCat").onchange = edRevisar;
+$("edCancelar").onclick = () => { $("editor").classList.add("oculto"); edit = null; };
+$("aniadir").onclick = () => { $("edNivel").value = ""; $("edLocal").value = ""; $("edVisitante").value = ""; abrirEditor("nuevo", null); };
+$("edGuardar").onclick = async () => {
   const f = $("edFecha").value, h = $("edHora").value, dianaId = $("edDiana").value;
   if (!f || !h || !dianaId) { $("edInfo").textContent = "Elige fecha, hora y una diana libre."; return; }
   const [y, m, d] = f.split("-").map(Number), [hh, mi] = h.split(":").map(Number);
