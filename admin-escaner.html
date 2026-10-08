@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Escáner de carné</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 6px;color:#ffd166}
+input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:10px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+video{width:100%;border-radius:12px;background:#000;margin-top:10px}
+.res{border-radius:12px;padding:16px;margin-top:14px;text-align:center}
+.ok{background:#12351f;border:2px solid #5dff9a}
+.mal{background:#3a1420;border:2px solid #ff5c7a}
+.res .est{font-size:1.2rem;font-weight:700}
+.res .nom{font-size:1.4rem;font-weight:700;margin:6px 0}
+.res small{display:block;opacity:.85;margin-top:4px}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Escáner de carné</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <button id="abrir">Abrir cámara</button>
+  <button id="parar" class="sec oculto">Parar cámara</button>
+  <video id="video" playsinline muted class="oculto"></video>
+  <canvas id="lienzo" class="oculto"></canvas>
+  <div id="resultado"></div>
+
+  <h2>O busca por número de socio</h2>
+  <input id="num" type="number" inputmode="numeric" placeholder="Número de socio, por ejemplo 1">
+  <button id="buscar" class="sec">Buscar</button>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let flujo = null, detector = null, bucle = null, pausa = 0;
+
+// <logica>
+function uidDeQR(texto) {
+  const t = String(texto || "").trim();
+  return t.startsWith("SD-SOCIO:") && t.length > 12 ? t.slice(9) : "";
+}
+// </logica>
+
+function mostrar(f) {
+  const r = $("resultado");
+  r.innerHTML = "";
+  if (!f) {
+    const c = el("div", "", "res mal");
+    c.append(el("div", "CÓDIGO NO RECONOCIDO", "est"), el("small", "Esa persona no existe en la app."));
+    r.append(c);
+    return;
+  }
+  const socio = f.socio === true;
+  const c = el("div", "", "res " + (socio ? "ok" : "mal"));
+  c.append(el("div", socio ? "✔ SOCIO ACTIVO" : "✘ NO ES SOCIO", "est"));
+  c.append(el("div", f.nombre || "(sin nombre)", "nom"));
+  if (f.socioNum) c.append(el("small", "Socio nº " + String(f.socioNum).padStart(4, "0")));
+  if (socio && f.socioDesde && f.socioDesde.toDate) { const d = f.socioDesde.toDate(); c.append(el("small", "Socio desde " + d.getDate() + " " + MESES[d.getMonth()] + " " + d.getFullYear())); }
+  if (!socio && f.socioNum) c.append(el("small", "Tuvo número de socio, pero ahora está dado de baja."));
+  r.append(c);
+  if (navigator.vibrate) navigator.vibrate(socio ? 80 : [80, 60, 80]);
+}
+
+async function porUid(uid) {
+  try {
+    const s = await getDoc(doc(db, "users", uid));
+    mostrar(s.exists() ? s.data() : null);
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+
+async function cargarJsQR() {
+  if (window.jsQR) return;
+  await new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+    s.onload = ok;
+    s.onerror = () => mal(new Error("No se ha podido cargar el lector de códigos"));
+    document.head.append(s);
+  });
+}
+
+async function abrir() {
+  $("msg").textContent = "";
+  try {
+    flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    $("video").srcObject = flujo;
+    $("video").classList.remove("oculto");
+    await $("video").play();
+    $("abrir").classList.add("oculto");
+    $("parar").classList.remove("oculto");
+    detector = null;
+    if ("BarcodeDetector" in window) {
+      try {
+        const formatos = await BarcodeDetector.getSupportedFormats();
+        if (formatos.includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] });
+      } catch (e) { detector = null; }
+    }
+    if (!detector) await cargarJsQR();
+    bucle = setInterval(leer, 300);
+  } catch (e) {
+    $("msg").textContent = "No se ha podido abrir la cámara: " + (e.message || e.name) + ". Comprueba que has dado permiso a la cámara.";
+    parar();
+  }
+}
+
+function parar() {
+  clearInterval(bucle);
+  if (flujo) flujo.getTracks().forEach((t) => t.stop());
+  flujo = null;
+  $("video").classList.add("oculto");
+  $("parar").classList.add("oculto");
+  $("abrir").classList.remove("oculto");
+}
+
+async function leer() {
+  const v = $("video");
+  if (!flujo || v.readyState < 2 || Date.now() < pausa) return;
+  let texto = "";
+  try {
+    if (detector) {
+      const r = await detector.detect(v);
+      if (r.length) texto = r[0].rawValue;
+    } else if (window.jsQR) {
+      const c = $("lienzo"), k = Math.min(1, 640 / v.videoWidth);
+      c.width = Math.round(v.videoWidth * k);
+      c.height = Math.round(v.videoHeight * k);
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(v, 0, 0, c.width, c.height);
+      const im = g.getImageData(0, 0, c.width, c.height);
+      const r = window.jsQR(im.data, im.width, im.height);
+      if (r) texto = r.data;
+    }
+  } catch (e) { return; }
+  const uid = uidDeQR(texto);
+  if (texto && !uid) { pausa = Date.now() + 2000; $("resultado").innerHTML = ""; $("resultado").append(el("div", "Ese código no es un carné de socio de Sweet Dreams.", "res mal")); return; }
+  if (uid) { pausa = Date.now() + 3000; porUid(uid); }
+}
+
+$("abrir").onclick = abrir;
+$("parar").onclick = parar;
+$("buscar").onclick = async () => {
+  const n = Number($("num").value);
+  if (!n) { $("msg").textContent = "Escribe un número de socio."; return; }
+  $("msg").textContent = "";
+  try {
+    const s = await getDocs(query(collection(db, "users"), where("socioNum", "==", n)));
+    mostrar(s.empty ? null : s.docs[0].data());
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
