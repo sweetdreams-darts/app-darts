@@ -53,3 +53,10 @@ button:disabled{opacity:.4;animation:none!important}
 body{min-height:100vh}
 p,small,strong,li{overflow-wrap:anywhere}
 .tile strong{font-size:clamp(.78rem,3.7vw,1rem)}
+/* Ajustes de medidas y etiquetas (8 oct) */
+*{box-sizing:border-box}
+.zona{padding:16px}
+#uEmail{font-size:.82rem;color:var(--suave);opacity:1!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caja>p:last-of-type{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#uRol,#uSocio{padding:5px 14px!important;font-size:.82rem!important;line-height:1.2}
+#uSocio{background:transparent!important;color:var(--cian)!important;border:1.5px solid var(--cian);box-shadow:0 0 12px rgba(25,242,255,.35)!important}
