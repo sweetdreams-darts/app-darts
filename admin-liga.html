@@ -157,6 +157,22 @@ async function cargarBloqueos() {
   (await getDocs(collection(db, "liga_bloqueos"))).forEach((d) => bloqueos.set(d.id, { id: d.id, ...d.data() }));
   pintarBloqueos();
 }
+async function opsCambio(b) {
+  const ref = doc(db, "liga_config", "cambio_" + b.id);
+  if (b.origen === "manual") {
+    if (b.estado !== "activo") return [{ del: ref }];
+    return [{ ref: ref, datos: { estado: "extra", categoria: b.categoria, nivel: b.nivel || 0, local: b.local || "", visitante: b.visitante || "", dia: b.dia, hora: hhmm(b.partidoMs) } }];
+  }
+  const o = await getDoc(doc(db, "liga_partidos", b.id));
+  if (!o.exists()) return [];
+  const orig = o.data();
+  if (b.estado === "aplazado") return [{ ref: ref, datos: { estado: "aplazado", diaOriginal: orig.dia, horaOriginal: orig.hora } }];
+  if (b.estado === "activo") {
+    if (b.dia === orig.dia && hhmm(b.partidoMs) === orig.hora) return [{ del: ref }];
+    return [{ ref: ref, datos: { estado: "movido", dia: b.dia, hora: hhmm(b.partidoMs), diaOriginal: orig.dia, horaOriginal: orig.hora } }];
+  }
+  return [{ del: ref }];
+}
 const nombreDiana = (id) => (dianas.find((x) => x.id === id) || {}).nombre || "sin diana";
 const etiquetaPartido = (b) => (b.categoria === "parejas" ? "Parejas" : "Equipos") + (b.nivel ? " N" + b.nivel : "") + " · " + (b.local || "?") + " – " + (b.visitante || "?");
 
@@ -188,16 +204,6 @@ function pintarNuevos() {
       c.append(el("small", f.p.local + " – " + f.p.visitante));
       const s = document.createElement("select");
       s.add(new Option("(sin diana)", ""));
-      dianas.forEach((x) => s.add(new Option(x.nombre + (x.online ? " · online" : ""), x.id)));
-      s.value = f.dianaId;
-      s.onchange = () => { f.dianaId = s.value; pintarNuevos(); };
-      c.append(s);
-      f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
-      cont.append(c);
-    }
-  }
-  const ok = nuevos.filter((f) => f.dianaId && !f.bloquea).length;
-  $("resumen").textContent = nuevos.length ? nuevos.length + " partidos nuevos en Sweet Dreams · " + ok + " listos · " + (nuevos.length - ok) + " con aviso." : "";
   $("aplicar").classList.toggle("oculto", !ok);
   $("aplicar").textContent = "Aplicar bloqueos (" + ok + " partidos)";
 }
@@ -243,8 +249,6 @@ $("aplicar").onclick = async () => {
 
 // ---------- 3 y 4. Bloqueados y aplazadas ----------
 function pintarBloqueos() {
-  const act = $("bloqueados"), apl = $("aplazadas");
-  act.innerHTML = "";
   apl.innerHTML = "";
   const todos = [...bloqueos.values()].sort((a, b) => a.partidoMs - b.partidoMs);
   let ultimo = "", n = 0;
@@ -280,7 +284,7 @@ function pintarBloqueos() {
 }
 async function cambiarEstado(b, estado) {
   const nuevo = Object.assign({}, b, { estado: estado });
-  await enviar(opsBloqueo(nuevo, b));
+  await enviar([...opsBloqueo(nuevo, b), ...(await opsCambio(nuevo))]);
   await cargarBloqueos();
 }
 async function aplazar(b) {
@@ -335,9 +339,6 @@ async function edRevisar() {
 $("edFecha").onchange = edRevisar;
 $("edHora").onchange = edRevisar;
 $("edCat").onchange = edRevisar;
-$("edCancelar").onclick = () => { $("editor").classList.add("oculto"); edit = null; };
-$("aniadir").onclick = () => { $("edNivel").value = ""; $("edLocal").value = ""; $("edVisitante").value = ""; abrirEditor("nuevo", null); };
-$("edGuardar").onclick = async () => {
   const f = $("edFecha").value, h = $("edHora").value, dianaId = $("edDiana").value;
   if (!f || !h || !dianaId) { $("edInfo").textContent = "Elige fecha, hora y una diana libre."; return; }
   const [y, m, d] = f.split("-").map(Number), [hh, mi] = h.split(":").map(Number);
@@ -352,7 +353,7 @@ $("edGuardar").onclick = async () => {
     const b = { id: e.b ? e.b.id : "manual-" + Date.now(), origen: e.b ? e.b.origen : "manual", categoria: cat, nivel: nuevoM ? Number($("edNivel").value) || 0 : e.b.nivel,
       local: nuevoM ? $("edLocal").value.trim() : e.b.local, visitante: nuevoM ? $("edVisitante").value.trim() : e.b.visitante,
       dianaId: dianaId, partidoMs: pMs, inicioMs: iv[0], finMs: iv[1], estado: "activo", dia: iso(new Date(pMs)), nota: e.b ? e.b.nota || "" : "" };
-    await enviar(opsBloqueo(b, e.b || null));
+    await enviar([...opsBloqueo(b, e.b || null), ...(await opsCambio(b))]);
     $("editor").classList.add("oculto");
     edit = null;
     $("msg").textContent = "✔ Guardado: " + diaBonito(pMs) + " " + hhmm(pMs) + " · " + nombreDiana(dianaId) + ".";
@@ -402,4 +403,4 @@ onAuthStateChanged(auth, async (u) => {
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
 });
 </script>
-</main></body></html> 
+</main></body></html>
