@@ -217,7 +217,8 @@ def valor(x):
 
 def entrar():
     r = requests.post(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={API_KEY}",
-                      json={"email": os.environ["ROBOT_EMAIL"], "password": os.environ["ROBOT_PASSWORD"], "returnSecureToken": True}, timeout=30)
+                      json={"email": os.environ["ROBOT_EMAIL"], "password": os.environ["ROBOT_PASSWORD"], "returnSecureToken": True},
+                      headers={"Referer": "https://sweetdreams-darts.github.io/app-darts/"}, timeout=30)
     if r.status_code != 200:
         sys.exit("No he podido entrar con la cuenta robot: " + r.text[:200])
     return {"Authorization": "Bearer " + r.json()["idToken"]}
