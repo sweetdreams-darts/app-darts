@@ -219,7 +219,7 @@ function pintarNombres(n) {
 }
 const numJ = () => $("nombres").querySelectorAll("input").length;
 
-  // ---------- dado 3D ----------
+// ---------- dado 3D ----------
 function construirDado() {
   const cubo = $("cubo");
   cubo.innerHTML = "";
@@ -477,7 +477,8 @@ function carta(c, siguiente, extraTxt, etiqueta) {
   limpiarAcciones();
   $("acciones").append(boton(etiqueta || "Hecho", siguiente, "pri"));
 }
-  function aplicar(j, n) {
+
+function aplicar(j, n) {
   const c = CASILLAS[n - 1];
   switch (c.t) {
     case "meta": return ganar(j);
@@ -620,4 +621,4 @@ $("otra").onclick = () => nuevaPartida(ultima);
 $("alMenu").onclick = () => { window.location.href = "juegos.html"; };
 window.addEventListener("resize", () => { if (J.length) ubicarTodos(); });
 </script>
-</main></body></html>s
+</main></body></html>
