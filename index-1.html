@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweet Dreams</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sweet Dreams">
+<link rel="stylesheet" href="estilo.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;justify-content:center;padding:20px}
+main{width:100%;max-width:440px}
+label{display:block;margin:12px 0 4px}
+input{width:100%;padding:12px;font-size:1rem}
+button{width:100%;margin-top:14px;padding:13px;font-size:1rem}
+button.enlace{margin-top:6px;padding:8px;font-weight:400}
+.caja{padding:18px;margin-bottom:14px}
+.zona{padding:12px;margin-top:12px}
+.rol{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:700}
+.chk{display:flex;align-items:flex-start;gap:10px;margin:14px 0 0}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+#msg{min-height:1.4em;text-align:center}
+.pie{text-align:center;font-size:.85rem}
+.instalarBan{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:14px;border-radius:16px;text-decoration:none;color:#fff!important;background:linear-gradient(100deg,rgba(25,242,255,.18),rgba(255,43,214,.22));border:1px solid rgba(25,242,255,.55);box-shadow:0 0 16px rgba(25,242,255,.25)}
+.instalarBan strong{display:block;color:#fff}
+.instalarBan small{display:block;opacity:.85;color:#fff!important}
+.instalarBan .x{margin-left:auto;padding:6px 10px;font-size:1.2rem;opacity:.8;cursor:pointer}
+.oculto{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <header class="marca">
+    <img id="logo" src="logo.png" alt="Sweet Dreams" onerror="this.remove();document.getElementById('h1marca').classList.remove('sr')">
+    <h1 id="h1marca" class="sr">Sweet Dreams</h1>
+  </header>
+  <p id="cargando" style="text-align:center">Cargando…</p>
+
+  <form id="form" class="caja oculto" novalidate>
+    <h2 id="titulo" style="margin:0;font-size:1.2rem">Entrar</h2>
+    <div id="campoNombre" class="oculto">
+      <label for="nombre">Nombre y apellidos</label>
+      <input id="nombre" autocomplete="name" maxlength="60">
+      <small>Si juegas en la liga, escribe tu nombre y apellidos tal cual aparecen en la liga.</small>
+    </div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" inputmode="email">
+    <label for="pass">Contraseña (mínimo 6 caracteres)</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <label id="campoAcepto" class="chk oculto"><input type="checkbox" id="acepto"><span>He leído y acepto la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
+    <button id="enviar" class="pri" type="submit">Entrar</button>
+    <button id="cambiar" class="enlace" type="button">No tengo cuenta: crear una</button>
+    <button id="olvido" class="enlace" type="button">He olvidado mi contraseña</button>
+  </form>
+
+  <section id="vistaUsuario" class="oculto">
+    <div class="caja">
+      <p style="margin:0">Hola, <strong id="uNombre"></strong></p>
+      <p id="uEmail" style="margin:4px 0 8px;opacity:.8"></p>
+      <p style="margin:0">Tu rol: <span id="uRol" class="rol"></span> <span id="uSocio" class="rol oculto"></span></p>
+    </div>
+    <a id="bannerInstalar" class="instalarBan oculto" href="instalar.html"><span style="font-size:1.9rem">📲</span><span><strong>Instala la app en tu móvil</strong><small>Se abre con un toque y recibes avisos</small></span><span id="cerrarInstalar" class="x" role="button" aria-label="Cerrar">✕</span></a>
+    <div id="avisoVerif" class="zona oculto">Para reservar, verifica tu email. Te hemos enviado un enlace a <strong id="vEmail"></strong> (mira también en spam).
+      <button id="yaVerif" class="pri" type="button">Ya lo he verificado</button>
+      <button id="reenviar" type="button">Reenviar el email</button>
+    </div>
+
+    <div class="tiles">
+      <a class="tile t-rosa grande" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
+      <a id="tileCarne" class="tile t-violeta grande oculto" href="carne.html"><span class="emoji">🪪</span><strong>Mi carné de socio</strong><small>Tu código para el bar</small></a>
+      <a class="tile t-amarillo" href="ofertas.html"><span class="emoji">🎁</span><strong>Ofertas</strong><small>Promos y ofertas para socios</small></a>
+      <a class="tile t-violeta" href="juegos.html"><span class="emoji">🎮</span><strong>Juegos</strong><small>Retos y premios</small></a>
+      <a class="tile t-cian" href="fotos.html"><span class="emoji">📸</span><strong>Fotos</strong><small>Noches y eventos</small></a>
+      <a class="tile t-verde" href="info.html"><span class="emoji">💬</span><strong>Preguntas y contacto</strong><small>Dudas y cómo llegar</small></a>
+      <a id="tileStaff" class="tile t-cian grande oculto" href="camarero.html"><span class="emoji">🍺</span><strong>Panel de camarero</strong><small>Carnés y premios de la ruleta</small></a>
+      <a id="tileAdmin" class="tile t-rojo grande oculto" href="admin.html"><span class="emoji">⚙️</span><strong>Panel de administrador</strong><small>Accesos, reservas y liga</small></a>
+    </div>
+
+    <button id="salir" type="button">Cerrar sesión</button>
+    <button id="borrar" class="enlace oculto" type="button">Borrar mi cuenta</button>
+    <div id="boxBorrar" class="zona oculto">Se borrarán tu cuenta y tus reservas. No se puede deshacer. Para confirmar, escribe tu contraseña.
+      <input id="passBorrar" type="password" autocomplete="current-password">
+      <button id="borrarOk" class="peligro" type="button">Borrar definitivamente</button>
+      <button id="borrarNo" type="button">Cancelar</button>
+    </div>
+  </section>
+
+  <p id="msg" role="status"></p>
+  <p class="pie">Versión 1.2</p>
+</main>
+
+<script>
+setTimeout(function () {
+  var c = document.getElementById("cargando");
+  if (c && !c.classList.contains("oculto")) c.textContent = "No se ha podido cargar. Comprueba tu conexión y vuelve a abrir la app.";
+}, 8000);
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const ROLES = { user: "Usuario", player: "Jugador oficial", staff: "Camarero", admin: "Administrador" };
+let modoRegistro = false;
+let registrando = false;
+let fichaActual = null;
+
+function mensaje(t) { $("msg").textContent = t || ""; }
+
+function errorTexto(e) {
+  const c = e.code || "";
+  if (["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(c)) return "Email o contraseña incorrectos.";
+  if (c === "auth/email-already-in-use") return "Ese email ya tiene cuenta. Prueba a entrar.";
+  if (c === "auth/weak-password") return "La contraseña es demasiado corta (mínimo 6 caracteres).";
+  if (c === "auth/invalid-email") return "El email no es válido.";
+  if (c === "auth/network-request-failed") return "Sin conexión. Revisa tu internet.";
+  if (c === "auth/too-many-requests") return "Demasiados intentos. Espera unos minutos.";
+  if (c === "permission-denied") return "Permiso denegado por las reglas de seguridad.";
+  return "Error: " + (c || e.message);
+}
+
+function vista(cual) {
+  for (const id of ["cargando", "form", "vistaUsuario"]) $(id).classList.toggle("oculto", id !== cual);
+}
+
+function ponerModo(reg) {
+  modoRegistro = reg;
+  $("titulo").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("enviar").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("cambiar").textContent = reg ? "Ya tengo cuenta: entrar" : "No tengo cuenta: crear una";
+  $("campoNombre").classList.toggle("oculto", !reg);
+  $("campoAcepto").classList.toggle("oculto", !reg);
+  $("pass").autocomplete = reg ? "new-password" : "current-password";
+  mensaje("");
+}
+
+function bannerInstalar() {
+  let oculto = false;
+  try { oculto = localStorage.getItem("sd_instalar_no") === "1"; } catch (e) {}
+  const instalada = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  $("bannerInstalar").classList.toggle("oculto", instalada || oculto || !movil);
+}
+
+function mostrar(user, ficha) {
+  fichaActual = ficha;
+  bannerInstalar();
+  const puede = user.emailVerified || ficha.role === "admin";
+  $("avisoVerif").classList.toggle("oculto", puede);
+  $("vEmail").textContent = user.email;
+  $("tileAdmin").classList.toggle("oculto", ficha.role !== "admin");
+  $("tileStaff").classList.toggle("oculto", ficha.role !== "staff" && ficha.role !== "admin");
+  $("borrar").classList.toggle("oculto", ficha.role === "admin");
+  $("boxBorrar").classList.add("oculto");
+  $("uNombre").textContent = ficha.nombre;
+  $("uEmail").textContent = user.email;
+  $("uRol").textContent = ROLES[ficha.role] || ficha.role;
+  $("tileCarne").classList.toggle("oculto", !ficha.socio);
+  $("uSocio").classList.toggle("oculto", !ficha.socio);
+  $("uSocio").textContent = "Socio nº " + String(ficha.socioNum || 0).padStart(4, "0");
+  mensaje("");
+  vista("vistaUsuario");
+}
+
+async function cargarFicha(user) {
+  const ref = doc(db, "users", user.uid);
+  let snap = await getDoc(ref);
+  if (!snap.exists()) {
+    const nombre = (user.displayName || user.email.split("@")[0]).slice(0, 60);
+    await setDoc(ref, { nombre: nombre, email: user.email, role: "user", creado: serverTimestamp() });
+    snap = await getDoc(ref);
+  }
+  return snap.data();
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (registrando) return;
+  if (!user) { vista("form"); return; }
+  try {
+    mostrar(user, await cargarFicha(user));
+  } catch (e) {
+    mensaje(errorTexto(e));
+    await signOut(auth);
+  }
+});
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  mensaje("");
+  const email = $("email").value.trim();
+  const pass = $("pass").value;
+  const nombre = $("nombre").value.trim().slice(0, 60);
+  if (!email || !pass) return mensaje("Escribe tu email y tu contraseña.");
+  if (modoRegistro && !nombre) return mensaje("Escribe tu nombre y apellidos.");
+  if (modoRegistro && !$("acepto").checked) return mensaje("Para crear la cuenta debes aceptar la política de privacidad.");
+  $("enviar").disabled = true;
+  try {
+    if (modoRegistro) {
+      registrando = true;
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(cred.user, { displayName: nombre });
+      await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp(), acepto: serverTimestamp() });
+      sendEmailVerification(cred.user).catch(() => {});
+      registrando = false;
+      mostrar(cred.user, { nombre: nombre, role: "user" });
+    } else {
+      await signInWithEmailAndPassword(auth, email, pass);
+    }
+  } catch (e) {
+    registrando = false;
+    mensaje(errorTexto(e));
+    if (modoRegistro && auth.currentUser) await signOut(auth).catch(() => {});
+  }
+  $("enviar").disabled = false;
+});
+
+$("cerrarInstalar").addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  try { localStorage.setItem("sd_instalar_no", "1"); } catch (x) {}
+  $("bannerInstalar").classList.add("oculto");
+});
+
+$("cambiar").addEventListener("click", () => ponerModo(!modoRegistro));
+
+$("olvido").addEventListener("click", async () => {
+  const email = $("email").value.trim();
+  if (!email) return mensaje("Escribe tu email arriba y pulsa de nuevo.");
+  try {
+    await sendPasswordResetEmail(auth, email);
+    mensaje("Si ese email tiene cuenta, te hemos enviado un correo para cambiar la contraseña. Mira también en spam.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("salir").addEventListener("click", async () => {
+  await signOut(auth);
+  $("pass").value = "";
+});
+
+$("yaVerif").addEventListener("click", async () => {
+  try {
+    await auth.currentUser.reload();
+    await auth.currentUser.getIdToken(true);
+    mostrar(auth.currentUser, fichaActual);
+    if (!auth.currentUser.emailVerified) mensaje("Todavía no consta como verificado. Abre el enlace del email y vuelve a pulsar.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("reenviar").addEventListener("click", async () => {
+  try { await sendEmailVerification(auth.currentUser); mensaje("Email enviado de nuevo. Mira también en spam."); }
+  catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("borrar").addEventListener("click", () => { $("boxBorrar").classList.remove("oculto"); mensaje(""); });
+$("borrarNo").addEventListener("click", () => { $("boxBorrar").classList.add("oculto"); $("passBorrar").value = ""; });
+$("borrarOk").addEventListener("click", async () => {
+  const pass = $("passBorrar").value;
+  if (!pass) return mensaje("Escribe tu contraseña para confirmar.");
+  $("borrarOk").disabled = true;
+  try {
+    const u = auth.currentUser;
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, pass));
+    const ahora = Date.now();
+    const rs = await getDocs(query(collection(db, "reservations"), where("uid", "==", u.uid)));
+    for (const d of rs.docs) {
+      const x = d.data(), ini = x.inicio.toMillis(), fin = x.fin.toMillis();
+      if (fin > ahora) {
+        const ss = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(Math.max(ini, ahora + 60000))), where("inicio", "<", Timestamp.fromMillis(fin))));
+        const b = writeBatch(db);
+        ss.forEach((z) => { const y = z.data(); if (y.uid === u.uid && y.tipo === "reserva" && y.dianaId === x.dianaId) b.delete(z.ref); });
+        await b.commit();
+      }
+      await deleteDoc(d.ref);
+    }
+    await deleteDoc(doc(db, "users", u.uid));
+    await deleteUser(u);
+    $("passBorrar").value = "";
+    mensaje("Tu cuenta se ha borrado.");
+  } catch (e) { mensaje(errorTexto(e)); }
+  $("borrarOk").disabled = false;
+});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>

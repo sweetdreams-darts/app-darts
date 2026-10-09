@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Instala la app de Sweet Dreams</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sweet Dreams">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+.logo{display:block;margin:6px auto 0;max-width:260px;width:70%}
+h1{text-align:center}
+.paso{display:flex;gap:12px;align-items:flex-start;margin-top:12px}
+.paso .n{flex:none;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;background:linear-gradient(135deg,#ff2bd6,#8b5cff);color:#fff}
+.paso p{margin:4px 0 0}
+.icono{display:inline-block;padding:0 8px;border-radius:8px;background:rgba(255,255,255,.12);font-weight:700}
+.grande{width:100%;padding:16px;font-size:1.1rem;margin-top:14px}
+a.grande{display:block;text-align:center;text-decoration:none}
+.ventajas{margin:8px 0 0;padding-left:20px}
+.ventajas li{margin:6px 0}
+.ok{color:#5dff9a;font-weight:700}
+.aviso{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(255,225,77,.1);border:1px solid rgba(255,225,77,.45)}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<img class="logo" src="logo.png" alt="Sweet Dreams" onerror="this.remove()">
+<h1>Instala la app</h1>
+
+<div id="yaInstalada" class="zona oculto">
+  <p class="ok" style="margin:0">✔ Ya tienes la app instalada.</p>
+  <a class="boton grande pri" href="./">Abrir la app</a>
+</div>
+
+<div id="enApp" class="aviso oculto">
+  Estás dentro de otra aplicación (Instagram, Facebook...). Para instalar la app, ábrela primero en el navegador: toca los tres puntos o el icono de compartir y elige <strong>«Abrir en el navegador»</strong> (Chrome en Android, Safari en iPhone).
+</div>
+
+<div id="android" class="zona oculto">
+  <h2 style="margin-top:0">Android</h2>
+  <button id="instalar" class="pri grande" type="button" disabled>📲 Instalar ahora</button>
+  <div id="manualAndroid" class="oculto">
+    <p>Si el botón no se activa, hazlo a mano:</p>
+    <div class="paso"><span class="n">1</span><p>Abre esta página en <strong>Chrome</strong>.</p></div>
+    <div class="paso"><span class="n">2</span><p>Toca el menú <span class="icono">⋮</span> arriba a la derecha.</p></div>
+    <div class="paso"><span class="n">3</span><p>Elige <strong>«Instalar aplicación»</strong> o <strong>«Añadir a pantalla de inicio»</strong>.</p></div>
+  </div>
+</div>
+
+<div id="ios" class="zona oculto">
+  <h2 style="margin-top:0">iPhone y iPad</h2>
+  <div class="paso"><span class="n">1</span><p>Abre esta página en <strong>Safari</strong>.</p></div>
+  <div class="paso"><span class="n">2</span><p>Toca el botón <strong>Compartir</strong> <span class="icono">⬆️</span> (el cuadrado con una flecha, abajo en la pantalla).</p></div>
+  <div class="paso"><span class="n">3</span><p>Baja y elige <strong>«Añadir a pantalla de inicio»</strong> <span class="icono">➕</span>.</p></div>
+  <div class="paso"><span class="n">4</span><p>Toca <strong>Añadir</strong>. Ya la tienes como una app más.</p></div>
+  <p class="aviso">En iPhone, los avisos de tus reservas solo funcionan si instalas la app así y la abres desde su icono.</p>
+</div>
+
+<div id="otro" class="zona oculto">
+  <p style="margin:0">Esta página está pensada para el móvil. Escanea el código QR del cartel del bar, o abre esta dirección desde tu teléfono.</p>
+</div>
+
+<div id="ventajas" class="zona">
+  <h2 style="margin-top:0">¿Por qué instalarla?</h2>
+  <ul class="ventajas">
+    <li>Se abre con un toque, como cualquier app, sin barra del navegador.</li>
+    <li>Reservas tu diana en segundos y consultas la liga.</li>
+    <li>Avisos de tus reservas, si los activas.</li>
+    <li>No ocupa casi nada y no necesita tienda de aplicaciones.</li>
+  </ul>
+  <a class="boton grande" href="./">Prefiero abrirla sin instalar</a>
+</div>
+
+<p style="text-align:center;opacity:.7;font-size:.85rem;margin-top:18px">Sweet Dreams · C/ Paraíso, 11 · Valladolid</p>
+
+<script>
+window.addEventListener("error", function (e) {
+  var m = document.createElement("p");
+  m.textContent = "Error en la página: " + e.message;
+  document.querySelector("main").prepend(m);
+});
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var ua = navigator.userAgent || "";
+  var instalada = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  var esIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var esAndroid = /Android/i.test(ua);
+  var enApp = /FBAN|FBAV|Instagram|Snapchat|MicroMessenger|TikTok|Line\//i.test(ua);
+  var diferido = null, lanzado = false;
+
+  function mostrar(id, si) { $(id).classList.toggle("oculto", !si); }
+  function pintar() {
+    mostrar("yaInstalada", instalada);
+    mostrar("enApp", !instalada && enApp);
+    mostrar("android", !instalada && !enApp && esAndroid);
+    mostrar("ios", !instalada && !enApp && esIOS);
+    mostrar("otro", !instalada && !esAndroid && !esIOS);
+    mostrar("ventajas", !instalada);
+  }
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    diferido = e;
+    $("instalar").disabled = false;
+    mostrar("manualAndroid", false);
+  });
+  window.addEventListener("appinstalled", function () {
+    instalada = true;
+    diferido = null;
+    pintar();
+  });
+  $("instalar").addEventListener("click", function () {
+    if (!diferido) return;
+    lanzado = true;
+    diferido.prompt();
+    diferido.userChoice.then(function () { diferido = null; $("instalar").disabled = true; });
+  });
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+  pintar();
+  if (esAndroid) setTimeout(function () { if (!diferido && !lanzado) mostrar("manualAndroid", true); }, 2500);
+})();
+</script>
+</main></body></html>
