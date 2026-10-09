@@ -13,12 +13,16 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 .card{background:#1d2f52;border-radius:12px;padding:14px;margin-top:12px}
 .card small{opacity:.75;display:block;margin-top:2px}
 .rol{display:inline-block;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.85rem}
+.rol.mal{background:#ff8787}
+#copiaAviso{margin:6px 0 0}
+#copiaAviso.mal{color:#ff8787;font-weight:700}
 #msg{color:#ffd166}
 </style></head>
 <body><main>
 <p><a href="./">← Volver a la app</a></p>
 <h1>Panel de administrador</h1>
 <p id="msg">Cargando…</p>
+<p id="copiaAviso"></p>
 <div id="panel" hidden>
   <a class="boton" href="admin-reservas.html">Ver y gestionar reservas</a>
   <a class="boton" href="admin-liga.html">Liga: equipos y bloqueos</a>
@@ -28,6 +32,8 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
   <a class="boton" href="admin-fotos.html">Subir fotos</a>
   <a class="boton" href="admin-escaner.html">Escáner de carné</a>
   <a class="boton" href="camarero.html">Panel de camarero (canjes)</a>
+  <a class="boton" href="admin-reglas.html">Reglas de reserva</a>
+  <a class="boton" href="admin-copia.html">Copia de seguridad</a>
   <p id="resumen"></p>
   <input id="buscar" type="search" placeholder="Buscar por nombre o email">
   <select id="filtro">
@@ -74,6 +80,13 @@ onAuthStateChanged(auth, async (u) => {
     $("msg").textContent = "";
     $("panel").hidden = false;
     pintar();
+    try {
+      const cp = await getDoc(doc(db, "settings", "copia"));
+      const ms = cp.exists() && cp.data().ultima && cp.data().ultima.toMillis ? cp.data().ultima.toMillis() : 0;
+      const dias = ms ? Math.floor((Date.now() - ms) / 86400000) : -1;
+      $("copiaAviso").textContent = dias < 0 ? "💾 Todavía no has hecho ninguna copia de seguridad." : "💾 Última copia de seguridad: " + (dias === 0 ? "hoy" : "hace " + dias + (dias === 1 ? " día" : " días")) + (dias > 7 ? ". Toca hacer otra." : ".");
+      $("copiaAviso").className = dias < 0 || dias > 7 ? "mal" : "";
+    } catch (e) {}
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 });
 
@@ -93,6 +106,7 @@ function pintar() {
     const p = el("p");
     p.append(el("span", ROLES[x.role] || x.role, "rol"));
     if (x.socio) p.append(" ", el("span", "Socio nº " + String(x.socioNum || 0).padStart(4, "0"), "rol"));
+    if (x.bloqueado) p.append(" ", el("span", "Reservas bloqueadas", "rol mal"));
     c.append(p);
     if (x.role === "user" || x.role === "player") {
       const dar = x.role === "user";
@@ -107,6 +121,11 @@ function pintar() {
       const q = el("button", "Quitar rol de camarero", "sec");
       q.onclick = () => cambiar(x, "user");
       c.append(q);
+    }
+    if (x.role !== "robot" && x.role !== "admin") {
+      const bq = el("button", x.bloqueado ? "Permitir reservas de nuevo" : "Bloquear reservas", "sec");
+      bq.onclick = () => cambiarBloqueo(x);
+      c.append(bq);
     }
     if (x.role !== "robot") {
       const s = el("button", x.socio ? "Quitar socio" : "Hacer socio", "sec");
@@ -125,6 +144,16 @@ async function cambiar(x, nuevo) {
   try {
     await updateDoc(doc(db, "users", x.id), { role: nuevo });
     x.role = nuevo;
+    pintar();
+  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
+}
+
+async function cambiarBloqueo(x) {
+  const bloquear = !x.bloqueado;
+  if (!confirm(bloquear ? "¿Bloquear las reservas de " + x.nombre + "? No podrá reservar hasta que se lo permitas." : "¿Permitir de nuevo las reservas de " + x.nombre + "?")) return;
+  try {
+    await updateDoc(doc(db, "users", x.id), { bloqueado: bloquear });
+    x.bloqueado = bloquear;
     pintar();
   } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
 }

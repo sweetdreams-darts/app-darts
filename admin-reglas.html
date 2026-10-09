@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reglas de reserva</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+a{color:#ffd166}
+label{display:block;margin-top:18px;font-weight:700}
+small{display:block;opacity:.8;font-weight:400;margin-top:2px}
+input,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;margin-top:22px}
+#msg{min-height:1.4em;color:#ffd166}
+.nota{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:18px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Reglas de reserva</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <label for="minAnt">Antelación mínima (minutos)<small>Cuánto antes hay que reservar. Ahora mismo: se aplica al momento.</small></label>
+  <input id="minAnt" type="number" min="0" max="720" inputmode="numeric">
+  <label for="maxDias">Días de antelación máxima<small>Cuántos días vista se puede reservar.</small></label>
+  <input id="maxDias" type="number" min="1" max="60" inputmode="numeric">
+  <label for="maxAct">Reservas activas por persona<small>Cuántas reservas puede tener a la vez una misma persona.</small></label>
+  <input id="maxAct" type="number" min="1" max="20" inputmode="numeric">
+  <label for="maxHoras">Duración máxima de cada reserva (horas)</label>
+  <input id="maxHoras" type="number" min="1" max="12" inputmode="numeric">
+  <button id="guardar">Guardar</button>
+  <p class="nota">Las reservas se hacen por tramos de 15 minutos. Esto no se puede cambiar desde aquí. Tú, como administrador, no tienes estos límites.</p>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const REF = () => doc(db, "settings", "reservas");
+
+// <logica>
+function validar(v) {
+  const reglas = [["minAntelacionMin", 0, 720, "La antelación mínima"], ["maxDiasAntelacion", 1, 60, "Los días de antelación máxima"], ["maxActivas", 1, 20, "Las reservas activas por persona"], ["maxHoras", 1, 12, "La duración máxima"]];
+  for (const [k, a, b, nombre] of reglas) {
+    const n = v[k];
+    if (!Number.isInteger(n) || n < a || n > b) return nombre + " debe ser un número entero entre " + a + " y " + b + ".";
+  }
+  return "";
+}
+// </logica>
+
+$("guardar").onclick = async () => {
+  const v = { minAntelacionMin: Number($("minAnt").value), maxDiasAntelacion: Number($("maxDias").value), maxActivas: Number($("maxAct").value), maxHoras: Number($("maxHoras").value) };
+  const error = validar(v);
+  if (error) { $("msg").textContent = error; return; }
+  try {
+    await setDoc(REF(), v, { merge: true });
+    $("msg").textContent = "✔ Guardado. Ya se aplica a todas las reservas nuevas.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    const c = (await getDoc(REF())).data() || {};
+    $("minAnt").value = c.minAntelacionMin ?? 30;
+    $("maxDias").value = c.maxDiasAntelacion ?? 14;
+    $("maxAct").value = c.maxActivas ?? 3;
+    $("maxHoras").value = c.maxHoras ?? 4;
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>

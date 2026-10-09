@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Copia de seguridad</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 6px;color:#ffd166}
+button{width:100%;padding:13px;font-size:1rem;border-radius:8px;border:0;background:#ffd166;color:#14213d;font-weight:700;margin-top:12px;font-family:inherit}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button:disabled{opacity:.5}
+label.chk{display:flex;align-items:flex-start;gap:10px;margin-top:10px}
+label.chk input{width:22px;height:22px;margin:0;flex:none}
+label.chk small{display:block;opacity:.8}
+.caja{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:12px}
+.aviso{color:#ffd166}
+.mal{color:#ff8787;font-weight:700}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Copia de seguridad</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="caja"><strong id="ultima"></strong></div>
+
+  <h2>Copia completa en tu móvil</h2>
+  <p>Descarga un archivo con los datos de la app. Guárdalo en un sitio privado, por ejemplo tu Google Drive personal. <strong>No lo subas a GitHub ni lo compartas:</strong> lleva datos personales de los clientes.</p>
+  <label class="chk"><input type="checkbox" id="cUsers" checked><span>Cuentas y socios<small>Nombres, emails, roles y números de socio.</small></span></label>
+  <label class="chk"><input type="checkbox" id="cReservas" checked><span>Reservas y dianas<small>Reservas, dianas y reglas de reserva.</small></span></label>
+  <label class="chk"><input type="checkbox" id="cLiga" checked><span>Liga<small>Equipos, partidos, locales, bloqueos y cambios.</small></span></label>
+  <label class="chk"><input type="checkbox" id="cOfertas" checked><span>Ofertas, ruleta y premios<small>Sin las imágenes de las ofertas.</small></span></label>
+  <label class="chk"><input type="checkbox" id="cImagenes"><span>Incluir imágenes de ofertas y fotos<small>Pesa mucho y gasta muchas lecturas. Solo si lo necesitas.</small></span></label>
+  <label class="chk"><input type="checkbox" id="cSlots"><span>Franjas ocupadas (reservas y bloqueos)<small>Muchos datos. Se pueden reconstruir con las reservas y los bloqueos.</small></span></label>
+  <button id="descargar">Descargar copia completa</button>
+
+  <h2>Listas para hoja de cálculo</h2>
+  <button id="csvUsers" class="sec">Descargar lista de cuentas (CSV)</button>
+  <button id="csvReservas" class="sec">Descargar reservas (CSV)</button>
+
+  <p class="aviso">Cada documento que se lee cuenta para el límite gratuito diario (50.000 lecturas). Una copia normal gasta unos cientos o pocos miles. Con imágenes y franjas puede gastar bastante más.</p>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const hoy = () => new Date().toISOString().slice(0, 10);
+
+// <logica>
+function plano(v) {
+  if (v && typeof v.toDate === "function") return { __ts: v.toDate().toISOString() };
+  if (Array.isArray(v)) return v.map(plano);
+  if (v && typeof v === "object") { const o = {}; for (const k in v) o[k] = plano(v[k]); return o; }
+  return v;
+}
+function celdaCsv(v) {
+  const s = v === undefined || v === null ? "" : String(v);
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+function aCsv(cabecera, filas) {
+  return "\ufeff" + [cabecera.map(celdaCsv).join(";")].concat(filas.map((f) => f.map(celdaCsv).join(";"))).join("\r\n");
+}
+function sinImagenes(d) {
+  const o = Object.assign({}, d);
+  for (const k of ["imagen", "thumb"]) if (k in o) o[k] = "(imagen no incluida)";
+  return o;
+}
+function diasDesde(ms, ahora) { return Math.floor((ahora - ms) / 86400000); }
+// </logica>
+
+function descargar(nombre, texto, tipo) {
+  const url = URL.createObjectURL(new Blob([texto], { type: tipo }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 4000);
+}
+
+async function leer(nombre, conImagenes) {
+  const snap = await getDocs(collection(db, nombre));
+  return snap.docs.map((d) => Object.assign({ id: d.id }, plano(conImagenes ? d.data() : sinImagenes(d.data()))));
+}
+
+async function marcarCopia(total) {
+  try { await setDoc(doc(db, "settings", "copia"), { ultima: serverTimestamp(), documentos: total }); } catch (e) {}
+  mostrarUltima(Date.now(), total);
+}
+
+function mostrarUltima(ms, docs) {
+  const e = $("ultima");
+  if (!ms) { e.textContent = "Todavía no has hecho ninguna copia."; e.className = "mal"; return; }
+  const d = diasDesde(ms, Date.now());
+  e.textContent = "Última copia: " + new Date(ms).toLocaleDateString("es-ES") + (d === 0 ? " (hoy)" : " (hace " + d + (d === 1 ? " día)" : " días)")) + (docs ? " · " + docs + " documentos" : "");
+  e.className = d > 7 ? "mal" : "";
+}
+
+$("descargar").onclick = async () => {
+  const grupos = [];
+  if ($("cUsers").checked) grupos.push("users");
+  if ($("cReservas").checked) grupos.push("reservations", "dartboards", "settings");
+  if ($("cLiga").checked) grupos.push("liga_equipos", "liga_partidos", "liga_locales", "liga_config", "liga_bloqueos", "liga_importaciones");
+  if ($("cOfertas").checked) grupos.push("ofertas", "ruleta_config", "ruleta_versiones", "ruleta_giros");
+  if ($("cImagenes").checked) grupos.push("fotos", "fotos_socios");
+  if ($("cSlots").checked) grupos.push("slots");
+  if (!grupos.length) { $("msg").textContent = "Marca al menos una cosa."; return; }
+  $("descargar").disabled = true;
+  const copia = { aplicacion: "Sweet Dreams", fecha: new Date().toISOString(), imagenes: $("cImagenes").checked, colecciones: {} };
+  let total = 0;
+  try {
+    for (const g of grupos) {
+      $("msg").textContent = "Leyendo " + g + "…";
+      copia.colecciones[g] = await leer(g, $("cImagenes").checked);
+      total += copia.colecciones[g].length;
+    }
+    descargar("copia-sweet-dreams-" + hoy() + ".json", JSON.stringify(copia), "application/json");
+    $("msg").textContent = "✔ Copia descargada (" + total + " documentos). Guárdala en un sitio privado.";
+    await marcarCopia(total);
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+  $("descargar").disabled = false;
+};
+
+$("csvUsers").onclick = async () => {
+  try {
+    const us = await leer("users", false);
+    const f = us.map((u) => [u.nombre, u.email, u.role, u.socio ? "sí" : "no", u.socioNum || "", u.bloqueado ? "sí" : "no", u.creado && u.creado.__ts ? u.creado.__ts.slice(0, 10) : ""]);
+    descargar("cuentas-sweet-dreams-" + hoy() + ".csv", aCsv(["Nombre", "Email", "Rol", "Socio", "Nº socio", "Reservas bloqueadas", "Alta"], f), "text/csv");
+    $("msg").textContent = "✔ Lista de " + us.length + " cuentas descargada.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+$("csvReservas").onclick = async () => {
+  try {
+    const [rs, us, ds] = await Promise.all([leer("reservations", false), leer("users", false), leer("dartboards", false)]);
+    const nombre = new Map(us.map((u) => [u.id, u.nombre])), diana = new Map(ds.map((d) => [d.id, d.nombre]));
+    const f = rs.sort((a, b) => (a.inicio && b.inicio ? a.inicio.__ts.localeCompare(b.inicio.__ts) : 0)).map((r) => [nombre.get(r.uid) || r.uid, diana.get(r.dianaId) || r.dianaId, r.inicio ? r.inicio.__ts : "", r.fin ? r.fin.__ts : "", r.creado ? r.creado.__ts : ""]);
+    descargar("reservas-sweet-dreams-" + hoy() + ".csv", aCsv(["Persona", "Diana", "Inicio (UTC)", "Fin (UTC)", "Hecha el (UTC)"], f), "text/csv");
+    $("msg").textContent = "✔ " + rs.length + " reservas descargadas.";
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    const c = await getDoc(doc(db, "settings", "copia"));
+    mostrarUltima(c.exists() && c.data().ultima && c.data().ultima.toMillis ? c.data().ultima.toMillis() : 0, c.exists() ? c.data().documentos : 0);
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
