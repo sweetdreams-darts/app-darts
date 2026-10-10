@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Caja de puntos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h2{font-size:1.1rem;margin:18px 0 6px}
+input{width:100%;padding:12px;font-size:1rem;margin-top:8px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:10px}
+video{width:100%;max-height:34vh;object-fit:cover;border-radius:14px;background:#000;margin-top:10px}
+.fila{display:flex;gap:8px;margin-top:6px}
+.fila input{margin-top:10px}
+.fila button{width:auto;flex:none;padding:13px 22px}
+.socio{padding:14px;margin-top:14px;border:2px solid #5dff9a;box-shadow:0 0 18px rgba(93,255,154,.3)}
+.socio .nom{font-size:1.35rem;font-weight:700}
+.socio .saldo{font-family:"Bungee","Rubik",sans-serif;font-size:1.6rem;color:#ffe14d;margin:6px 0 0}
+.importe{font-size:1.9rem!important;text-align:center;font-weight:700}
+.chips{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}
+.chips button{margin:0;padding:10px 0;font-size:.95rem}
+.prev{text-align:center;margin:8px 0 0;font-size:1.05rem;color:#ffe14d;min-height:1.4em}
+.cup{padding:10px 12px;margin-top:8px;border-radius:12px;background:rgba(255,225,77,.1);border:1px solid rgba(255,225,77,.5)}
+.cup strong{display:block}
+.cup .cod{font-family:"Bungee","Rubik",sans-serif;color:#ffe14d;letter-spacing:2px}
+.cup button{margin-top:8px}
+#aviso{position:sticky;top:8px;z-index:5;padding:12px 14px;border-radius:14px;margin-top:10px;background:#0f2a1c;border:2px solid #5dff9a;box-shadow:0 0 18px rgba(93,255,154,.4)}
+#aviso.mal{background:#2a0f16;border-color:#ff5c7a;box-shadow:0 0 18px rgba(255,92,122,.4)}
+#aviso button{margin-top:8px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="display:flex;justify-content:space-between;margin:0"><a href="./">← Inicio</a><a href="camarero.html">Premios de la ruleta</a></p>
+<header class="marca"><h1>Caja de puntos</h1></header>
+<p id="estado">Cargando…</p>
+<div id="aviso" class="oculto" role="status"></div>
+<div id="panel" class="oculto">
+  <button id="abrir" class="pri" type="button">📷 Abrir cámara y leer el carné</button>
+  <button id="parar" class="oculto" type="button">Parar la cámara</button>
+  <video id="video" playsinline muted class="oculto"></video>
+  <canvas id="lienzo" class="oculto"></canvas>
+  <div class="fila">
+    <input id="num" type="number" inputmode="numeric" placeholder="O escribe el nº de socio">
+    <button id="buscar" type="button">Ir</button>
+  </div>
+
+  <div id="socio" class="zona socio oculto">
+    <div class="nom" id="sNombre"></div>
+    <div id="sNum" style="opacity:.8"></div>
+    <div class="saldo" id="sSaldo"></div>
+    <div id="cupones"></div>
+    <input id="importe" class="importe" type="text" inputmode="decimal" autocomplete="off" placeholder="Importe en €">
+    <div class="chips" id="chips"></div>
+    <p class="prev" id="prev"></p>
+    <button id="sumar" class="pri" type="button">SUMAR PUNTOS</button>
+    <button id="cerrar" type="button">Siguiente cliente</button>
+  </div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { configDe, importeValido, puntosDeCompra, mesDe, estadoCupon } from "./puntos.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let flujo = null, detector = null, bucle = null, pausa = 0, yo = { uid: "", nombre: "" }, cfg = configDe(null);
+let actual = null, ultima = null, temporizador = null, ocupado = false;
+
+function uidDeQR(texto) { const t = String(texto || "").trim(); return t.startsWith("SD-SOCIO:") && t.length > 12 ? t.slice(9) : ""; }
+const eur = (n) => Number(n).toFixed(2).replace(".", ",");
+
+// ---------- avisos ----------
+function aviso(texto, mal, deshacer) {
+  const a = $("aviso");
+  a.className = mal ? "mal" : "";
+  a.innerHTML = "";
+  a.append(el("div", texto));
+  clearInterval(temporizador);
+  if (deshacer) {
+    const b = el("button", "", "sec");
+    b.type = "button";
+    const fin = Date.now() + cfg.deshacerSeg * 1000;
+    const pinta = () => {
+      const r = Math.ceil((fin - Date.now()) / 1000);
+      if (r <= 0) { clearInterval(temporizador); b.remove(); return; }
+      b.textContent = "↩ Deshacer (" + r + " s)";
+    };
+    pinta();
+    temporizador = setInterval(pinta, 1000);
+    b.onclick = () => deshacerUltima();
+    a.append(b);
+  }
+  if (navigator.vibrate) navigator.vibrate(mal ? [80, 60, 80] : 60);
+  if (!mal) beep();
+}
+let audio = null;
+function beep() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 880; g.gain.value = 0.06; o.connect(g); g.connect(audio.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.18); o.stop(audio.currentTime + 0.18); } catch (e) {} }
+function quitaAviso() { clearInterval(temporizador); $("aviso").classList.add("oculto"); }
+function muestraAviso(t, mal, d) { $("aviso").classList.remove("oculto"); aviso(t, mal, d); }
+
+// ---------- movimientos ----------
+const nuevoMov = () => doc(collection(db, "socios_mov"));
+function datosMov(tipo, importe, puntos, saldo, nota, uid, nombre) {
+  return { uid: uid, socioNombre: nombre || "", tipo: tipo, importe: importe, puntos: puntos, saldo: saldo, por: yo.uid, porNombre: yo.nombre, nota: nota || "", mes: mesDe(Date.now()), creado: serverTimestamp() };
+}
+
+async function sumarPuntos(uid, nombre, importe, puntos) {
+  const refS = doc(db, "socios_puntos", uid), refM = nuevoMov();
+  let saldo = 0;
+  await runTransaction(db, async (tx) => {
+    const s = await tx.get(refS);
+    const d = s.exists() ? s.data() : { puntos: 0, total: 0 };
+    saldo = d.puntos + puntos;
+    tx.set(refS, { puntos: saldo, total: d.total + puntos, actualizado: serverTimestamp() });
+    tx.set(refM, datosMov("compra", importe, puntos, saldo, "", uid, nombre));
+  });
+  return { saldo: saldo, movId: refM.id };
+}
+
+async function canjearCupon(c) {
+  const refC = doc(db, "cupones", c.id), refS = doc(db, "socios_puntos", c.uid), refM = nuevoMov();
+  let saldo = 0;
+  await runTransaction(db, async (tx) => {
+    const cu = await tx.get(refC);
+    if (!cu.exists() || cu.data().estado !== "pendiente") throw new Error("Este cupón ya no está disponible.");
+    if (estadoCupon(cu.data(), Date.now()) === "caducado") throw new Error("Este cupón ha caducado.");
+    const coste = cu.data().coste || 0;
+    const s = await tx.get(refS);
+    const d = s.exists() ? s.data() : { puntos: 0, total: 0 };
+    if (d.puntos < coste) throw new Error("Le faltan " + (coste - d.puntos) + " puntos para este canje.");
+    saldo = d.puntos - coste;
+    tx.update(refC, { estado: "canjeado", canjeadoEn: serverTimestamp(), canjeadoPor: yo.uid });
+    if (coste > 0) tx.set(refS, { puntos: saldo, total: d.total, actualizado: serverTimestamp() });
+    tx.set(refM, datosMov("canje", 0, -coste, saldo, cu.data().nombre, c.uid, c.socioNombre));
+  });
+  return saldo;
+}
+
+async function deshacerUltima() {
+  if (!ultima || ocupado) return;
+  if (Date.now() - ultima.t > cfg.deshacerSeg * 1000) { muestraAviso("Ya ha pasado el tiempo para deshacer. Pide al administrador que lo corrija.", true); return; }
+  ocupado = true;
+  const u = ultima;
+  try {
+    const refS = doc(db, "socios_puntos", u.uid), refM = nuevoMov();
+    let saldo = 0;
+    await runTransaction(db, async (tx) => {
+      const s = await tx.get(refS);
+      const d = s.exists() ? s.data() : { puntos: 0, total: 0 };
+      if (d.puntos < u.puntos) throw new Error("Ya ha gastado esos puntos. Que lo corrija el administrador.");
+      saldo = d.puntos - u.puntos;
+      tx.set(refS, { puntos: saldo, total: Math.max(0, d.total - u.puntos), actualizado: serverTimestamp() });
+      tx.set(refM, datosMov("deshacer", -u.importe, -u.puntos, saldo, "Deshace la compra de " + eur(u.importe) + " €", u.uid, u.nombre));
+    });
+    ultima = null;
+    muestraAviso("↩ Deshecho: " + u.nombre + " vuelve a tener " + saldo + " puntos.", false);
+  } catch (e) { muestraAviso("No se ha podido deshacer: " + (e.message || e.code), true); }
+  ocupado = false;
+}
+
+// ---------- socio en pantalla ----------
+async function cargarSocio(uid, datos) {
+  let f = datos;
+  if (!f) { try { const s = await getDoc(doc(db, "users", uid)); f = s.exists() ? s.data() : null; } catch (e) { f = null; } }
+  if (!f || f.socio !== true) { muestraAviso("✘ NO ES SOCIO (o el código no es de un socio actual).", true); pausa = Date.now() + 2500; return; }
+  quitaAviso();
+  pausa = Infinity;
+  let saldo = 0, cups = [];
+  try { const s = await getDoc(doc(db, "socios_puntos", uid)); saldo = s.exists() ? s.data().puntos : 0; } catch (e) {}
+  try {
+    const q = await getDocs(query(collection(db, "cupones"), where("uid", "==", uid), where("estado", "==", "pendiente")));
+    cups = q.docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((c) => estadoCupon(c, Date.now()) === "pendiente");
+  } catch (e) {}
+  actual = { uid: uid, nombre: f.nombre || "(sin nombre)", num: f.socioNum || 0, saldo: saldo };
+  $("sNombre").textContent = actual.nombre;
+  $("sNum").textContent = actual.num ? "Socio nº " + String(actual.num).padStart(4, "0") : "";
+  $("sSaldo").textContent = saldo + " puntos";
+  const cont = $("cupones");
+  cont.innerHTML = "";
+  cups.forEach((c) => {
+    const d = el("div", "", "cup");
+    d.append(el("small", c.coste > 0 ? "🎁 Quiere canjear (" + c.coste + " puntos)" : "🎟️ Cupón activo"), el("strong", c.nombre), el("span", "Código " + c.codigo, "cod"));
+    const b = el("button", c.coste > saldo ? "Faltan " + (c.coste - saldo) + " puntos" : "✔ Canjear ahora", "pri");
+    b.type = "button";
+    b.disabled = c.coste > saldo;
+    b.onclick = async () => {
+      if (ocupado) return;
+      ocupado = true; b.disabled = true;
+      try {
+        const nuevo = await canjearCupon(Object.assign({ uid: uid, socioNombre: actual.nombre }, c));
+        muestraAviso("✔ Canjeado: " + c.nombre + " para " + actual.nombre + ". Saldo: " + nuevo + " puntos.", false);
+        cerrarSocio();
+      } catch (e) { muestraAviso("No se ha podido canjear: " + (e.message || e.code), true); b.disabled = false; }
+      ocupado = false;
+    };
+    d.append(b);
+    cont.append(d);
+  });
+  $("importe").value = "";
+  $("prev").textContent = "";
+  $("socio").classList.remove("oculto");
+  $("importe").focus();
+}
+
+function cerrarSocio() {
+  actual = null;
+  $("socio").classList.add("oculto");
+  $("num").value = "";
+  pausa = 0;
+}
+
+function actualizaPrev() {
+  const v = importeValido($("importe").value, cfg.maxImporte);
+  $("prev").textContent = v.ok ? "= " + puntosDeCompra(v.valor, cfg.puntosPorEuro) + " puntos" : "";
+}
+
+async function sumar() {
+  if (!actual || ocupado) return;
+  const v = importeValido($("importe").value, cfg.maxImporte);
+  if (!v.ok) { muestraAviso(v.error, true); return; }
+  const p = puntosDeCompra(v.valor, cfg.puntosPorEuro);
+  if (p <= 0) { muestraAviso("Con " + eur(v.valor) + " € no llega a ningún punto.", true); return; }
+  ocupado = true;
+  $("sumar").disabled = true;
+  const a = actual;
+  try {
+    const r = await sumarPuntos(a.uid, a.nombre, v.valor, p);
+    ultima = { uid: a.uid, nombre: a.nombre, importe: v.valor, puntos: p, t: Date.now() };
+    muestraAviso("✔ +" + p + " puntos para " + a.nombre + " (" + eur(v.valor) + " €). Saldo: " + r.saldo + " puntos.", false, true);
+    cerrarSocio();
+  } catch (e) { muestraAviso("No se han podido sumar: " + (e.code || e.message), true); }
+  $("sumar").disabled = false;
+  ocupado = false;
+}
+
+// ---------- cámara ----------
+async function cargarJsQR() {
+  if (window.jsQR) return;
+  await new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+    s.onload = ok;
+    s.onerror = () => mal(new Error("No se ha podido cargar el lector de códigos"));
+    document.head.append(s);
+  });
+}
+async function abrir() {
+  try {
+    flujo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    $("video").srcObject = flujo;
+    $("video").classList.remove("oculto");
+    await $("video").play();
+    $("abrir").classList.add("oculto");
+    $("parar").classList.remove("oculto");
+    try { localStorage.setItem("sd_caja_cam", "1"); } catch (e) {}
+    detector = null;
+    if ("BarcodeDetector" in window) {
+      try { const f = await BarcodeDetector.getSupportedFormats(); if (f.includes("qr_code")) detector = new BarcodeDetector({ formats: ["qr_code"] }); } catch (e) { detector = null; }
+    }
+    if (!detector) await cargarJsQR();
+    bucle = setInterval(leer, 300);
+  } catch (e) {
+    muestraAviso("No se ha podido abrir la cámara: " + (e.message || e.name) + ". Puedes buscar por número de socio.", true);
+    parar();
+  }
+}
+function parar() {
+  clearInterval(bucle);
+  if (flujo) flujo.getTracks().forEach((t) => t.stop());
+  flujo = null;
+  $("video").classList.add("oculto");
+  $("parar").classList.add("oculto");
+  $("abrir").classList.remove("oculto");
+  try { localStorage.removeItem("sd_caja_cam"); } catch (e) {}
+}
+async function leer() {
+  const v = $("video");
+  if (!flujo || v.readyState < 2 || Date.now() < pausa) return;
+  let texto = "";
+  try {
+    if (detector) { const r = await detector.detect(v); if (r.length) texto = r[0].rawValue; }
+    else if (window.jsQR) {
+      const c = $("lienzo"), k = Math.min(1, 640 / v.videoWidth);
+      c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+      const g = c.getContext("2d", { willReadFrequently: true });
+      g.drawImage(v, 0, 0, c.width, c.height);
+      const im = g.getImageData(0, 0, c.width, c.height);
+      const r = window.jsQR(im.data, im.width, im.height);
+      if (r) texto = r.data;
+    }
+  } catch (e) { return; }
+  if (!texto) return;
+  const uid = uidDeQR(texto);
+  if (!uid) { pausa = Date.now() + 2000; muestraAviso("Ese código no es un carné de socio de Sweet Dreams.", true); return; }
+  pausa = Infinity;
+  cargarSocio(uid, null);
+}
+
+async function buscarNumero() {
+  const n = Number($("num").value);
+  if (!n) return;
+  try {
+    const s = await getDocs(query(collection(db, "users"), where("socio", "==", true), where("socioNum", "==", n)));
+    if (s.empty) muestraAviso("✘ No hay ningún socio con el nº " + n + ".", true);
+    else await cargarSocio(s.docs[0].id, s.docs[0].data());
+  } catch (e) { muestraAviso("Error: " + (e.code || e.message), true); }
+}
+
+$("abrir").onclick = abrir;
+$("parar").onclick = parar;
+$("buscar").onclick = buscarNumero;
+$("num").addEventListener("keydown", (e) => { if (e.key === "Enter") buscarNumero(); });
+$("importe").addEventListener("input", actualizaPrev);
+$("importe").addEventListener("keydown", (e) => { if (e.key === "Enter") sumar(); });
+$("sumar").onclick = sumar;
+$("cerrar").onclick = cerrarSocio;
+[5, 10, 15, 20, 30, 50].forEach((n) => {
+  const b = el("button", String(n), "sec");
+  b.type = "button";
+  b.onclick = () => { $("importe").value = String(n); actualizaPrev(); $("importe").focus(); };
+  $("chips").append(b);
+});
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const m = await getDoc(doc(db, "users", u.uid));
+    const rol = m.exists() ? m.data().role : "";
+    if (rol !== "staff" && rol !== "admin") { $("estado").textContent = "Esta página es solo para el personal del bar."; return; }
+    yo = { uid: u.uid, nombre: m.data().nombre || "Personal" };
+    try { const c = await getDoc(doc(db, "settings", "puntos")); cfg = configDe(c.exists() ? c.data() : null); } catch (e) {}
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    let auto = false;
+    try { auto = localStorage.getItem("sd_caja_cam") === "1"; } catch (e) {}
+    if (auto) abrir();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
