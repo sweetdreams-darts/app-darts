@@ -1,0 +1,31 @@
+name: Resumen del calendario
+
+on:
+  schedule:
+    - cron: "50 6 * * *"
+  workflow_run:
+    workflows: ["Leer liga"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      prueba:
+        description: "Modo prueba (true = no guarda nada)"
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  resumen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install google-auth requests
+      - run: python scripts/compactar_liga.py
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+          PRUEBA: ${{ github.event.inputs.prueba || 'false' }}
