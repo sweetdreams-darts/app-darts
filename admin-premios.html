@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Puntos y premios</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:30px 0 6px;color:#ffd166}
+label{display:block;margin-top:14px;font-weight:700}
+small{display:block;opacity:.8;font-weight:400;margin-top:2px}
+input,select,textarea,button{width:100%;padding:12px;font-size:1rem;border-radius:8px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+textarea{min-height:64px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;margin-top:14px}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+.fila{display:flex;gap:8px}
+.fila>*{flex:1}
+.chk{display:flex;align-items:center;gap:10px;margin-top:12px}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:10px}
+.card small{margin-top:3px}
+.card button{margin-top:8px;padding:9px}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Puntos y premios</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+
+  <h2>Cómo se ganan los puntos</h2>
+  <label for="cPpe">Puntos por cada 1 € gastado<small>Por ejemplo, 1 = un punto por euro. Se redondea hacia abajo.</small></label>
+  <input id="cPpe" type="number" min="0.1" step="0.1" inputmode="decimal">
+  <label for="cMax">Importe máximo por cobro (€)<small>Protege de errores al teclear. Por encima, se suma desde este panel.</small></label>
+  <input id="cMax" type="number" min="1" inputmode="numeric">
+  <label for="cUndo">Segundos para deshacer una suma</label>
+  <input id="cUndo" type="number" min="10" inputmode="numeric">
+  <button id="guardarCfg">Guardar</button>
+
+  <h2>Premios y combos</h2>
+  <p style="margin-top:0;opacity:.85">Lo que los socios pueden canjear desde su móvil. Un precio de 0 puntos es un cupón gratuito.</p>
+  <div id="lista"></div>
+  <div class="card" id="form">
+    <strong id="formTit">Nuevo premio o combo</strong>
+    <label for="pNom">Nombre<small>Por ejemplo: Combo 2 cañas + tapa</small></label>
+    <input id="pNom" type="text" maxlength="60">
+    <label for="pDes">Descripción (opcional)</label>
+    <textarea id="pDes" maxlength="160"></textarea>
+    <div class="fila">
+      <div><label for="pTipo">Tipo</label><select id="pTipo"><option value="combo">Combo</option><option value="premio">Premio</option><option value="cupon">Cupón</option></select></div>
+      <div><label for="pCoste">Puntos</label><input id="pCoste" type="number" min="0" inputmode="numeric" value="0"></div>
+    </div>
+    <div class="fila">
+      <div><label for="pHoras">Horas para usarlo</label><input id="pHoras" type="number" min="1" max="720" inputmode="numeric" value="24"></div>
+      <div><label for="pOrden">Orden</label><input id="pOrden" type="number" inputmode="numeric" value="10"></div>
+    </div>
+    <label for="pLim">Cuántas veces puede pedirlo cada socio</label>
+    <select id="pLim"><option value="dia">Una vez al día</option><option value="una">Una sola vez en total</option><option value="sin">Las veces que quiera (solo si cuesta puntos)</option></select>
+    <label class="chk"><input id="pAct" type="checkbox" checked><span>Visible para los socios</span></label>
+    <button id="pGuardar">Guardar</button>
+    <button id="pNuevo" class="sec">Limpiar / nuevo</button>
+  </div>
+
+  <h2>Ajuste manual de puntos</h2>
+  <p style="margin-top:0;opacity:.85">Para corregir un error o regalar puntos. Queda registrado con tu nombre.</p>
+  <label for="aNum">Número de socio</label>
+  <input id="aNum" type="number" inputmode="numeric">
+  <label for="aPuntos">Puntos a sumar o restar<small>Ejemplo: 20 suma, -20 resta.</small></label>
+  <input id="aPuntos" type="number" inputmode="numeric">
+  <label for="aNota">Motivo</label>
+  <input id="aNota" type="text" maxlength="80" placeholder="Ej.: corrección de ayer">
+  <button id="aGuardar">Aplicar ajuste</button>
+
+  <h2>Últimos movimientos</h2>
+  <div id="movs"></div>
+  <button id="movRec" class="sec">Actualizar</button>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { configDe, mesDe, textoMovimiento } from "./puntos.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let yo = { uid: "", nombre: "" }, editando = "", premios = [];
+const msg = (t) => { $("msg").textContent = t; };
+
+// <logica>
+function validarPremio(p) {
+  if (!p.nombre.trim()) return "Escribe un nombre.";
+  if (!Number.isInteger(p.coste) || p.coste < 0 || p.coste > 100000) return "Los puntos deben ser un número entero, 0 o más.";
+  if (!Number.isInteger(p.caducaHoras) || p.caducaHoras < 1 || p.caducaHoras > 720) return "Las horas para usarlo deben estar entre 1 y 720.";
+  if (p.coste === 0 && p.limite === "sin") return "Un cupón gratuito no puede ser ilimitado. Elige «una vez al día» o «una sola vez».";
+  return "";
+}
+// </logica>
+
+async function cargarCfg() {
+  const c = configDe((await getDoc(doc(db, "settings", "puntos"))).data());
+  $("cPpe").value = c.puntosPorEuro;
+  $("cMax").value = c.maxImporte;
+  $("cUndo").value = c.deshacerSeg;
+}
+$("guardarCfg").onclick = async () => {
+  const d = { puntosPorEuro: Number($("cPpe").value), maxImporte: Number($("cMax").value), deshacerSeg: Number($("cUndo").value) };
+  if (!(d.puntosPorEuro > 0) || !(d.maxImporte > 0) || !(d.deshacerSeg >= 10)) { msg("Revisa los números: deben ser mayores que 0 (los segundos, al menos 10)."); return; }
+  try { await setDoc(doc(db, "settings", "puntos"), d, { merge: true }); msg("✔ Guardado. Se aplica al momento."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+
+function limpiarForm() {
+  editando = "";
+  $("formTit").textContent = "Nuevo premio o combo";
+  $("pNom").value = ""; $("pDes").value = ""; $("pTipo").value = "combo"; $("pCoste").value = "0"; $("pHoras").value = "24"; $("pOrden").value = "10"; $("pLim").value = "dia"; $("pAct").checked = true;
+}
+function editar(p) {
+  editando = p.id;
+  $("formTit").textContent = "Editar: " + p.nombre;
+  $("pNom").value = p.nombre; $("pDes").value = p.descripcion || ""; $("pTipo").value = p.tipo; $("pCoste").value = String(p.coste); $("pHoras").value = String(p.caducaHoras); $("pOrden").value = String(p.orden); $("pLim").value = p.limite; $("pAct").checked = p.activo === true;
+  $("form").scrollIntoView();
+}
+async function cargarPremios() {
+  const l = $("lista");
+  l.innerHTML = "";
+  premios = (await getDocs(collection(db, "premios"))).docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  if (!premios.length) l.append(el("p", "Todavía no hay premios. Crea el primero abajo."));
+  premios.forEach((p) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", p.nombre + (p.activo ? "" : " (oculto)")), el("small", (p.tipo === "combo" ? "Combo" : p.tipo === "cupon" ? "Cupón" : "Premio") + " · " + (p.coste > 0 ? p.coste + " puntos" : "gratis") + " · " + p.caducaHoras + " h · " + (p.limite === "una" ? "una vez" : p.limite === "dia" ? "una al día" : "sin límite")));
+    const e = el("button", "Editar", "sec"); e.type = "button"; e.onclick = () => editar(p);
+    const b = el("button", "Borrar", "mal"); b.type = "button";
+    b.onclick = async () => { if (!confirm("¿Borrar «" + p.nombre + "»? Los cupones ya activados seguirán valiendo.")) return; try { await deleteDoc(doc(db, "premios", p.id)); msg("Borrado."); await cargarPremios(); } catch (x) { msg("Error: " + (x.code || x.message)); } };
+    c.append(e, b);
+    l.append(c);
+  });
+}
+$("pGuardar").onclick = async () => {
+  const p = { nombre: $("pNom").value.trim(), descripcion: $("pDes").value.trim(), tipo: $("pTipo").value, coste: Number($("pCoste").value), caducaHoras: Number($("pHoras").value), orden: Number($("pOrden").value) || 0, limite: $("pLim").value, activo: $("pAct").checked };
+  const error = validarPremio(p);
+  if (error) { msg(error); return; }
+  try {
+    const ref = editando ? doc(db, "premios", editando) : doc(collection(db, "premios"));
+    await setDoc(ref, Object.assign({}, p, editando ? {} : { creado: serverTimestamp() }), { merge: true });
+    msg("✔ Guardado.");
+    limpiarForm();
+    await cargarPremios();
+  } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+$("pNuevo").onclick = limpiarForm;
+
+$("aGuardar").onclick = async () => {
+  const n = Number($("aNum").value), p = Math.trunc(Number($("aPuntos").value)), nota = $("aNota").value.trim();
+  if (!n || !p) { msg("Escribe el número de socio y los puntos (distintos de 0)."); return; }
+  if (!nota) { msg("Escribe el motivo del ajuste."); return; }
+  try {
+    const s = await getDocs(query(collection(db, "users"), where("socio", "==", true), where("socioNum", "==", n)));
+    if (s.empty) { msg("No hay ningún socio con el nº " + n + "."); return; }
+    const uid = s.docs[0].id, nombre = s.docs[0].data().nombre || "";
+    if (!confirm((p > 0 ? "Sumar " : "Restar ") + Math.abs(p) + " puntos a " + nombre + "?")) return;
+    const refS = doc(db, "socios_puntos", uid), refM = doc(collection(db, "socios_mov"));
+    let saldo = 0;
+    await runTransaction(db, async (tx) => {
+      const x = await tx.get(refS);
+      const d = x.exists() ? x.data() : { puntos: 0, total: 0 };
+      saldo = d.puntos + p;
+      if (saldo < 0) throw new Error("El socio solo tiene " + d.puntos + " puntos.");
+      tx.set(refS, { puntos: saldo, total: p > 0 ? d.total + p : d.total, actualizado: serverTimestamp() });
+      tx.set(refM, { uid: uid, socioNombre: nombre, tipo: "ajuste", importe: 0, puntos: p, saldo: saldo, por: yo.uid, porNombre: yo.nombre, nota: nota, mes: mesDe(Date.now()), creado: serverTimestamp() });
+    });
+    msg("✔ Hecho: " + nombre + " tiene ahora " + saldo + " puntos.");
+    $("aNum").value = ""; $("aPuntos").value = ""; $("aNota").value = "";
+    await cargarMovs();
+  } catch (e) { msg("No se ha podido: " + (e.message || e.code)); }
+};
+
+async function cargarMovs() {
+  const m = $("movs");
+  m.innerHTML = "";
+  try {
+    const s = await getDocs(query(collection(db, "socios_mov"), orderBy("creado", "desc"), limit(40)));
+    if (s.empty) { m.append(el("p", "Todavía no hay movimientos.")); return; }
+    s.docs.forEach((d) => {
+      const x = d.data(), c = el("div", "", "card");
+      c.append(el("strong", (x.socioNombre || "Socio") + ": " + textoMovimiento(x)));
+      c.append(el("small", (x.creado && x.creado.toDate ? x.creado.toDate().toLocaleString("es-ES") : "") + " · por " + (x.porNombre || "?") + " · saldo " + x.saldo));
+      m.append(c);
+    });
+  } catch (e) { m.append(el("p", "No se han podido leer: " + (e.code || e.message))); }
+}
+$("movRec").onclick = cargarMovs;
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const m = await getDoc(doc(db, "users", u.uid));
+    if (!m.exists() || m.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yo = { uid: u.uid, nombre: m.data().nombre || "Administrador" };
+    await cargarCfg();
+    await cargarPremios();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    cargarMovs();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
