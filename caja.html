@@ -48,7 +48,7 @@ video{width:100%;max-height:34vh;object-fit:cover;border-radius:14px;background:
     <div id="sNum" style="opacity:.8"></div>
     <div class="saldo" id="sSaldo"></div>
     <div id="cupones"></div>
-    <input id="importe" class="importe" type="text" inputmode="decimal" autocomplete="off" placeholder="Importe en €">
+    <input id="importe" class="importe" type="text" inputmode="decimal" autocomplete="off" placeholder="Importe en € (ej. 12,50)">
     <div class="chips" id="chips"></div>
     <p class="prev" id="prev"></p>
     <button id="sumar" class="pri" type="button">SUMAR PUNTOS</button>
@@ -65,7 +65,7 @@ window.addEventListener("error", function (e) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-import { configDe, importeValido, puntosDeCompra, mesDe, estadoCupon } from "./puntos.js";
+import { configDe, importeValido, puntosDeCompra, mesDe, estadoCupon, limpiaImporte, MAX_PUNTOS_COBRO } from "./puntos.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -234,7 +234,8 @@ async function sumar() {
   const v = importeValido($("importe").value, cfg.maxImporte);
   if (!v.ok) { muestraAviso(v.error, true); return; }
   const p = puntosDeCompra(v.valor, cfg.puntosPorEuro);
-  if (p <= 0) { muestraAviso("Con " + eur(v.valor) + " € no llega a ningún punto.", true); return; }
+  if (p <= 0) { muestraAviso("Con " + eur(v.valor) + " € no llega a ningún punto. El mínimo son 0,10 € (1 punto).", true); return; }
+  if (p > MAX_PUNTOS_COBRO) { muestraAviso("Son " + p + " puntos de una vez y el máximo por cobro es " + MAX_PUNTOS_COBRO + ". Cobra en dos partes o pide al administrador que lo ajuste.", true); return; }
   ocupado = true;
   $("sumar").disabled = true;
   const a = actual;
@@ -325,7 +326,14 @@ $("abrir").onclick = abrir;
 $("parar").onclick = parar;
 $("buscar").onclick = buscarNumero;
 $("num").addEventListener("keydown", (e) => { if (e.key === "Enter") buscarNumero(); });
-$("importe").addEventListener("input", actualizaPrev);
+$("importe").addEventListener("input", () => {
+  const campo = $("importe"), pos = campo.selectionStart, antes = campo.value, nuevo = limpiaImporte(antes);
+  if (nuevo !== antes) {
+    campo.value = nuevo;
+    try { const q = pos === null || pos >= antes.length ? nuevo.length : Math.min(pos, nuevo.length); campo.setSelectionRange(q, q); } catch (e) {}
+  }
+  actualizaPrev();
+});
 $("importe").addEventListener("keydown", (e) => { if (e.key === "Enter") sumar(); });
 $("sumar").onclick = sumar;
 $("cerrar").onclick = cerrarSocio;
