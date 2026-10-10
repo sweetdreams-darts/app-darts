@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mis puntos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h2{font-size:1.1rem;margin:22px 0 6px}
+button{width:100%;padding:12px;font-size:1rem;margin-top:10px}
+.saldo{text-align:center;padding:18px}
+.saldo .n{font-family:"Bungee","Rubik",sans-serif;font-size:2.8rem;color:#ffe14d;text-shadow:0 0 14px rgba(255,225,77,.5);line-height:1.1}
+.saldo small{display:block;margin-top:6px;opacity:.85}
+.prem{padding:12px 14px;margin-top:10px}
+.prem .tag{display:inline-block;padding:1px 10px;border-radius:999px;font-size:.75rem;font-weight:800;background:#ff2bd6;color:#fff}
+.prem .tag.premio{background:#19f2ff;color:#0a0612}
+.prem .tag.cupon{background:#ffe14d;color:#0a0612}
+.prem strong{display:block;font-size:1.1rem;margin-top:6px}
+.prem .coste{font-family:"Bungee","Rubik",sans-serif;color:#ffe14d;margin-top:4px}
+.prem p{margin:4px 0 0;opacity:.85;font-size:.92rem}
+.activo{padding:14px;margin-top:10px;border:2px solid #5dff9a;box-shadow:0 0 16px rgba(93,255,154,.3);text-align:center}
+.activo .cod{font-family:"Bungee","Rubik",sans-serif;font-size:2.3rem;letter-spacing:5px;color:#ffe14d}
+.hist div{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:.92rem}
+.hist small{display:block;opacity:.7}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="display:flex;justify-content:space-between;margin:0"><a href="./">← Inicio</a><a href="carne.html">Mi carné</a></p>
+<header class="marca"><h1>Mis puntos</h1></header>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="zona saldo">
+    <div class="n" id="saldo">0</div>
+    puntos
+    <small id="norma"></small>
+  </div>
+  <div id="activosCaja" class="oculto"><h2>Tus cupones activos</h2><div id="activos"></div></div>
+  <h2>Premios y combos</h2>
+  <div id="premios"></div>
+  <h2>Tus últimos movimientos</h2>
+  <div id="hist" class="zona hist"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { configDe, idCupon, codigoCupon, estadoCupon, textoMovimiento, faltan, mesDe, fechaUTC } from "./puntos.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let uid = "", saldo = 0, cfg = configDe(null), premios = [], cupones = [];
+const TIPOS = { combo: "🍔 COMBO", premio: "🎁 PREMIO", cupon: "🎟️ CUPÓN" };
+const hhmm = (ms) => { const d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + " del " + d.getDate() + "/" + (d.getMonth() + 1); };
+const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+
+function motivoNo(p) {
+  const propios = cupones.filter((c) => c.premioId === p.id);
+  if (propios.some((c) => estadoCupon(c, Date.now()) === "pendiente")) return "Ya lo tienes activo";
+  if (p.limite === "una" && propios.length) return "Ya lo has usado";
+  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaUTC(Date.now())))) return "Ya lo has pedido hoy";
+  if (faltan(p.coste, saldo) > 0) return "Te faltan " + faltan(p.coste, saldo) + " puntos";
+  return "";
+}
+
+function pintar() {
+  $("saldo").textContent = String(saldo);
+  $("norma").textContent = "Por cada 1 € que gastes en el bar ganas " + (cfg.puntosPorEuro === 1 ? "1 punto" : cfg.puntosPorEuro + " puntos") + ". Enseña tu carné al pagar.";
+  const act = cupones.filter((c) => estadoCupon(c, Date.now()) === "pendiente");
+  $("activosCaja").classList.toggle("oculto", !act.length);
+  const a = $("activos");
+  a.innerHTML = "";
+  act.forEach((c) => {
+    const d = el("div", "", "zona activo");
+    d.append(el("strong", c.nombre), el("div", c.codigo, "cod"), el("small", "Caduca a las " + hhmm(ms(c.caduca)) + ". Enseña este cupón y tu carné al camarero cuando vayas a pagar."));
+    const b = el("button", "Cancelar este cupón", "sec");
+    b.type = "button";
+    b.onclick = () => cancelar(c);
+    d.append(b);
+    a.append(d);
+  });
+  const lista = $("premios");
+  lista.innerHTML = "";
+  if (!premios.length) lista.append(el("p", "Todavía no hay premios. ¡Pronto habrá novedades!"));
+  premios.forEach((p) => {
+    const t = el("div", "", "zona prem");
+    t.append(el("span", TIPOS[p.tipo] || "🎁 PREMIO", "tag " + p.tipo), el("strong", p.nombre));
+    if (p.descripcion) t.append(el("p", p.descripcion));
+    t.append(el("div", p.coste > 0 ? p.coste + " puntos" : "GRATIS", "coste"));
+    const no = motivoNo(p);
+    const b = el("button", no || (p.coste > 0 ? "Canjear" : "Activar cupón"), no ? "sec" : "pri");
+    b.type = "button";
+    b.disabled = !!no;
+    b.onclick = () => pedir(p);
+    t.append(b);
+    lista.append(t);
+  });
+}
+
+async function pedir(p) {
+  if (!confirm("¿Activar «" + p.nombre + "»? Tendrás " + p.caducaHoras + (p.caducaHoras === 1 ? " hora" : " horas") + " para usarlo en el bar.")) return;
+  try {
+    const id = idCupon(uid, p.id, p.limite, Date.now(), Math.random().toString(36).slice(2, 10));
+    const c = { uid: uid, premioId: p.id, nombre: p.nombre, coste: p.coste, estado: "pendiente", codigo: codigoCupon(Math.random), creado: serverTimestamp(), caduca: Timestamp.fromMillis(Date.now() + p.caducaHoras * 3600000 - 120000) };
+    await setDoc(doc(db, "cupones", id), c);
+    cupones.push(Object.assign({ id: id }, c, { creado: Timestamp.fromMillis(Date.now()) }));
+    $("msg").textContent = "✔ Cupón activado. Enséñaselo al camarero.";
+    pintar();
+    window.scrollTo(0, 0);
+  } catch (e) { $("msg").textContent = "No se ha podido activar: " + (e.code === "permission-denied" ? "ya lo has pedido o no cumples las condiciones." : (e.code || e.message)); }
+}
+
+async function cancelar(c) {
+  if (!confirm("¿Cancelar este cupón?")) return;
+  try {
+    await deleteDoc(doc(db, "cupones", c.id));
+    cupones = cupones.filter((x) => x.id !== c.id);
+    $("msg").textContent = "Cupón cancelado.";
+    pintar();
+  } catch (e) { $("msg").textContent = "No se ha podido cancelar: " + (e.code || e.message); }
+}
+
+async function historial() {
+  const h = $("hist");
+  h.innerHTML = "";
+  const now = Date.now(), mesAnt = mesDe(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth() - 1, 15));
+  try {
+    const s = await getDocs(query(collection(db, "socios_mov"), where("uid", "==", uid), where("mes", "in", [mesDe(now), mesAnt])));
+    const m = s.docs.map((d) => d.data()).sort((a, b) => ms(b.creado) - ms(a.creado));
+    if (!m.length) { h.append(el("p", "Todavía no tienes movimientos.")); return; }
+    m.slice(0, 40).forEach((x) => {
+      const d = el("div", textoMovimiento(x));
+      d.append(el("small", ms(x.creado) ? new Date(ms(x.creado)).toLocaleDateString("es-ES") + " · saldo " + x.saldo : ""));
+      h.append(d);
+    });
+  } catch (e) { h.append(el("p", "No se ha podido leer el historial.")); }
+}
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  uid = u.uid;
+  try {
+    const yo = await getDoc(doc(db, "users", uid));
+    if (!yo.exists() || yo.data().socio !== true) { $("estado").textContent = "Esta pantalla es solo para socios."; return; }
+    const [c, s, pr, cu] = await Promise.all([
+      getDoc(doc(db, "settings", "puntos")),
+      getDoc(doc(db, "socios_puntos", uid)),
+      getDocs(collection(db, "premios")),
+      getDocs(query(collection(db, "cupones"), where("uid", "==", uid)))
+    ]);
+    cfg = configDe(c.exists() ? c.data() : null);
+    saldo = s.exists() ? s.data().puntos : 0;
+    premios = pr.docs.map((d) => Object.assign({ id: d.id, tipo: "premio", coste: 0, caducaHoras: 24, limite: "dia", orden: 0 }, d.data())).filter((p) => p.activo === true).sort((a, b) => a.orden - b.orden || a.coste - b.coste);
+    cupones = cu.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    $("estado").textContent = "";
+    pintar();
+    $("panel").classList.remove("oculto");
+    historial();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
