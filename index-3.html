@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweet Dreams</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sweet Dreams">
+<link rel="stylesheet" href="estilo.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;justify-content:center;padding:20px}
+main{width:100%;max-width:440px}
+label{display:block;margin:12px 0 4px}
+input{width:100%;padding:12px;font-size:1rem}
+button{width:100%;margin-top:14px;padding:13px;font-size:1rem}
+button.enlace{margin-top:6px;padding:8px;font-weight:400}
+.caja{padding:18px;margin-bottom:14px}
+.zona{padding:12px;margin-top:12px}
+.rol{display:inline-block;padding:4px 10px;border-radius:999px;font-weight:700}
+.chk{display:flex;align-items:flex-start;gap:10px;margin:14px 0 0}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+#msg{min-height:1.4em;text-align:center}
+.pie{text-align:center;font-size:.85rem}
+.instalarBan{display:flex;align-items:center;gap:12px;padding:12px 14px;margin-bottom:14px;border-radius:16px;text-decoration:none;color:#fff!important;background:linear-gradient(100deg,rgba(25,242,255,.18),rgba(255,43,214,.22));border:1px solid rgba(25,242,255,.55);box-shadow:0 0 16px rgba(25,242,255,.25)}
+.instalarBan strong{display:block;color:#fff}
+.instalarBan small{display:block;opacity:.85;color:#fff!important}
+.instalarBan .x{margin-left:auto;padding:6px 10px;font-size:1.2rem;opacity:.8;cursor:pointer}
+.prox{margin-bottom:14px;padding:14px;border-radius:18px;border:1px solid rgba(255,225,77,.6);background:linear-gradient(150deg,rgba(255,225,77,.13),rgba(255,43,214,.12));box-shadow:0 0 18px rgba(255,225,77,.18)}
+.prox .proxTit{font-family:"Bungee","Rubik",sans-serif;font-size:.95rem;color:#ffe14d;margin:0 0 8px;letter-spacing:.5px}
+.prox .proxFecha{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.prox .proxFecha strong{display:block;font-size:1.08rem}
+.prox .proxFecha strong::first-letter{text-transform:uppercase}
+.prox .chip{padding:3px 12px;border-radius:999px;background:#19f2ff;color:#0a0612;font-weight:800;font-size:.85rem;white-space:nowrap}
+.prox .chip.hoy{background:#ff2bd6;color:#fff}
+.prox .proxPartido{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;margin-top:8px;border-radius:14px;background:rgba(10,6,18,.55);border:1px solid rgba(255,255,255,.14)}
+.prox .hora{font-family:"Bungee","Rubik",sans-serif;font-size:1.25rem;color:#ffe14d;min-width:3.4em}
+.prox .nivel{font-size:.78rem;opacity:.8}
+.prox .equipos{margin:2px 0}
+.prox .cambio{display:block;margin-top:3px;font-size:.8rem;color:#ffe14d}
+.prox a.sede{display:inline-block;margin-top:4px;font-size:.88rem;color:#19f2ff!important}
+.prox .despues{margin-top:10px;font-size:.84rem;opacity:.9}
+.prox .despues div{margin-top:4px}
+.prox .aviso{margin-top:10px;padding:8px 10px;border-radius:10px;background:rgba(255,92,122,.14);border:1px solid rgba(255,92,122,.5);font-size:.85rem}
+.prox .proxEnl{display:flex;gap:8px;margin-top:12px}
+.prox .proxEnl a{flex:1;text-align:center;padding:10px 6px;border-radius:12px;border:1px solid rgba(25,242,255,.6);text-decoration:none;font-size:.9rem;color:#19f2ff!important}
+.prox p{margin:4px 0}
+.oculto{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <header class="marca">
+    <img id="logo" src="logo.png" alt="Sweet Dreams" onerror="this.remove();document.getElementById('h1marca').classList.remove('sr')">
+    <h1 id="h1marca" class="sr">Sweet Dreams</h1>
+  </header>
+  <p id="cargando" style="text-align:center">Cargando…</p>
+
+  <form id="form" class="caja oculto" novalidate>
+    <h2 id="titulo" style="margin:0;font-size:1.2rem">Entrar</h2>
+    <div id="campoNombre" class="oculto">
+      <label for="nombre">Nombre y apellidos</label>
+      <input id="nombre" autocomplete="name" maxlength="60">
+      <small>Si juegas en la liga, escribe tu nombre y apellidos tal cual aparecen en la liga.</small>
+    </div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" inputmode="email">
+    <label for="pass">Contraseña (mínimo 6 caracteres)</label>
+    <input id="pass" type="password" autocomplete="current-password">
+    <label id="campoAcepto" class="chk oculto"><input type="checkbox" id="acepto"><span>He leído y acepto la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
+    <button id="enviar" class="pri" type="submit">Entrar</button>
+    <button id="cambiar" class="enlace" type="button">No tengo cuenta: crear una</button>
+    <button id="olvido" class="enlace" type="button">He olvidado mi contraseña</button>
+  </form>
+
+  <section id="vistaUsuario" class="oculto">
+    <div class="caja">
+      <p style="margin:0">Hola, <strong id="uNombre"></strong></p>
+      <p id="uEmail" style="margin:4px 0 8px;opacity:.8"></p>
+      <p style="margin:0">Tu rol: <span id="uRol" class="rol"></span> <span id="uSocio" class="rol oculto"></span></p>
+    </div>
+    <div id="proxPartido" class="prox oculto"><p class="proxTit">🎯 TU PRÓXIMO PARTIDO</p><div id="proxCuerpo"></div></div>
+    <a id="bannerInstalar" class="instalarBan oculto" href="instalar.html"><span style="font-size:1.9rem">📲</span><span><strong>Instala la app en tu móvil</strong><small>Se abre con un toque y recibes avisos</small></span><span id="cerrarInstalar" class="x" role="button" aria-label="Cerrar">✕</span></a>
+    <div id="avisoVerif" class="zona oculto">Para reservar, verifica tu email. Te hemos enviado un enlace a <strong id="vEmail"></strong> (mira también en spam).
+      <button id="yaVerif" class="pri" type="button">Ya lo he verificado</button>
+      <button id="reenviar" type="button">Reenviar el email</button>
+    </div>
+
+    <div class="tiles">
+      <a class="tile t-rosa grande" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
+      <a id="tileCarne" class="tile t-violeta grande oculto" href="carne.html"><span class="emoji">🪪</span><strong>Mi carné de socio</strong><small>Tu código para el bar</small></a>
+      <a id="tilePuntos" class="tile t-amarillo grande oculto" href="mis-puntos.html"><span class="emoji">⭐</span><strong>Mis puntos y premios</strong><small>Tu saldo, combos y cupones</small></a>
+      <a class="tile t-amarillo" href="ofertas.html"><span class="emoji">🎁</span><strong>Ofertas</strong><small>Promos y ofertas para socios</small></a>
+      <a class="tile t-violeta" href="juegos.html"><span class="emoji">🎮</span><strong>Juegos</strong><small>Retos y premios</small></a>
+      <a class="tile t-cian" href="fotos.html"><span class="emoji">📸</span><strong>Fotos</strong><small>Noches y eventos</small></a>
+      <a class="tile t-verde" href="info.html"><span class="emoji">💬</span><strong>Preguntas y contacto</strong><small>Dudas y cómo llegar</small></a>
+      <a id="tileCaja" class="tile t-verde grande oculto" href="caja.html"><span class="emoji">💰</span><strong>Caja de puntos</strong><small>Sumar puntos y canjear premios</small></a>
+      <a id="tileStaff" class="tile t-cian grande oculto" href="camarero.html"><span class="emoji">🍺</span><strong>Panel de camarero</strong><small>Carnés y premios de la ruleta</small></a>
+      <a id="tileAdmin" class="tile t-rojo grande oculto" href="admin.html"><span class="emoji">⚙️</span><strong>Panel de administrador</strong><small>Accesos, reservas y liga</small></a>
+    </div>
+
+    <button id="salir" type="button">Cerrar sesión</button>
+    <button id="borrar" class="enlace oculto" type="button">Borrar mi cuenta</button>
+    <div id="boxBorrar" class="zona oculto">Se borrarán tu cuenta y tus reservas. No se puede deshacer. Para confirmar, escribe tu contraseña.
+      <input id="passBorrar" type="password" autocomplete="current-password">
+      <button id="borrarOk" class="peligro" type="button">Borrar definitivamente</button>
+      <button id="borrarNo" type="button">Cancelar</button>
+    </div>
+  </section>
+
+  <p id="msg" role="status"></p>
+  <p class="pie">Versión 1.5</p>
+</main>
+
+<script>
+setTimeout(function () {
+  var c = document.getElementById("cargando");
+  if (c && !c.classList.contains("oculto")) c.textContent = "No se ha podido cargar. Comprueba tu conexión y vuelve a abrir la app.";
+}, 8000);
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, documentId, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { proximos, etiquetaNivel, cuando, fechaLarga, mapsDe, norm } from "./proximo.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const ROLES = { user: "Usuario", player: "Jugador oficial", staff: "Camarero", admin: "Administrador" };
+let modoRegistro = false;
+let registrando = false;
+let fichaActual = null;
+
+function mensaje(t) { $("msg").textContent = t || ""; }
+
+function errorTexto(e) {
+  const c = e.code || "";
+  if (["auth/invalid-credential", "auth/wrong-password", "auth/user-not-found"].includes(c)) return "Email o contraseña incorrectos.";
+  if (c === "auth/email-already-in-use") return "Ese email ya tiene cuenta. Prueba a entrar.";
+  if (c === "auth/weak-password") return "La contraseña es demasiado corta (mínimo 6 caracteres).";
+  if (c === "auth/invalid-email") return "El email no es válido.";
+  if (c === "auth/network-request-failed") return "Sin conexión. Revisa tu internet.";
+  if (c === "auth/too-many-requests") return "Demasiados intentos. Espera unos minutos.";
+  if (c === "permission-denied") return "Permiso denegado por las reglas de seguridad.";
+  return "Error: " + (c || e.message);
+}
+
+function vista(cual) {
+  for (const id of ["cargando", "form", "vistaUsuario"]) $(id).classList.toggle("oculto", id !== cual);
+}
+
+function ponerModo(reg) {
+  modoRegistro = reg;
+  $("titulo").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("enviar").textContent = reg ? "Crear cuenta" : "Entrar";
+  $("cambiar").textContent = reg ? "Ya tengo cuenta: entrar" : "No tengo cuenta: crear una";
+  $("campoNombre").classList.toggle("oculto", !reg);
+  $("campoAcepto").classList.toggle("oculto", !reg);
+  $("pass").autocomplete = reg ? "new-password" : "current-password";
+  mensaje("");
+}
+
+const mk = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const enlace = (txt, href) => { const a = mk("a", txt); a.href = href; return a; };
+
+async function datosLiga() {
+  const clave = "sd_cal_v1";
+  try { const c = JSON.parse(sessionStorage.getItem(clave) || "null"); if (c && Date.now() - c.t < 600000) return c; } catch (e) {}
+  const cal = await getDoc(doc(db, "liga_config", "calendario"));
+  const datos = cal.exists() && cal.data().datos ? JSON.parse(cal.data().datos) : null;
+  const cambios = {};
+  try {
+    const snap = await getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`")));
+    snap.forEach((d) => { cambios[d.id.slice(7)] = d.data(); });
+  } catch (e) {}
+  const res = { t: Date.now(), datos: datos, cambios: cambios };
+  if (datos) { try { sessionStorage.setItem(clave, JSON.stringify(res)); } catch (e) {} }
+  return res;
+}
+
+function tarjetaPartido(x, locales) {
+  const t = mk("div", "", "proxPartido");
+  t.append(mk("div", x.hora, "hora"));
+  const i = mk("div");
+  i.append(mk("div", etiquetaNivel(x.cat, x.nivel) + (x.extra ? " · Partido añadido" : " · Jornada " + x.jornada), "nivel"));
+  const eq = mk("div", "", "equipos");
+  eq.append(mk("strong", x.equipoMio), document.createTextNode(" contra " + x.rival + (x.esLocal ? " (local)" : " (visitante)")));
+  i.append(eq);
+  if (x.sede) { const a = enlace("📍 " + x.sede, mapsDe(x.sede, locales)); a.className = "sede"; a.target = "_blank"; a.rel = "noopener"; i.append(a); }
+  if (x.cambio && !x.extra) i.append(mk("span", x.cambio, "cambio"));
+  if (x.nota) i.append(mk("span", x.nota, "cambio"));
+  t.append(i);
+  return t;
+}
+
+function pintarProximo(cuerpo, equipos, liga) {
+  cuerpo.innerHTML = "";
+  const enl = () => { const d = mk("div", "", "proxEnl"); d.append(enlace("Ver calendario", "liga.html"), enlace("Mis equipos", "mis-equipos.html")); return d; };
+  if (!equipos.length) {
+    cuerpo.append(mk("p", "Elige tu equipo y aquí verás siempre tu próximo partido, aunque juegues en varios niveles."));
+    const d = mk("div", "", "proxEnl"); d.append(enlace("Elegir mis equipos", "mis-equipos.html"));
+    cuerpo.append(d);
+    return;
+  }
+  if (!liga.datos) { cuerpo.append(mk("p", "Todavía no hay calendario de la liga cargado."), enl()); return; }
+  const ahora = new Date();
+  const r = proximos(liga.datos.p, new Map(Object.entries(liga.cambios || {})), equipos, ahora);
+  r.aplazados.forEach((x) => cuerpo.append(mk("div", "⚠️ " + etiquetaNivel(x.cat, x.nivel) + ": " + x.equipoMio + " contra " + x.rival + " está aplazado, pendiente de nueva fecha.", "aviso")));
+  if (!r.grupo.length) { cuerpo.append(mk("p", "No te quedan partidos por jugar con tus equipos."), enl()); return; }
+  const cab = mk("div", "", "proxFecha");
+  const c = cuando(r.grupo[0].dia, ahora);
+  cab.append(mk("strong", fechaLarga(r.grupo[0].dia)), mk("span", c, "chip" + (c === "¡Hoy!" ? " hoy" : "")));
+  cuerpo.append(cab);
+  r.grupo.forEach((x) => cuerpo.append(tarjetaPartido(x, liga.datos.l)));
+  if (r.despues.length) {
+    const d = mk("div", "", "despues");
+    d.append(mk("strong", "Después"));
+    r.despues.forEach((x) => d.append(mk("div", fechaLarga(x.dia) + " · " + x.hora + " · " + etiquetaNivel(x.cat, x.nivel) + " · " + x.equipoMio + " contra " + x.rival + (x.cambio && !x.extra ? " — " + x.cambio : ""))));
+    cuerpo.append(d);
+  }
+  cuerpo.append(enl());
+}
+
+async function cargarProximo(user, ficha) {
+  const caja = $("proxPartido");
+  const esLiga = ficha.role === "player" || ficha.role === "admin";
+  caja.classList.toggle("oculto", !esLiga);
+  if (!esLiga) return;
+  const cuerpo = $("proxCuerpo");
+  cuerpo.textContent = "Buscando tu próximo partido…";
+  try {
+    const [me, liga] = await Promise.all([getDoc(doc(db, "mis_equipos", user.uid)), datosLiga()]);
+    pintarProximo(cuerpo, me.exists() ? (me.data().equipos || []) : [], liga);
+  } catch (e) { cuerpo.textContent = "No se pudo cargar tu próximo partido."; }
+}
+
+function bannerInstalar() {
+  let oculto = false;
+  try { oculto = localStorage.getItem("sd_instalar_no") === "1"; } catch (e) {}
+  const instalada = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  $("bannerInstalar").classList.toggle("oculto", instalada || oculto || !movil);
+}
+
+function mostrar(user, ficha) {
+  fichaActual = ficha;
+  bannerInstalar();
+  const puede = user.emailVerified || ficha.role === "admin";
+  $("avisoVerif").classList.toggle("oculto", puede);
+  $("vEmail").textContent = user.email;
+  $("tileAdmin").classList.toggle("oculto", ficha.role !== "admin");
+  $("tileStaff").classList.toggle("oculto", ficha.role !== "staff" && ficha.role !== "admin");
+  $("borrar").classList.toggle("oculto", ficha.role === "admin");
+  $("boxBorrar").classList.add("oculto");
+  $("uNombre").textContent = ficha.nombre;
+  $("uEmail").textContent = user.email;
+  $("uRol").textContent = ROLES[ficha.role] || ficha.role;
+  $("tileCarne").classList.toggle("oculto", !ficha.socio);
+  $("tilePuntos").classList.toggle("oculto", !ficha.socio);
+  $("tileCaja").classList.toggle("oculto", ficha.role !== "staff" && ficha.role !== "admin");
+  $("uSocio").classList.toggle("oculto", !ficha.socio);
+  $("uSocio").textContent = "Socio nº " + String(ficha.socioNum || 0).padStart(4, "0");
+  mensaje("");
+  vista("vistaUsuario");
+  cargarProximo(user, ficha);
+}
+
+async function cargarFicha(user) {
+  const ref = doc(db, "users", user.uid);
+  let snap = await getDoc(ref);
+  if (!snap.exists()) {
+    const nombre = (user.displayName || user.email.split("@")[0]).slice(0, 60);
+    await setDoc(ref, { nombre: nombre, email: user.email, role: "user", creado: serverTimestamp() });
+    snap = await getDoc(ref);
+  }
+  return snap.data();
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (registrando) return;
+  if (!user) { vista("form"); return; }
+  try {
+    mostrar(user, await cargarFicha(user));
+  } catch (e) {
+    mensaje(errorTexto(e));
+    await signOut(auth);
+  }
+});
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  mensaje("");
+  const email = $("email").value.trim();
+  const pass = $("pass").value;
+  const nombre = $("nombre").value.trim().slice(0, 60);
+  if (!email || !pass) return mensaje("Escribe tu email y tu contraseña.");
+  if (modoRegistro && !nombre) return mensaje("Escribe tu nombre y apellidos.");
+  if (modoRegistro && !$("acepto").checked) return mensaje("Para crear la cuenta debes aceptar la política de privacidad.");
+  $("enviar").disabled = true;
+  try {
+    if (modoRegistro) {
+      registrando = true;
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(cred.user, { displayName: nombre });
+      await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp(), acepto: serverTimestamp() });
+      sendEmailVerification(cred.user).catch(() => {});
+      registrando = false;
+      mostrar(cred.user, { nombre: nombre, role: "user" });
+    } else {
+      await signInWithEmailAndPassword(auth, email, pass);
+    }
+  } catch (e) {
+    registrando = false;
+    mensaje(errorTexto(e));
+    if (modoRegistro && auth.currentUser) await signOut(auth).catch(() => {});
+  }
+  $("enviar").disabled = false;
+});
+
+$("cerrarInstalar").addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  try { localStorage.setItem("sd_instalar_no", "1"); } catch (x) {}
+  $("bannerInstalar").classList.add("oculto");
+});
+
+$("cambiar").addEventListener("click", () => ponerModo(!modoRegistro));
+
+$("olvido").addEventListener("click", async () => {
+  const email = $("email").value.trim();
+  if (!email) return mensaje("Escribe tu email arriba y pulsa de nuevo.");
+  try {
+    await sendPasswordResetEmail(auth, email);
+    mensaje("Si ese email tiene cuenta, te hemos enviado un correo para cambiar la contraseña. Mira también en spam.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("salir").addEventListener("click", async () => {
+  await signOut(auth);
+  $("pass").value = "";
+});
+
+$("yaVerif").addEventListener("click", async () => {
+  try {
+    await auth.currentUser.reload();
+    await auth.currentUser.getIdToken(true);
+    mostrar(auth.currentUser, fichaActual);
+    if (!auth.currentUser.emailVerified) mensaje("Todavía no consta como verificado. Abre el enlace del email y vuelve a pulsar.");
+  } catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("reenviar").addEventListener("click", async () => {
+  try { await sendEmailVerification(auth.currentUser); mensaje("Email enviado de nuevo. Mira también en spam."); }
+  catch (e) { mensaje(errorTexto(e)); }
+});
+
+$("borrar").addEventListener("click", () => { $("boxBorrar").classList.remove("oculto"); mensaje(""); });
+$("borrarNo").addEventListener("click", () => { $("boxBorrar").classList.add("oculto"); $("passBorrar").value = ""; });
+$("borrarOk").addEventListener("click", async () => {
+  const pass = $("passBorrar").value;
+  if (!pass) return mensaje("Escribe tu contraseña para confirmar.");
+  $("borrarOk").disabled = true;
+  try {
+    const u = auth.currentUser;
+    await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, pass));
+    const ahora = Date.now();
+    const rs = await getDocs(query(collection(db, "reservations"), where("uid", "==", u.uid)));
+    for (const d of rs.docs) {
+      const x = d.data(), ini = x.inicio.toMillis(), fin = x.fin.toMillis();
+      if (fin > ahora) {
+        const ss = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(Math.max(ini, ahora + 60000))), where("inicio", "<", Timestamp.fromMillis(fin))));
+        const b = writeBatch(db);
+        ss.forEach((z) => { const y = z.data(); if (y.uid === u.uid && y.tipo === "reserva" && y.dianaId === x.dianaId) b.delete(z.ref); });
+        await b.commit();
+      }
+      await deleteDoc(d.ref);
+    }
+    await deleteDoc(doc(db, "users", u.uid));
+    await deleteUser(u);
+    $("passBorrar").value = "";
+    mensaje("Tu cuenta se ha borrado.");
+  } catch (e) { mensaje(errorTexto(e)); }
+  $("borrarOk").disabled = false;
+});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+<script src="pie.js"></script>
+</body>
+</html>
