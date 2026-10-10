@@ -1,7 +1,20 @@
 // Reglas de cálculo del programa de socios: puntos por compra, cupones y movimientos.
 // Se usa desde la caja del camarero, "Mis puntos" y el panel del administrador.
 
-export const CONFIG_POR_DEFECTO = { puntosPorEuro: 1, maxImporte: 100, deshacerSeg: 600 };
+// 10 puntos por cada euro: 1 punto por cada 10 céntimos (el mínimo para ganar puntos son 0,10 €).
+export const CONFIG_POR_DEFECTO = { puntosPorEuro: 10, maxImporte: 100, deshacerSeg: 600 };
+// Máximo de puntos que se pueden sumar de una vez (límite de seguridad de las reglas de Firebase).
+export const MAX_PUNTOS_COBRO = 1000;
+
+// Lo que escribe el camarero en el importe: el punto y la coma valen igual y se enseñan como coma.
+// Solo cifras, un único separador decimal, 2 decimales como máximo y hasta 5 cifras enteras.
+export function limpiaImporte(txt) {
+  let s = String(txt || "").replace(/\./g, ",").replace(/[^0-9,]/g, "");
+  const i = s.indexOf(",");
+  if (i < 0) return s.slice(0, 5);
+  const entera = s.slice(0, i).slice(0, 5) || "0";
+  return entera + "," + s.slice(i + 1).replace(/,/g, "").slice(0, 2);
+}
 
 export function configDe(d) {
   const c = Object.assign({}, CONFIG_POR_DEFECTO);
