@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mis equipos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+select,button{width:100%;padding:12px;font-size:1rem;margin-top:10px}
+.eq{display:flex;align-items:center;gap:10px;margin-top:10px}
+.eq .t{flex:1}
+.eq .t small{display:block;opacity:.8}
+.eq button{width:auto;margin:0;padding:8px 14px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Mis equipos</h1></header>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="zona">
+    <h2 style="margin-top:0">Mis equipos</h2>
+    <p style="margin-top:0;opacity:.85">En el inicio verás siempre tu próximo partido. Si juegas en varios niveles, añade un equipo por cada uno: si coinciden el mismo día, te saldrán todos juntos.</p>
+    <div id="lista"></div>
+  </div>
+  <div class="zona" style="margin-top:14px">
+    <h2 style="margin-top:0">Añadir un equipo</h2>
+    <label for="cat">Competición</label>
+    <select id="cat"><option value="parejas">Parejas</option><option value="equipos">Equipos</option></select>
+    <label for="niv" style="margin-top:10px;display:block">Nivel</label>
+    <select id="niv"></select>
+    <label for="eqp" style="margin-top:10px;display:block">Equipo</label>
+    <select id="eqp"></select>
+    <button id="anadir" class="pri" type="button">Añadir equipo</button>
+  </div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { equiposDe, etiquetaNivel, norm } from "./proximo.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const MAX = 6;
+let uid = "", equipos = [], disponibles = {};
+
+function pintarLista() {
+  const l = $("lista");
+  l.innerHTML = "";
+  if (!equipos.length) l.append(el("p", "Todavía no has elegido ningún equipo."));
+  equipos.forEach((e, i) => {
+    const f = el("div", "", "eq");
+    const t = el("div", "", "t");
+    t.append(el("strong", e.equipo), el("small", etiquetaNivel(e.cat, e.nivel)));
+    const q = el("button", "Quitar", "sec");
+    q.type = "button";
+    q.onclick = () => quitar(i);
+    f.append(t, q);
+    l.append(f);
+  });
+}
+
+function pintarNiveles() {
+  const cat = $("cat").value;
+  const niveles = Object.keys(disponibles).filter((k) => k.split("|")[0] === cat).map((k) => Number(k.split("|")[1])).sort((a, b) => a - b);
+  $("niv").innerHTML = "";
+  niveles.forEach((n) => { const o = el("option", "Nivel " + n); o.value = String(n); $("niv").append(o); });
+  pintarEquipos();
+}
+
+function pintarEquipos() {
+  $("eqp").innerHTML = "";
+  (disponibles[$("cat").value + "|" + $("niv").value] || []).forEach((n) => { const o = el("option", n); o.value = n; $("eqp").append(o); });
+}
+
+async function guardar(mensaje) {
+  try {
+    await setDoc(doc(db, "mis_equipos", uid), { equipos: equipos });
+    try { sessionStorage.removeItem("sd_cal_v1"); } catch (e) {}
+    $("msg").textContent = mensaje;
+  } catch (e) { $("msg").textContent = "No se pudo guardar: " + (e.code || e.message); }
+}
+
+async function quitar(i) {
+  const q = equipos.splice(i, 1)[0];
+  pintarLista();
+  await guardar("✔ Quitado: " + q.equipo + ".");
+}
+
+$("cat").onchange = pintarNiveles;
+$("niv").onchange = pintarEquipos;
+$("anadir").onclick = async () => {
+  const nuevo = { cat: $("cat").value, nivel: Number($("niv").value), equipo: $("eqp").value };
+  if (!nuevo.equipo) { $("msg").textContent = "Elige un equipo."; return; }
+  if (equipos.length >= MAX) { $("msg").textContent = "Puedes tener como máximo " + MAX + " equipos."; return; }
+  if (equipos.some((e) => e.cat === nuevo.cat && e.nivel === nuevo.nivel && norm(e.equipo) === norm(nuevo.equipo))) { $("msg").textContent = "Ese equipo ya está en tu lista."; return; }
+  equipos.push(nuevo);
+  pintarLista();
+  await guardar("✔ Añadido: " + nuevo.equipo + ". Ya lo verás en el inicio.");
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  uid = u.uid;
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    const rol = yo.exists() ? yo.data().role : "";
+    if (rol !== "player" && rol !== "admin") { $("estado").textContent = "Esta pantalla es solo para jugadores oficiales de la liga."; return; }
+    const cal = await getDoc(doc(db, "liga_config", "calendario"));
+    if (!cal.exists() || !cal.data().datos) { $("estado").textContent = "Todavía no hay calendario de la liga cargado. Vuelve más tarde."; return; }
+    disponibles = equiposDe(JSON.parse(cal.data().datos).p);
+    const me = await getDoc(doc(db, "mis_equipos", uid));
+    equipos = me.exists() ? (me.data().equipos || []) : [];
+    $("estado").textContent = "";
+    pintarLista();
+    pintarNiveles();
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
