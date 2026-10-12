@@ -15,6 +15,8 @@ MADRID = ZoneInfo("Europe/Madrid")
 WEB_PAREJAS = "https://www.bullshootervalladolid.com/liga-parejas/calendario/nivel-{n}/"
 WEB_EQUIPOS = "https://www.bullshooter.eu/es/current-league/"
 HORA_EQUIPOS = "21:30"
+# Direcciones de temporadas conocidas (se suman a las que se encuentran en la página "Liga actual").
+EQUIPOS_CONOCIDAS = ["https://www.bullshooter.eu/es/winter-teams-league-2026-27/"]
 PRUEBA = os.environ.get("PRUEBA", "false").lower() == "true"
 UA = {"User-Agent": "Mozilla/5.0 (lector liga Sweet Dreams)"}
 avisos = []
@@ -40,7 +42,7 @@ def norm(s):
 
 def bonito(s):
     s = re.sub(r"\s*\(\d+\)\s*$", "", s).strip()
-    return " ".join(p.capitalize() if p.isupper() or p.islower() else p for p in s.split())
+    return " ".join(p if any(c.isdigit() for c in p) and p.isupper() else (p.capitalize() if p.isupper() or p.islower() else p) for p in s.split())
 
 
 def temporada(fechas):
@@ -156,21 +158,23 @@ def parsear_equipos(html, origen):
             if len(cel) <= max(il, iv):
                 continue
             t0, t1 = cel[0].get_text(" ", strip=True), cel[1].get_text(" ", strip=True)
+            mf = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", t1)
+            propia = datetime(int(mf.group(3)), int(mf.group(2)), int(mf.group(1))).date() if mf else None
             if t0.isdigit():
                 jor = int(t0)
-                mf = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", t1)
-                fecha = datetime(int(mf.group(3)), int(mf.group(2)), int(mf.group(1))).date() if mf else None
+                fecha = propia
             tl, tv = cel[il].get_text(" ", strip=True), cel[iv].get_text(" ", strip=True)
             rel = lambda t: not re.sub(r"[\s–—\-]", "", t)
-            if rel(tl) or rel(tv) or tachado(cel[il]) or tachado(cel[iv]) or fecha is None:
+            if rel(tl) or rel(tv) or tachado(cel[il]) or tachado(cel[iv]) or (propia is None and fecha is None):
                 continue
+            dia_partido = propia or fecha
             hora, nota = HORA_EQUIPOS, ""
             if inotas is not None and len(cel) > inotas:
                 nota = cel[inotas].get_text(" ", strip=True)
                 mh = re.search(r"(\d{1,2}):(\d{2})", nota)
                 if mh:
                     hora = f"{int(mh.group(1)):02d}:{mh.group(2)}"
-            partidos.append({"jornada": jor, "fecha": fecha, "hora": hora, "local": bonito(tl), "visitante": bonito(tv), "sede": "", "nota": nota})
+            partidos.append({"jornada": jor, "fecha": dia_partido, "hora": hora, "local": bonito(tl), "visitante": bonito(tv), "sede": "", "nota": nota})
         if partidos:
             nombres = sorted({p["local"] for p in partidos} | {p["visitante"] for p in partidos})
             res.append({"categoria": "equipos", "nivel": nivel, "partidos": partidos, "equipos": [{"nombre": n} for n in nombres]})
@@ -277,18 +281,27 @@ def paginas_equipos(url):
     if url:
         r = pedir(url)
         return [(url, r.text)] if r else []
+    res = []
+
+    def sumar(u):
+        if u in [x[0] for x in res]:
+            return
+        p = pedir(u)
+        if p and "<table" in p.text and RE_NIVEL.search(p.text):
+            res.append((u, p.text))
+
     r = pedir(WEB_EQUIPOS)
-    if not r:
-        return []
-    if "<table" in r.text and RE_NIVEL.search(r.text):
-        return [(WEB_EQUIPOS, r.text)]
-    sopa, res = BeautifulSoup(r.text, "html.parser"), []
-    for a in sopa.find_all("a", href=True):
-        h = a["href"]
-        if "bullshooter.eu" in h and "league" in h and "current-league" not in h and "finished" not in h and h not in [x[0] for x in res]:
-            p = pedir(h)
-            if p and RE_NIVEL.search(p.text):
-                res.append((h, p.text))
+    if r:
+        if "<table" in r.text and RE_NIVEL.search(r.text):
+            res.append((WEB_EQUIPOS, r.text))
+        else:
+            sopa = BeautifulSoup(r.text, "html.parser")
+            for a in sopa.find_all("a", href=True):
+                h = a["href"]
+                if "bullshooter.eu" in h and "league" in h and "current-league" not in h and "finished" not in h:
+                    sumar(h)
+    for u in EQUIPOS_CONOCIDAS:
+        sumar(u)
     return res
 
 
