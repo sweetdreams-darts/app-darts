@@ -76,6 +76,7 @@ tr:active td{background:rgba(255,255,255,.07)}
 .rejilla .cero{opacity:.4}
 .lineas{margin:10px 0 0;font-size:.82rem}
 .lineas div{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.lineas div.total{font-weight:800;color:#ffe14d;border-bottom:0;padding-top:8px}
 svg.graf{width:100%;height:84px;margin-top:10px;display:block}
 .oculto{display:none!important}
 </style></head>
@@ -148,14 +149,14 @@ function entradasDe(niveles, tipo) {
   return out;
 }
 const filaDe = (e) => ({ k: e.k, nombre: e.nombre, equipo: e.equipo, niveles: [e.n], cat: e.cat, sd: e.sd, v: e.v, entradas: [e], id: e.clv });
-// Un jugador en varios niveles = una sola fila en General: medias ponderadas por partidas jugadas y contadores sumados.
+// Un jugador en varios niveles = una sola fila en General: media simple de sus niveles (o ponderada si se pide) y contadores sumados.
 function agregar(entradas, tipo, ponderar) {
   const por = new Map();
   for (const e of entradas) { if (!por.has(e.k)) por.set(e.k, []); por.get(e.k).push(e); }
   return [...por.values()].map((es) => {
     const pj = es.reduce((a, e) => a + (e.v.pj || 0), 0);
     const media = ponderar && pj > 0 ? es.reduce((a, e) => a + e.v.media * (e.v.pj || 0), 0) / pj : es.reduce((a, e) => a + e.v.media, 0) / es.length;
-    const v = { media: Math.round(media * 100) / 100, pj: pj };
+    const v = { media: Math.round((media + 1e-9) * 100) / 100, pj: pj };
     for (const c of SUMABLES[tipo]) v[c] = es.reduce((a, e) => a + (e.v[c] || 0), 0);
     v.pct = pj ? Math.round((v.pg / pj) * 1000) / 10 : 0;
     const eqs = [...new Set(es.map((e) => e.equipo))];
@@ -235,7 +236,7 @@ const fechaCorta = (iso) => { const [y, m, d] = iso.split("-").map(Number); retu
 const fechaLarga = (iso) => { const [y, m, d] = iso.split("-").map(Number); return d + " de " + ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"][m - 1] + " de " + y; };
 const TEMP_TXT = (t) => (t[0] === "I" ? "Invierno " + t.slice(1) + "/" + String(Number(t.slice(1)) + 1).slice(2) : "Primavera " + t.slice(1));
 
-let datos = null, hist = null, miNombre = "", yo = { estado: "nada", k: "", candidatos: [] }, PONDERAR = true;
+let datos = null, hist = null, miNombre = "", yo = { estado: "nada", k: "", candidatos: [] }, PONDERAR = false;
 const est = { vista: "general", tipo: "x", sub: "jug", nivel: "todos", sd: false, q: "", col: "media", dir: -1 };
 let cacheFilas = [];
 
@@ -318,7 +319,8 @@ function render() {
     if (flechas && est.col === "media" && est.dir < 0) tdp.insertAdjacentHTML("beforeend", flecha(flechas.get(f)));
     const tdj = el("td", "", "jug"), nom = el("span", f.nombre + (f.k === yo.k && yo.k ? " (tú)" : ""), "n"), sub = el("span", "", "s");
     sub.textContent = f.equipo;
-    f.niveles.forEach((n) => sub.append(el("span", NIVEL_TXT(n), "nivel")));
+    if (f.entradas.length > 1) f.entradas.slice().sort((a, b) => a.n - b.n).forEach((e) => sub.append(el("span", NIVEL_TXT(e.n) + " · " + fmt(e.v.media, 2), "nivel")));
+    else f.niveles.forEach((n) => sub.append(el("span", NIVEL_TXT(n), "nivel")));
     tdj.append(nom, sub);
     tr.append(tdp, tdj, el("td", fmt(f.v.media, 2), "m"));
     T.cols.forEach(([id]) => tr.append(el("td", id === "pct" ? Math.round(f.v.pct) + "%" : String(f.v[id]))));
@@ -402,14 +404,15 @@ function abrirPerfil(k) {
     mod.append(el("h4", T.nombre));
     const cif = el("div", "", "cifras");
     const c1 = (b, s) => { const d = el("div", "", "cif"); d.append(el("b", String(b)), el("span", s)); return d; };
-    cif.append(c1(fmt(yoGen.v.media, 2), T.media + (mias.length > 1 ? " (media ponderada)" : "")), c1("#" + pg.get(yoGen), "puesto general de " + gen.length), c1(yoGen.v.pj, "partidas"), c1(Math.round(yoGen.v.pct) + "%", "victorias"));
+    cif.append(c1(fmt(yoGen.v.media, 2), T.media + (mias.length > 1 ? " · media simple de " + mias.length + " niveles" : "")), c1("#" + pg.get(yoGen), "puesto general de " + gen.length), c1(yoGen.v.pj, "partidas"), c1(Math.round(yoGen.v.pct) + "%", "victorias"));
     mod.append(cif);
     const lin = el("div", "", "lineas");
     mias.slice().sort((a, b) => a.n - b.n).forEach((e) => {
       const pobl = entTipo.filter((x) => x.cat === e.cat && x.n === e.n).map(filaDe), pn = puestos(pobl);
       const f = pobl.find((x) => x.id === e.clv);
-      lin.append(el("div", "Nivel " + e.n + " · " + e.equipo + ": puesto #" + pn.get(f) + " de " + pobl.length + " · " + T.media + " " + fmt(e.v.media, 2) + " · " + e.v.pj + " partidas · " + e.v.pg + " ganadas"));
+      lin.append(el("div", "Nivel " + e.n + " · " + e.equipo + ": " + T.media + " " + fmt(e.v.media, 2) + " · puesto #" + pn.get(f) + " de " + pobl.length + " · " + e.v.pj + " partidas · " + e.v.pg + " ganadas"));
     });
+    if (mias.length > 1) lin.append(el("div", "Media simple de todos los niveles: " + T.media + " " + fmt(yoGen.v.media, 2), "total"));
     mod.append(lin);
     const rej = el("div", "", "rejilla");
     T.cols.filter(([id]) => !["pj", "pg", "pct"].includes(id)).forEach(([id, txt]) => { const d = el("div", "", yoGen.v[id] ? "" : "cero"); d.append(el("b", String(yoGen.v[id] || 0)), document.createTextNode(txt)); rej.append(d); });
@@ -462,7 +465,7 @@ $("verAyuda").onclick = (e) => {
   e.preventDefault();
   const a = $("ayuda");
   a.classList.toggle("oculto");
-  a.innerHTML = "<b>PPD</b> es la media del 501 y <b>MPR</b> la media del cricket: las calcula Bullshooter y aquí se copian tal cual. <b>PJ</b> = partidas jugadas, <b>PG</b> = ganadas, <b>%V</b> = porcentaje de victorias. El resto de columnas son marcas oficiales de Bullshooter (Hats, 3BD, 6DO… 9MR). La flecha <span class='sube'>▲</span>/<span class='baja'>▼</span> compara con la semana anterior. Si un jugador juega en varios niveles, en <b>General</b> su media es la ponderada por partidas jugadas y sus marcas se suman. ⭐ = equipo de Sweet Dreams.";
+  a.innerHTML = "<b>PPD</b> es la media del 501 y <b>MPR</b> la media del cricket: las calcula Bullshooter y aquí se copian tal cual. <b>PJ</b> = partidas jugadas, <b>PG</b> = ganadas, <b>%V</b> = porcentaje de victorias. El resto de columnas son marcas oficiales de Bullshooter (Hats, 3BD, 6DO… 9MR). La flecha <span class='sube'>▲</span>/<span class='baja'>▼</span> compara con la semana anterior. Si un jugador juega en varios niveles, en <b>General</b> sale una sola vez: su media es la <b>media simple</b> de las de cada nivel (que se ven debajo de su nombre) y sus marcas se suman. ⭐ = equipo de Sweet Dreams.";
 };
 
 async function leerJson(ruta) {
