@@ -19,6 +19,10 @@ label.eq input{width:20px;height:20px;margin:0}
 label.campo{display:block;margin-top:14px;font-weight:700}
 #msg{min-height:1.4em;color:#ffd166}
 #editor{position:fixed;inset:0;background:#14213d;padding:20px;overflow:auto;z-index:10}
+.motivo{margin-top:10px;padding:10px 12px;border-radius:10px;background:#1a2540;border:1px solid #ff8787;font-size:.92rem}
+.motivo ul{margin:6px 0;padding-left:18px}
+.motivo .peq{opacity:.9;margin-top:6px}
+.motivo button{margin-top:10px}
 .oculto{display:none!important}
 </style></head>
 <body><main>
@@ -98,7 +102,7 @@ let dianas = [], nuevos = [], existentes = new Map(), bloqueos = new Map(), nomb
 // <logica>
 function intervaloPara(cat, pMs) {
   const base = 60000;
-  if (cat === "parejas") return [pMs - 30 * base, pMs + 90 * base];
+  if (cat === "parejas") return [pMs - 30 * base, pMs + 100 * base];
   const d = new Date(pMs);
   let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
   if (fin <= pMs) fin = pMs + 150 * base;
@@ -106,7 +110,7 @@ function intervaloPara(cat, pMs) {
 }
 function asignar(partidos, dianas, fijos) {
   const orden = partidos.slice().sort((a, b) => a.dia.localeCompare(b.dia) || a.nivel - b.nivel || (a.categoria === b.categoria ? 0 : a.categoria === "parejas" ? -1 : 1) || a.id.localeCompare(b.id));
-  const filas = fijos.map((f) => ({ p: f.p, iv: f.iv, dianaId: f.dianaId, fijo: true }));
+  const filas = fijos.map((f) => ({ p: f.p, iv: f.iv, dianaId: f.dianaId, fijo: true, ref: f.ref }));
   const libre = (dId, iv, salvo) => !filas.some((f) => f !== salvo && f.dianaId === dId && iv[0] < f.iv[1] && f.iv[0] < iv[1]);
   for (const p of orden) {
     const iv = intervaloPara(p.categoria, p.fechaMs), online = p.categoria === "equipos";
@@ -124,7 +128,35 @@ function asignar(partidos, dianas, fijos) {
     if (d) fila.dianaId = d.id;
     filas.push(fila);
   }
-  return filas.filter((f) => !f.fijo);
+  const res = filas.filter((f) => !f.fijo);
+  res.todas = filas;
+  return res;
+}
+
+// Explica por qué un partido se queda sin diana: quién ocupa las dianas en ese horario y cuántos partidos coinciden.
+// Si se puede, propone pasar un partido de parejas ya bloqueado a una diana sin online para dejarle su sitio.
+function explicar(f, filas, dianas) {
+  const online = f.p.categoria === "equipos";
+  const elegibles = dianas.filter((d) => !online || d.online);
+  const solapa = (a, b) => a.iv[0] < b.iv[1] && b.iv[0] < a.iv[1];
+  const ocupan = [];
+  for (const d of elegibles) for (const r of filas) if (r !== f && r.dianaId === d.id && solapa(r, f)) ocupan.push({ diana: d, fila: r });
+  let sugerencia = null;
+  if (online) {
+    for (const o of ocupan) {
+      const r = o.fila;
+      if (r.p.categoria !== "parejas") continue;
+      const h = dianas.find((x) => !x.online && !filas.some((g) => g !== r && g.dianaId === x.id && solapa(g, r)));
+      if (h) { sugerencia = { fila: r, desde: o.diana, hasta: h }; break; }
+    }
+  }
+  const mismas = filas.filter((r) => r === f || solapa(r, f));
+  let maximo = 0;
+  for (const r of mismas) {
+    const t = Math.max(r.iv[0], f.iv[0]);
+    maximo = Math.max(maximo, mismas.filter((g) => g.iv[0] <= t && t < g.iv[1]).length);
+  }
+  return { ocupan, sugerencia, elegibles, coinciden: maximo, total: dianas.length, enlinea: dianas.filter((d) => d.online).length };
 }
 // </logica>
 
@@ -195,6 +227,46 @@ function revisarNuevos() {
     if (ch) { f.avisos.push(ch === "reserva" ? "Choca con una reserva (cancélala en Reservas y vuelve a calcular)" : "Choca con otro bloqueo de liga"); f.bloquea = true; }
   }
 }
+const textoFila = (r) => (r.p.categoria === "parejas" ? "Parejas" : "Equipos") + (r.p.nivel ? " N" + r.p.nivel : "") + " · " + (r.p.local || "?") + " – " + (r.p.visitante || "?") + " (" + hhmm(r.iv[0]) + "–" + hhmm(r.iv[1]) + ")";
+function detalleSinDiana(f) {
+  const x = explicar(f, nuevos.todas, dianas), caja = el("div", "", "motivo");
+  const donde = f.p.categoria === "equipos" ? "las dianas online (" + x.elegibles.map((d) => d.nombre).join(", ") + ")" : "ninguna diana";
+  caja.append(el("strong", "Por qué no hay sitio"));
+  caja.append(el("div", "Entre " + hhmm(f.iv[0]) + " y " + hhmm(f.iv[1]) + " este partido necesita " + (f.p.categoria === "equipos" ? "una diana online" : "una diana") + ", y " + donde + " ya están ocupadas por:"));
+  const ul = document.createElement("ul");
+  x.ocupan.forEach((o) => ul.append(el("li", o.diana.nombre + ": " + textoFila(o.fila) + (o.fila.fijo ? " · ya bloqueada" : " · de este cálculo"))));
+  if (!x.ocupan.length) ul.append(el("li", "No hay ninguna: revisa que las dianas estén activas y marcadas como online."));
+  caja.append(ul);
+  caja.append(el("div", "En ese horario coinciden hasta " + x.coinciden + " partidos de Sweet Dreams y tienes " + x.total + " dianas" + (f.p.categoria === "equipos" ? " (" + x.enlinea + " con online)" : "") + ".", "peq"));
+  if (x.sugerencia) {
+    const s = x.sugerencia, b = el("button", "Solución: pasar «" + s.fila.p.local + " – " + s.fila.p.visitante + "» de " + s.desde.nombre + " a " + s.hasta.nombre);
+    b.onclick = () => aplicarSolucion(f, s);
+    caja.append(el("div", "Se puede liberar " + s.desde.nombre + " pasando ese partido de parejas a " + s.hasta.nombre + ", que no es online y está libre a esa hora.", "peq"), b);
+  } else if (x.coinciden > x.elegibles.length) {
+    caja.append(el("div", "Aunque se reorganicen las dianas, a esa hora hay más partidos que dianas posibles. Hay que aplazar uno, o pedir a la liga que cambie la hora de alguno.", "peq"));
+  }
+  return caja;
+}
+async function aplicarSolucion(f, s) {
+  const b = s.fila.ref;
+  try {
+    if (b) {
+      if (!confirm("Se moverá el bloqueo de «" + s.fila.p.local + " – " + s.fila.p.visitante + "» a " + s.hasta.nombre + ". ¿Seguimos?")) return;
+      const mapa = await cargarSlots(b.inicioMs, b.finMs);
+      const ch = choque(s.hasta.id, [b.inicioMs, b.finMs], b.id, mapa);
+      if (ch) { $("msg").textContent = s.hasta.nombre + " no está libre a esa hora (" + (ch === "reserva" ? "hay una reserva" : "hay otro bloqueo de liga") + "). Cancela la reserva y vuelve a intentarlo."; return; }
+      await enviar(opsBloqueo(Object.assign({}, b, { dianaId: s.hasta.id }), b));
+      await cargarBloqueos();
+      $("msg").textContent = "✔ Movido. Recalculando…";
+    } else {
+      s.fila.dianaId = s.hasta.id;
+      f.dianaId = s.desde.id;
+      pintarNuevos();
+      return;
+    }
+    $("calcular").onclick();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
 function pintarNuevos() {
   revisarNuevos();
   const cont = $("nuevos");
@@ -215,6 +287,7 @@ function pintarNuevos() {
       s.onchange = () => { f.dianaId = s.value; pintarNuevos(); };
       c.append(s);
       f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
+      if (!f.dianaId && nuevos.todas) c.append(detalleSinDiana(f));
       cont.append(c);
     }
   }
@@ -238,7 +311,7 @@ $("calcular").onclick = async () => {
     if (partidos.length) {
       const a = Math.min(...partidos.map((p) => p.fechaMs)) - 31 * MIN, b = Math.max(...partidos.map((p) => p.fechaMs)) + 12 * 60 * MIN;
       existentes = await cargarSlots(a, b);
-      const fijos = [...bloqueos.values()].filter((x) => x.estado === "activo").map((x) => ({ p: { categoria: x.categoria }, iv: [x.inicioMs, x.finMs], dianaId: x.dianaId }));
+      const fijos = [...bloqueos.values()].filter((x) => x.estado === "activo").map((x) => ({ p: { categoria: x.categoria, nivel: x.nivel, local: x.local, visitante: x.visitante }, iv: [x.inicioMs, x.finMs], dianaId: x.dianaId, ref: x }));
       nuevos = asignar(partidos, dianas, fijos);
     }
     $("msg").textContent = partidos.length ? "" : "No hay partidos nuevos de Sweet Dreams en ese periodo.";
