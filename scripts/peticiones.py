@@ -67,6 +67,11 @@ def main():
         pdfs = leer_pdfs.descubrir()
         leer_pdfs.guardar(pdfs)
         texto = resumen(pdfs)
+        try:
+            import leer_clasif
+            texto += " " + leer_clasif.procesar(pdfs)
+        except Exception as e:
+            texto += " (No se han podido leer las estadísticas: " + str(e)[:150] + ")"
         poner("hecho", texto)
         print(texto)
     except BaseException as e:
