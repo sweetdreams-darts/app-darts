@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Actualizar clasificaciones</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:28px 0 6px;color:#ffd166}
+button{width:100%;padding:16px;font-size:1.1rem;border-radius:10px;border:0;background:#ffd166;color:#14213d;font-weight:700;margin-top:14px;font-family:inherit}
+button:disabled{opacity:.55}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:10px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.est{padding:14px;border-radius:12px;margin-top:14px;background:#1d2f52;border:2px solid #3d5380}
+.est.hecho{border-color:#5dff9a}
+.est.error{border-color:#ff8787}
+.est.espera{border-color:#ffd166}
+.est strong{display:block;font-size:1.05rem}
+.fila{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+.fila span.no{opacity:.6}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Actualizar clasificaciones</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <p style="margin-top:0">Pulsa el botón y la búsqueda de las clasificaciones en la web de la liga se hace sola. <strong>Suele tardar entre 5 y 10 minutos</strong> y no hace falta esperar aquí: puedes cerrar la app.</p>
+  <button id="pedir">🔄 Buscar clasificaciones ahora</button>
+  <div id="peticion" class="est oculto"></div>
+  <p style="opacity:.85;font-size:.92rem">¿Tienes prisa? Abre <a id="enlaceGit" href="https://github.com/sweetdreams-darts/app-darts/actions/workflows/leer-pdfs.yml" target="_blank" rel="noopener">esta página de GitHub</a>, pulsa <strong>Run workflow</strong> y déjalo con "prueba" en <code>false</code>. Tarda un minuto.</p>
+
+  <h2>Clasificaciones encontradas</h2>
+  <p id="revisado" style="opacity:.85;margin-top:0"></p>
+  <div id="lista"></div>
+  <p style="opacity:.8;font-size:.92rem">Estos botones de descarga ya los ven los jugadores en Zona Liga, Clasificaciones. Los rankings propios de Sweet Dreams se calcularán desde estos PDF cuando se cargue el primero.</p>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const REF = () => doc(db, "liga_config", "peticion");
+let yo = "", temporizador = null;
+
+// <logica>
+// Estado que se enseña según lo que haya en la petición. Si lleva demasiado rato sin atenderse, se puede volver a pedir.
+function interpretar(p, ahora) {
+  if (!p || !p.estado) return { clase: "", titulo: "", texto: "", bloquea: false };
+  const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+  const hace = ms(p.pedido) ? Math.round((ahora - ms(p.pedido)) / 60000) : 0;
+  if (p.estado === "pendiente") {
+    if (hace > 30) return { clase: "error", titulo: "La petición no se ha atendido", texto: "Lleva " + hace + " minutos esperando. Vuelve a pulsar el botón, o ejecútalo a mano desde GitHub.", bloquea: false };
+    return { clase: "espera", titulo: "⏳ Petición enviada", texto: "Esperando turno (hace " + hace + " min). Suele tardar entre 5 y 10 minutos.", bloquea: true };
+  }
+  if (p.estado === "en_curso") {
+    if (hace > 30) return { clase: "error", titulo: "La búsqueda se ha quedado atascada", texto: "Vuelve a pulsar el botón, o ejecútalo a mano desde GitHub.", bloquea: false };
+    return { clase: "espera", titulo: "🔎 Buscando en la web de la liga…", texto: "Ya está en marcha. En un minuto o dos termina.", bloquea: true };
+  }
+  if (p.estado === "hecho") return { clase: "hecho", titulo: "✔ Búsqueda terminada", texto: p.resultado || "", bloquea: false };
+  if (p.estado === "error") return { clase: "error", titulo: "✘ No se ha podido completar", texto: p.resultado || "Vuelve a intentarlo en un rato.", bloquea: false };
+  return { clase: "", titulo: "", texto: "", bloquea: false };
+}
+// </logica>
+
+function pintarPeticion(p) {
+  const i = interpretar(p, Date.now()), c = $("peticion");
+  c.className = "est " + i.clase + (i.titulo ? "" : " oculto");
+  c.innerHTML = "";
+  if (!i.titulo) { $("pedir").disabled = false; return i; }
+  c.append(el("strong", i.titulo), el("div", i.texto));
+  const f = p.fin && p.fin.toDate ? p.fin.toDate() : null;
+  if (f && (p.estado === "hecho" || p.estado === "error")) c.append(el("small", "Terminó el " + f.toLocaleDateString("es-ES") + " a las " + f.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })));
+  $("pedir").disabled = i.bloquea;
+  return i;
+}
+
+async function refrescar() {
+  const s = await getDoc(REF());
+  const p = s.exists() ? s.data() : null;
+  const i = pintarPeticion(p);
+  if (i.bloquea) {
+    if (!temporizador) temporizador = setInterval(refrescar, 20000);
+  } else {
+    if (temporizador) { clearInterval(temporizador); temporizador = null; await cargarLista(); }
+  }
+}
+
+async function cargarLista() {
+  const s = await getDoc(doc(db, "liga_config", "pdfs"));
+  const d = s.exists() ? s.data() : {}, pdfs = d.pdfs || {};
+  $("revisado").textContent = d.revisado ? "Última búsqueda: " + d.revisado + "." : "Todavía no se ha hecho ninguna búsqueda.";
+  const l = $("lista");
+  l.innerHTML = "";
+  for (const [cat, nombre, total] of [["parejas", "Parejas", 13], ["equipos", "Equipos presencial", 2]]) {
+    const c = el("div", "", "card");
+    c.append(el("strong", nombre));
+    for (let n = 1; n <= total; n++) {
+      const p = pdfs[cat + "-" + n], f = el("div", "", "fila");
+      f.append(el("span", "Nivel " + n));
+      if (p && p.url) { const a = el("a", "Abrir PDF"); a.href = p.url; a.target = "_blank"; a.rel = "noopener"; f.append(a); }
+      else f.append(el("span", "todavía no publicada", "no"));
+      c.append(f);
+    }
+    l.append(c);
+  }
+}
+
+$("pedir").onclick = async () => {
+  $("pedir").disabled = true;
+  $("msg").textContent = "";
+  try {
+    await setDoc(REF(), { estado: "pendiente", pedido: serverTimestamp(), pedidoPor: yo, resultado: "" });
+    $("msg").textContent = "✔ Petición enviada. En unos minutos tendrás el resultado aquí.";
+    await refrescar();
+  } catch (e) { $("msg").textContent = "No se ha podido enviar: " + (e.code || e.message); $("pedir").disabled = false; }
+};
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const m = await getDoc(doc(db, "users", u.uid));
+    if (!m.exists() || m.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yo = u.uid;
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    await refrescar();
+    await cargarLista();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
