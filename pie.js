@@ -58,6 +58,11 @@
   pr.href = "privacidad.html";
   pr.textContent = "Política de privacidad";
   legal.appendChild(pr);
+  legal.appendChild(document.createTextNode(" · "));
+  var co = document.createElement("a");
+  co.href = "condiciones.html";
+  co.textContent = "Condiciones de uso";
+  legal.appendChild(co);
   caja.appendChild(h);
   caja.appendChild(dir);
   caja.appendChild(rej);
