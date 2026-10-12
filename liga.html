@@ -165,6 +165,44 @@ async function traer() {
     q = query(col, where("categoria", "==", cat));
     clave = "c|" + cat;
   } else {
+    const dias = rango === "temporada" ? 60 : Number(rango);
+    const hoy = new Date();
+    q = query(col, where("dia", ">=", iso(hoy)), where("dia", "<=", iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias))));
+    clave = "d|" + iso(hoy) + "|" + dias;
+  }
+  try {
+    const guardado = JSON.parse(sessionStorage.getItem("liga_" + clave) || "null");
+    if (guardado && Date.now() - guardado.t < 300000) return guardado.d;
+  } catch (e) {}
+  const d = (await getDocs(q)).docs.map((x) => { const v = x.data(); return { id: x.id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }; });
+  try { sessionStorage.setItem("liga_" + clave, JSON.stringify({ t: Date.now(), d: d })); } catch (e) {}
+  return d;
+}
+
+async function cargar() {
+  const mio = ++seq;
+  $("info").textContent = "Cargando…";
+  $("partidos").innerHTML = "";
+  try {
+    const d = await traer();
+    if (mio !== seq) return;
+    datos = d.slice();
+    const cat0 = $("cat").value;
+    if ($("niv").value === "todos" && !(cat0 === "parejas" && $("soloSD").checked)) {
+      const hoy0 = new Date(), r0 = $("rango").value;
+      const hasta0 = r0 === "temporada" ? "9999" : iso(new Date(hoy0.getFullYear(), hoy0.getMonth(), hoy0.getDate() + Number(r0)));
+      const ya = new Set(datos.map((x) => x.id));
+      for (const [id, c] of cambios) {
+        if (c.estado === "movido" && !ya.has(id) && c.dia >= iso(hoy0) && c.dia <= hasta0) {
+          const s = await getDoc(doc(db, "liga_partidos", id));
+          if (s.exists()) { const v = s.data(); datos.push({ id: id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }); }
+        }
+      }
+    }
+    const cat = $("cat").value, niv = $("niv").value;
+    const prev = $("equipo").value;
+    $("equipo").innerHTML = "";
+    if (niv === "todos") {
       $("equipo").add(new Option("Elige un nivel para filtrar por equipo", ""));
       $("equipo").disabled = true;
     } else {
