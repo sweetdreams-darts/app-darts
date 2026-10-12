@@ -102,11 +102,39 @@ let dianas = [], nuevos = [], existentes = new Map(), bloqueos = new Map(), nomb
 // <logica>
 function intervaloPara(cat, pMs) {
   const base = 60000;
-  if (cat === "parejas") return [pMs - 30 * base, pMs + 100 * base];
+  if (cat === "parejas") return [pMs - 30 * base, pMs + 90 * base];
   const d = new Date(pMs);
   let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
   if (fin <= pMs) fin = pMs + 150 * base;
   return [pMs - 30 * base, fin];
+}
+// Una partida online puede ir en la misma diana, justo después de una de parejas. SOLO en ese caso:
+// la de parejas se acorta hasta la hora de la online (p. ej. 20:00–21:30) y la online va de su hora a medianoche (21:30–00:00).
+const MIN_ONLINE = 120 * 60000;    // lo mínimo que debe quedar hasta medianoche para jugar la partida online (2 h)
+const MIN_PAREJAS = 60 * 60000;    // lo mínimo que debe quedarle a la partida de parejas para jugar antes de que entre la online (1 h)
+function encadenar(fila, filas, dianas) {
+  const solapa = (a, b) => a[0] < b[1] && b[0] < a[1];
+  const candidatas = [];
+  for (const d of dianas.filter((x) => x.online)) {
+    const bloq = filas.filter((r) => r !== fila && r.dianaId === d.id && solapa(r.iv, fila.iv));
+    if (bloq.length !== 1 || bloq[0].p.categoria !== "parejas" || bloq[0].acortada) continue;
+    const r = bloq[0], corte = fila.p.fechaMs, inicioP = r.p.fechaMs || r.iv[0] + 30 * 60000;
+    const ivOnline = [corte, fila.iv[1]];
+    if (corte >= r.iv[1] || corte - inicioP < MIN_PAREJAS || ivOnline[1] - ivOnline[0] < MIN_ONLINE) continue;
+    if (filas.some((g) => g !== fila && g !== r && g.dianaId === d.id && solapa(g.iv, ivOnline))) continue;
+    candidatas.push({ diana: d, tras: r, ivOnline, corte });
+  }
+  candidatas.sort((a, b) => (a.tras.p.nivel || 99) - (b.tras.p.nivel || 99) || dianas.indexOf(a.diana) - dianas.indexOf(b.diana));
+  return candidatas[0] || null;
+}
+// Deshace un encadenado (la online vuelve a su horario normal y la de parejas recupera el suyo).
+function deshacerEncadenado(f) {
+  if (!f || !f.encadena) return;
+  const t = f.encadena.tras;
+  t.iv = f.encadena.antes;
+  t.acortada = null;
+  f.iv = intervaloPara("equipos", f.p.fechaMs);
+  f.encadena = null;
 }
 function asignar(partidos, dianas, fijos) {
   const orden = partidos.slice().sort((a, b) => a.dia.localeCompare(b.dia) || a.nivel - b.nivel || (a.categoria === b.categoria ? 0 : a.categoria === "parejas" ? -1 : 1) || a.id.localeCompare(b.id));
@@ -123,6 +151,16 @@ function asignar(partidos, dianas, fijos) {
         if (r.fijo || r.p.categoria === "equipos" || !g || !g.online || !libre(g.id, iv, r)) continue;
         const h = dianas.find((x) => !x.online && libre(x.id, r.iv, r));
         if (h) { r.dianaId = h.id; d = g; }
+      }
+    }
+    if (!d && online) {
+      const c = encadenar(fila, filas, dianas);
+      if (c) {
+        d = c.diana;
+        fila.iv = c.ivOnline;
+        fila.encadena = { tras: c.tras, corte: c.corte, antes: c.tras.iv };
+        c.tras.iv = [c.tras.iv[0], c.corte];
+        c.tras.acortada = { antes: fila.encadena.antes, corte: c.corte, por: fila };
       }
     }
     if (d) fila.dianaId = d.id;
@@ -147,7 +185,8 @@ function explicar(f, filas, dianas) {
       const r = o.fila;
       if (r.p.categoria !== "parejas") continue;
       const h = dianas.find((x) => !x.online && !filas.some((g) => g !== r && g.dianaId === x.id && solapa(g, r)));
-      if (h) { sugerencia = { fila: r, desde: o.diana, hasta: h }; break; }
+      const quedaLibre = !filas.some((g) => g !== r && g !== f && g.dianaId === o.diana.id && solapa(g, f));
+      if (h && quedaLibre) { sugerencia = { fila: r, desde: o.diana, hasta: h }; break; }
     }
   }
   const mismas = filas.filter((r) => r === f || solapa(r, f));
@@ -156,7 +195,15 @@ function explicar(f, filas, dianas) {
     const t = Math.max(r.iv[0], f.iv[0]);
     maximo = Math.max(maximo, mismas.filter((g) => g.iv[0] <= t && t < g.iv[1]).length);
   }
-  return { ocupan, sugerencia, elegibles, coinciden: maximo, total: dianas.length, enlinea: dianas.filter((d) => d.online).length };
+  const enlinea = dianas.filter((d) => d.online).length, sinOnline = dianas.length - enlinea;
+  let pico = { p: 0, o: 0, necesarias: 0, ms: f.iv[0] };
+  for (const t of [f.iv[0], ...mismas.map((r) => r.iv[0]).filter((v) => v > f.iv[0] && v < f.iv[1])]) {
+    const ahora = mismas.filter((g) => g.iv[0] <= t && t < g.iv[1]);
+    const p = ahora.filter((g) => g.p.categoria === "parejas").length, o = ahora.length - p;
+    const necesarias = o + Math.max(0, p - sinOnline);
+    if (necesarias > pico.necesarias) pico = { p, o, necesarias, ms: t };
+  }
+  return { ocupan, sugerencia, elegibles, coinciden: maximo, total: dianas.length, enlinea, sinOnline, pico };
 }
 // </logica>
 
@@ -219,11 +266,13 @@ function revisarNuevos() {
   for (const f of nuevos) {
     f.avisos = [];
     f.bloquea = false;
+    if (f.acortada) f.avisos.push("⏰ Debe terminar antes de las " + hhmm(f.acortada.corte) + " (su bloqueo es de " + hhmm(f.iv[0]) + " a " + hhmm(f.acortada.corte) + " en vez de hasta las " + hhmm(f.acortada.antes[1]) + "), porque después va " + textoFila(f.acortada.por) + ". Avisa a los dos equipos.");
     if (!f.dianaId) { f.avisos.push("Sin diana libre"); f.bloquea = true; continue; }
     const d = dianas.find((x) => x.id === f.dianaId);
     if (f.p.categoria === "equipos" && !d.online) f.avisos.push("Partida online en una diana sin online");
+    if (f.encadena) f.avisos.push("⏰ Empieza a su hora (" + hhmm(f.encadena.corte) + ") y se bloquea de " + hhmm(f.iv[0]) + " a " + hhmm(f.iv[1]) + ", pero la diana la ocupa antes " + textoFila(f.encadena.tras) + ": esa partida de parejas debe terminar antes de las " + hhmm(f.encadena.corte) + (f.encadena.tras.fijo ? " (se acortará su bloqueo, que llegaba hasta las " + hhmm(f.encadena.antes[1]) + ")" : "") + ". Avisa a los dos equipos.");
     if (nuevos.some((g) => g !== f && g.dianaId === f.dianaId && f.iv[0] < g.iv[1] && g.iv[0] < f.iv[1])) { f.avisos.push("Coincide con otra partida en esta diana"); f.bloquea = true; }
-    const ch = choque(f.dianaId, f.iv, null, existentes);
+    const ch = choque(f.dianaId, f.iv, f.encadena && f.encadena.tras.ref ? f.encadena.tras.ref.id : null, existentes);
     if (ch) { f.avisos.push(ch === "reserva" ? "Choca con una reserva (cancélala en Reservas y vuelve a calcular)" : "Choca con otro bloqueo de liga"); f.bloquea = true; }
   }
 }
@@ -237,12 +286,14 @@ function detalleSinDiana(f) {
   x.ocupan.forEach((o) => ul.append(el("li", o.diana.nombre + ": " + textoFila(o.fila) + (o.fila.fijo ? " · ya bloqueada" : " · de este cálculo"))));
   if (!x.ocupan.length) ul.append(el("li", "No hay ninguna: revisa que las dianas estén activas y marcadas como online."));
   caja.append(ul);
-  caja.append(el("div", "En ese horario coinciden hasta " + x.coinciden + " partidos de Sweet Dreams y tienes " + x.total + " dianas" + (f.p.categoria === "equipos" ? " (" + x.enlinea + " con online)" : "") + ".", "peq"));
+  if (f.p.categoria === "equipos") caja.append(el("div", "Tampoco se puede poner justo detrás de una de parejas: para empezar a las " + hhmm(f.p.fechaMs) + " haría falta que alguna terminara a esa hora y aun así le quedara al menos " + (MIN_PAREJAS / 3600000) + " h para jugar, con la diana libre después. Ninguna lo cumple.", "peq"));
+  if (f.p.categoria === "equipos") caja.append(el("div", "A las " + hhmm(x.pico.ms) + " coinciden " + x.pico.p + " de parejas y " + x.pico.o + " online. Las parejas solo pueden usar " + x.sinOnline + " diana sin online, así que hacen falta " + x.pico.necesarias + " dianas con online y solo tienes " + x.enlinea + ".", "peq"));
+  else caja.append(el("div", "En ese horario coinciden hasta " + x.coinciden + " partidos de Sweet Dreams y tienes " + x.total + " dianas.", "peq"));
   if (x.sugerencia) {
     const s = x.sugerencia, b = el("button", "Solución: pasar «" + s.fila.p.local + " – " + s.fila.p.visitante + "» de " + s.desde.nombre + " a " + s.hasta.nombre);
     b.onclick = () => aplicarSolucion(f, s);
     caja.append(el("div", "Se puede liberar " + s.desde.nombre + " pasando ese partido de parejas a " + s.hasta.nombre + ", que no es online y está libre a esa hora.", "peq"), b);
-  } else if (x.coinciden > x.elegibles.length) {
+  } else if (f.p.categoria === "equipos" ? x.pico.necesarias > x.enlinea : x.coinciden > x.total) {
     caja.append(el("div", "Aunque se reorganicen las dianas, a esa hora hay más partidos que dianas posibles. Hay que aplazar uno, o pedir a la liga que cambie la hora de alguno.", "peq"));
   }
   return caja;
@@ -284,7 +335,7 @@ function pintarNuevos() {
       s.add(new Option("(sin diana)", ""));
       dianas.forEach((x) => s.add(new Option(x.nombre + (x.online ? " · online" : ""), x.id)));
       s.value = f.dianaId;
-      s.onchange = () => { f.dianaId = s.value; pintarNuevos(); };
+      s.onchange = () => { deshacerEncadenado(f.encadena ? f : (f.acortada ? f.acortada.por : null)); f.dianaId = s.value; pintarNuevos(); };
       c.append(s);
       f.avisos.forEach((a) => c.append(el("small", a, f.bloquea ? "mal" : "aviso")));
       if (!f.dianaId && nuevos.todas) c.append(detalleSinDiana(f));
@@ -292,7 +343,7 @@ function pintarNuevos() {
     }
   }
   const ok = nuevos.filter((f) => f.dianaId && !f.bloquea).length;
-  $("resumen").textContent = nuevos.length ? nuevos.length + " partidos nuevos en Sweet Dreams · " + ok + " listos · " + (nuevos.length - ok) + " con aviso." : "";
+  $("resumen").textContent = nuevos.length ? nuevos.length + " partidos nuevos en Sweet Dreams · " + ok + " listos · " + (nuevos.length - ok) + " con aviso" + (nuevos.filter((f) => f.encadena).length ? " · " + nuevos.filter((f) => f.encadena).length + " con cambio de horario (⏰)" : "") + "." : "";
   $("aplicar").classList.toggle("oculto", !ok);
   $("aplicar").textContent = "Aplicar bloqueos (" + ok + " partidos)";
 }
@@ -311,7 +362,7 @@ $("calcular").onclick = async () => {
     if (partidos.length) {
       const a = Math.min(...partidos.map((p) => p.fechaMs)) - 31 * MIN, b = Math.max(...partidos.map((p) => p.fechaMs)) + 12 * 60 * MIN;
       existentes = await cargarSlots(a, b);
-      const fijos = [...bloqueos.values()].filter((x) => x.estado === "activo").map((x) => ({ p: { categoria: x.categoria, nivel: x.nivel, local: x.local, visitante: x.visitante }, iv: [x.inicioMs, x.finMs], dianaId: x.dianaId, ref: x }));
+      const fijos = [...bloqueos.values()].filter((x) => x.estado === "activo").map((x) => ({ p: { categoria: x.categoria, nivel: x.nivel, local: x.local, visitante: x.visitante, fechaMs: x.partidoMs }, iv: [x.inicioMs, x.finMs], dianaId: x.dianaId, ref: x }));
       nuevos = asignar(partidos, dianas, fijos);
     }
     $("msg").textContent = partidos.length ? "" : "No hay partidos nuevos de Sweet Dreams en ese periodo.";
@@ -323,13 +374,29 @@ $("aplicar").onclick = async () => {
   if (!buenas.length || !confirm("¿Bloquear las dianas de " + buenas.length + " partidos?")) return;
   $("msg").textContent = "Guardando…";
   try {
-    const ops = [];
+    const ops = [], acortar = new Map();
     for (const f of buenas) {
       const p = f.p;
-      ops.push(...opsBloqueo({ id: p.id, origen: "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, dianaId: f.dianaId, partidoMs: p.fechaMs, inicioMs: f.iv[0], finMs: f.iv[1], estado: "activo", dia: p.dia, nota: "" }, null));
+      let iv = f.iv, nota = "";
+      if (f.encadena) {
+        const t = f.encadena.tras;
+        nota = "Empieza a su hora (" + hhmm(f.encadena.corte) + ") justo después de " + textoFila(t) + ", que debe terminar antes de las " + hhmm(f.encadena.corte);
+        if (t.fijo && t.ref) acortar.set(t.ref.id, { b: t.ref, nota: "Debe terminar antes de las " + hhmm(f.encadena.corte) + " (bloqueo hasta esa hora en vez de hasta las " + hhmm(f.encadena.antes[1]) + "): después va " + textoFila(f)  });
+      }
+      if (f.acortada) {
+        if (buenas.includes(f.acortada.por)) nota = "Debe terminar antes de las " + hhmm(f.acortada.corte) + " (bloqueo hasta esa hora en vez de hasta las " + hhmm(f.acortada.antes[1]) + "): después va " + textoFila(f.acortada.por);
+        else iv = f.acortada.antes;
+      }
+      ops.push(...opsBloqueo({ id: p.id, origen: "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, dianaId: f.dianaId, partidoMs: p.fechaMs, inicioMs: iv[0], finMs: iv[1], estado: "activo", dia: p.dia, nota: nota }, null));
     }
-    await enviar(ops);
-    $("msg").textContent = "✔ Bloqueados " + buenas.length + " partidos.";
+    // primero se liberan los tramos que pierden las parejas acortadas y después se ocupan los de las online
+    const previas = [];
+    for (const x of acortar.values()) {
+      const t = buenas.find((f) => f.encadena && f.encadena.tras.ref && f.encadena.tras.ref.id === x.b.id).encadena;
+      previas.push(...opsBloqueo(Object.assign({}, x.b, { finMs: t.corte, nota: x.nota }), x.b));
+    }
+    await enviar([...previas, ...ops]);
+    $("msg").textContent = "✔ Bloqueados " + buenas.length + " partidos" + (acortar.size ? " y acortados " + acortar.size + " bloqueos de parejas ya hechos" : "") + ".";
     nuevos = [];
     pintarNuevos();
     await cargarBloqueos();
@@ -337,7 +404,7 @@ $("aplicar").onclick = async () => {
 };
 
 // ---------- 3 y 4. Bloqueados y aplazadas ----------
-function pintarBloqueos() {
+  function pintarBloqueos() {
   const act = $("bloqueados"), apl = $("aplazadas");
   act.innerHTML = "";
   apl.innerHTML = "";
@@ -352,6 +419,7 @@ function pintarBloqueos() {
       c.append(el("strong", "Partido " + hhmm(b.partidoMs) + " · " + nombreDiana(b.dianaId)));
       c.append(el("small", etiquetaPartido(b)));
       c.append(el("small", "Bloqueo de " + hhmm(b.inicioMs) + " a " + hhmm(b.finMs) + (b.origen === "manual" ? " · añadida a mano" : "")));
+      if (b.nota) c.append(el("small", "⏰ " + b.nota, "aviso"));
       const e = el("button", "Cambiar fecha, hora o diana", "sec");
       e.onclick = () => abrirEditor("cambiar", b);
       const a = el("button", "Aplazar (liberar la diana)", "sec");
