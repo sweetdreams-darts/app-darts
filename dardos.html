@@ -6,6 +6,7 @@
 body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:480px}
 .oculto{display:none!important}
+#tClas strong{font-size:.86rem}
 </style></head>
 <body><main>
 <p><a href="./">← Inicio</a></p>
@@ -18,7 +19,7 @@ main{width:100%;max-width:480px}
     <a id="tMis" class="tile t-cian" href="mis-reservas.html"><span class="emoji">🎟️</span><strong>Mis reservas</strong><small>Ver o cancelar</small></a>
     <a id="tLiga" class="tile t-amarillo" href="liga.html"><span class="emoji">🏆</span><strong>Zona Liga</strong><small>Calendarios y locales</small></a>
     <div class="tile t-violeta bloq"><span class="emoji">🎲</span><strong>Torneos</strong><small>Próximamente</small></div>
-    <div class="tile t-verde bloq"><span class="emoji">📊</span><strong>Clasificaciones</strong><small>Próximamente</small></div>
+    <a id="tClas" class="tile t-verde" href="clasificaciones.html"><span class="emoji">📊</span><strong>Clasificaciones</strong><small>Rankings y estadísticas</small></a>
     <a class="tile t-verde grande" href="avisos.html"><span class="emoji">🔔</span><strong>Avisos</strong><small>Recordatorios de tus reservas</small></a>
   </div>
   <div id="avisoLiga" class="zona oculto">Si juegas en la liga, el bar te dará acceso a la Zona Liga cuando compruebe tu nombre.</div>
@@ -50,6 +51,7 @@ onAuthStateChanged(auth, async (u) => {
     $("tMis").classList.toggle("bloq", !puede);
     $("avisoVerif").classList.toggle("oculto", puede);
     $("tLiga").classList.toggle("bloq", !liga);
+    $("tClas").classList.toggle("bloq", !liga);
     $("avisoLiga").classList.toggle("oculto", liga);
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
