@@ -1,0 +1,28 @@
+name: Leer PDF de clasificaciones
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+    inputs:
+      prueba:
+        description: "Modo prueba (true = no guarda nada, solo muestra lo que encontraría)"
+        default: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  pdfs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install google-auth requests pdfplumber
+      - run: python scripts/leer_pdfs.py
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+          PRUEBA: ${{ github.event.inputs.prueba || 'false' }}
