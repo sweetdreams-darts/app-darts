@@ -81,6 +81,11 @@ def main():
         print("Modo prueba: no se guarda nada.")
         return
     guardar(pdfs)
+    try:
+        import leer_clasif
+        print(leer_clasif.procesar(pdfs))
+    except Exception as e:
+        print("No se han podido leer las estadísticas:", e)
 
 
 if __name__ == "__main__":
