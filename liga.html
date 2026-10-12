@@ -7,7 +7,7 @@ body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:520px}
 select,input[type=search]{width:100%;padding:12px;font-size:1rem;margin-top:10px}
 .tabs{display:flex;gap:8px}
-.tabs button{flex:1;margin-top:0;padding:12px;font-size:1rem}
+.tabs button{flex:1;margin-top:0;padding:12px 4px;font-size:.92rem}
 .dos{display:flex;gap:8px}
 .chk{display:flex;align-items:center;gap:10px;margin-top:14px}
 .chk input{width:22px;height:22px;margin:0}
@@ -16,6 +16,10 @@ h2{font-size:1.05rem;margin:22px 0 0}
 .card small{display:block;margin-top:3px}
 .sd{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;font-weight:700;font-size:.8rem}
 a.mapa{display:block;margin-top:10px;padding:11px;text-align:center;text-decoration:none}
+.rejillaPdf{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.rejillaPdf a.boton{margin:0;padding:14px 8px;text-align:center;text-decoration:none}
+a.largo{display:block;margin-top:8px;padding:14px;text-align:center;text-decoration:none}
+.rejillaPdf .pdfno{margin:0;padding:12px 8px;text-align:center;opacity:.6;font-size:.9rem}
 .oculto{display:none!important}
 </style></head>
 <body><main>
@@ -23,7 +27,7 @@ a.mapa{display:block;margin-top:10px;padding:11px;text-align:center;text-decorat
 <header class="marca"><h1>Zona Liga</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
-  <div class="tabs"><button id="tCal" class="sel">Calendarios</button><button id="tLoc">Locales</button></div>
+  <div class="tabs"><button id="tCal" class="sel">Calendarios</button><button id="tCla">Clasificaciones</button><button id="tLoc">Locales</button></div>
   <section id="vCal">
     <div class="dos"><select id="cat"><option value="parejas">Parejas</option><option value="equipos">Equipos (online)</option></select><select id="niv"></select></div>
     <select id="equipo"></select>
@@ -38,16 +42,33 @@ a.mapa{display:block;margin-top:10px;padding:11px;text-align:center;text-decorat
     <p id="info"></p>
     <div id="partidos"></div>
   </section>
+  <section id="vCla" class="oculto">
+    <h2>Sweet Dreams</h2>
+    <p>Rankings de Sweet Dreams (General, Parejas y Equipos, con 501 y Cricket), estadísticas y tu perfil de jugador.</p>
+    <a class="boton" href="clasificaciones.html" style="display:block;text-align:center;text-decoration:none;padding:14px">📊 Ver clasificaciones y estadísticas</a>
+    <h2>Bullshooter · PDF oficiales</h2>
+    <p id="pdfInfo"></p>
+    <div id="pdfLista"></div>
+  </section>
   <section id="vLoc" class="oculto">
     <input id="buscar" type="search" placeholder="Buscar local">
     <div id="locales"></div>
   </section>
 </div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+window.addEventListener("unhandledrejection", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error: " + ((e.reason && (e.reason.code || e.reason.message)) || e.reason);
+});
+</script>
 <script type="module">
-    <p>Rankings de Sweet Dreams (General, Parejas y Equipos, con 501 y Cricket), estadísticas y tu perfil de jugador.</p>
-    <a class="boton" href="clasificaciones.html" style="display:block;text-align:center;text-decoration:none;padding:14px">📊 Ver clasificaciones y estadísticas</a>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, collection, query, where } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, collection, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -59,7 +80,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
-const NIVELES = { parejas: 13, equipos: 10 };
+const NIVELES = { parejas: 13, equipos: 18 };
 const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const pad = (n) => String(n).padStart(2, "0");
@@ -144,44 +165,6 @@ async function traer() {
     q = query(col, where("categoria", "==", cat));
     clave = "c|" + cat;
   } else {
-    const dias = rango === "temporada" ? 60 : Number(rango);
-    const hoy = new Date();
-    q = query(col, where("dia", ">=", iso(hoy)), where("dia", "<=", iso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dias))));
-    clave = "d|" + iso(hoy) + "|" + dias;
-  }
-  try {
-    const guardado = JSON.parse(sessionStorage.getItem("liga_" + clave) || "null");
-    if (guardado && Date.now() - guardado.t < 300000) return guardado.d;
-  } catch (e) {}
-  const d = (await getDocs(q)).docs.map((x) => { const v = x.data(); return { id: x.id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }; });
-  try { sessionStorage.setItem("liga_" + clave, JSON.stringify({ t: Date.now(), d: d })); } catch (e) {}
-  return d;
-}
-
-async function cargar() {
-  const mio = ++seq;
-  $("info").textContent = "Cargando…";
-  $("partidos").innerHTML = "";
-  try {
-    const d = await traer();
-    if (mio !== seq) return;
-    datos = d.slice();
-    const cat0 = $("cat").value;
-    if ($("niv").value === "todos" && !(cat0 === "parejas" && $("soloSD").checked)) {
-      const hoy0 = new Date(), r0 = $("rango").value;
-      const hasta0 = r0 === "temporada" ? "9999" : iso(new Date(hoy0.getFullYear(), hoy0.getMonth(), hoy0.getDate() + Number(r0)));
-      const ya = new Set(datos.map((x) => x.id));
-      for (const [id, c] of cambios) {
-        if (c.estado === "movido" && !ya.has(id) && c.dia >= iso(hoy0) && c.dia <= hasta0) {
-          const s = await getDoc(doc(db, "liga_partidos", id));
-          if (s.exists()) { const v = s.data(); datos.push({ id: id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }); }
-        }
-      }
-    }
-    const cat = $("cat").value, niv = $("niv").value;
-    const prev = $("equipo").value;
-    $("equipo").innerHTML = "";
-    if (niv === "todos") {
       $("equipo").add(new Option("Elige un nivel para filtrar por equipo", ""));
       $("equipo").disabled = true;
     } else {
@@ -250,15 +233,56 @@ function pintarLocales() {
   }
 }
 
-function pestana(cal) {
-  $("vCal").classList.toggle("oculto", !cal);
-  $("vLoc").classList.toggle("oculto", cal);
-  $("tCal").classList.toggle("sel", cal);
-  $("tLoc").classList.toggle("sel", !cal);
-  if (!cal) cargarLocales();
+function pestana(cual) {
+  $("vCal").classList.toggle("oculto", cual !== "cal");
+  $("vCla").classList.toggle("oculto", cual !== "cla");
+  $("vLoc").classList.toggle("oculto", cual !== "loc");
+  $("tCal").classList.toggle("sel", cual === "cal");
+  $("tCla").classList.toggle("sel", cual === "cla");
+  $("tLoc").classList.toggle("sel", cual === "loc");
+  if (cual === "loc") cargarLocales();
+  if (cual === "cla") cargarPdfs();
 }
-$("tCal").onclick = () => pestana(true);
-$("tLoc").onclick = () => pestana(false);
+
+let pdfsCargados = false;
+async function cargarPdfs() {
+  if (pdfsCargados) return;
+  const cont = $("pdfLista");
+  cont.innerHTML = "";
+  let pdfs = {}, rev = "";
+  try {
+    const s = await getDoc(doc(db, "liga_config", "pdfs"));
+    if (s.exists()) { pdfs = s.data().pdfs || {}; rev = s.data().revisado || ""; }
+  } catch (e) { $("pdfInfo").textContent = "Error: " + (e.code || e.message); return; }
+  pdfsCargados = true;
+  $("pdfInfo").textContent = rev ? "Lista revisada el " + rev + ". El botón abre siempre la última versión del PDF." : "Todavía no se ha revisado ninguna clasificación. Aparecerán aquí en cuanto la liga las publique.";
+  const grupos = [["parejas", "Parejas", 13], ["equipos", "Equipos presencial", 2]];
+  for (const [cat, titulo, total] of grupos) {
+    cont.append(el("h2", titulo));
+    const g = el("div", "", "rejillaPdf");
+    for (let n = 1; n <= total; n++) {
+      const p = pdfs[cat + "-" + n];
+      if (p && p.url) {
+        const a = el("a", "Nivel " + n, "boton");
+        a.href = p.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        g.append(a);
+      } else g.append(el("div", "Nivel " + n + " · aún no publicada", "card pdfno"));
+    }
+    cont.append(g);
+  }
+  cont.append(el("h2", "Liga online de equipos"));
+  const o = el("a", "Ver en bullshooter.eu", "boton");
+  o.href = "https://www.bullshooter.eu/es/winter-teams-league-2026-27/";
+  o.target = "_blank";
+  o.rel = "noopener";
+  o.className = "boton largo";
+  cont.append(o);
+}
+$("tCal").onclick = () => pestana("cal");
+$("tCla").onclick = () => pestana("cla");
+$("tLoc").onclick = () => pestana("loc");
 $("cat").onchange = () => { $("equipo").value = ""; llenarNiveles(); cargar(); };
 $("niv").onchange = () => { $("equipo").value = ""; cargar(); };
 $("rango").onchange = cargar;
@@ -278,7 +302,7 @@ onAuthStateChanged(auth, async (u) => {
     } catch (e) { nombresSD = new Set(); }
     try {
       cambios = new Map();
-      (await getDocs(collection(db, "liga_config"))).forEach((d) => { if (d.id.startsWith("cambio_")) cambios.set(d.id.slice(7), d.data()); });
+      (await getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`")))).forEach((d) => { if (d.id.startsWith("cambio_")) cambios.set(d.id.slice(7), d.data()); });
     } catch (e) { cambios = new Map(); }
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
