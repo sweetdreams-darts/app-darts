@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Jugadores de la liga</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:30px 0 4px;color:#ffd166}
+h2 small{font-weight:400;color:#f1faee;opacity:.7}
+button,input{font-family:inherit;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;padding:10px 12px;margin-top:8px}
+input{width:100%;background:#0f1a30;color:#f1faee}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;width:100%;text-align:left}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.aviso{color:#ffd166}
+.resumen{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.resumen div{background:#1d2f52;border-radius:12px;padding:10px 6px;text-align:center}
+.resumen b{display:block;font-size:1.4rem;color:#ffd166}
+.resumen span{font-size:.72rem;opacity:.8}
+#msg{min-height:1.4em;color:#ffd166}
+#sel{position:fixed;inset:0;background:#14213d;padding:20px;overflow:auto;z-index:10}
+.oculto{display:none!important}
+.vacio{opacity:.65;font-size:.9rem;margin:6px 0}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Jugadores de la liga</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="resumen" id="resumen"></div>
+  <p style="opacity:.8;font-size:.9rem">Aquí decides quién es quién: apruebas los nombres dudosos, fusionas jugadores duplicados y ocultas a quien lo pida. Los datos salen de las clasificaciones de la liga (<span id="fecha"></span>).</p>
+
+  <h2>Solicitudes <small id="nPed"></small></h2>
+  <div id="pedidos"></div>
+
+  <h2>Nombres dudosos <small id="nDud"></small></h2>
+  <div id="dudosos"></div>
+
+  <h2>Sin coincidencia <small id="nSin"></small></h2>
+  <div id="sin"></div>
+
+  <h2>Cuentas vinculadas <small id="nVin"></small></h2>
+  <div id="vinculados"></div>
+
+  <h2>Posibles jugadores duplicados <small id="nDup"></small></h2>
+  <div id="dups"></div>
+  <div id="alias"></div>
+
+  <h2>Jugadores ocultos <small id="nOc"></small></h2>
+  <div id="ocultos"></div>
+  <button id="ocultar" class="sec">Ocultar a un jugador…</button>
+
+  <h2>Jugadores de Sweet Dreams sin cuenta <small id="nSD"></small></h2>
+  <div id="sdSin"></div>
+</div>
+
+<div id="sel" class="oculto">
+  <h2 id="selTitulo"></h2>
+  <input id="selBuscar" type="search" placeholder="Escribe el nombre del jugador" autocomplete="off">
+  <div id="selRes"></div>
+  <button id="selCerrar" class="sec">Cancelar</button>
+</div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const sinTildes = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const clave = (s) => sinTildes(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const PARTICULAS = new Set(["de", "del", "la", "las", "los", "el"]);
+function buscarJugador(nombreCuenta, jugadores) {
+  const k = clave(nombreCuenta);
+  if (!k) return { estado: "nada", candidatos: [] };
+  const claves = [...new Set(jugadores.map((j) => j.k))];
+  if (claves.includes(k)) return { estado: "auto", k: k };
+  const pref = claves.filter((c) => (c.length >= 26 && k.startsWith(c)) || (k.length >= 26 && c.startsWith(k)));
+  if (pref.length === 1) return { estado: "auto", k: pref[0] };
+  const orden = (s) => s.split(" ").sort().join(" ");
+  const iguales = claves.filter((c) => orden(c) === orden(k));
+  if (iguales.length === 1) return { estado: "auto", k: iguales[0] };
+  const toks = (s) => new Set(s.split(" ").filter((t) => t && !PARTICULAS.has(t)));
+  const mios = toks(k), cand = [];
+  for (const c of claves) {
+    const t = toks(c), comun = [...mios].filter((x) => t.has(x)).length;
+    if (comun >= 2 && comun / Math.max(mios.size, t.size) >= 0.6) cand.push({ k: c, comun: comun });
+  }
+  cand.sort((a, b) => b.comun - a.comun);
+  return { estado: cand.length ? "dudoso" : "nada", candidatos: cand.slice(0, 5).map((c) => c.k) };
+}
+// Todos los jugadores de la liga, ya con los nombres fusionados (alias) y marcados los ocultos.
+function jugadoresDe(datos, AJ) {
+  const por = new Map();
+  for (const n of datos.niveles || []) for (const f of (n.x01 || []).concat(n.cri || [])) {
+    const c0 = clave(f[0]), k = AJ.alias[c0] || c0;
+    const j = por.get(k) || { k: k, nombre: f[0], equipos: new Set(), niveles: new Set(), sd: false, originales: new Set(), oculto: AJ.ocultos.includes(k) };
+    if (f[0].length > j.nombre.length) j.nombre = f[0];
+    j.equipos.add(f[1]); j.niveles.add(n.n); j.originales.add(c0);
+    if ((n.sd || []).includes(clave(f[1]))) j.sd = true;
+    por.set(k, j);
+  }
+  return [...por.values()].map((j) => Object.assign({}, j, { equipos: [...j.equipos], niveles: [...j.niveles].sort((a, b) => a - b), originales: [...j.originales] }));
+}
+function lev(a, b) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 9;
+  let prev = [...Array(n + 1).keys()];
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+// Parejas de nombres que probablemente son la misma persona escrita de dos formas.
+function duplicadosPosibles(jugadores) {
+  const out = [], ord = (s) => s.split(" ").sort().join(" ");
+  for (let i = 0; i < jugadores.length; i++) for (let j = i + 1; j < jugadores.length; j++) {
+    const a = jugadores[i].k, b = jugadores[j].k;
+    let motivo = "";
+    if (ord(a) === ord(b)) motivo = "mismas palabras en distinto orden";
+    else if (Math.min(a.length, b.length) >= 14 && (a.startsWith(b) || b.startsWith(a))) motivo = "uno parece la versión recortada del otro";
+    else if (Math.min(a.length, b.length) >= 12 && lev(a, b) <= 2) motivo = "se escriben casi igual";
+    if (motivo) out.push({ a: jugadores[i], b: jugadores[j], motivo: motivo });
+  }
+  return out;
+}
+// Reparte las cuentas: solicitudes, dudosos, sin coincidencia, vinculadas (automático o aprobado) y rechazadas.
+function clasificarCuentas(usuarios, jugadores, vinculos, pedidos) {
+  const r = { pedidos: [], dudosos: [], sin: [], vinculados: [], rechazados: [] };
+  const lista = jugadores.map((j) => ({ k: j.k }));
+  const porK = new Map(jugadores.map((j) => [j.k, j]));
+  for (const u of usuarios) {
+    const vinc = vinculos[u.id], ped = pedidos[u.id];
+    if (!(u.role === "player" || u.role === "admin" || vinc || ped)) continue;
+    if (ped && porK.has(ped.k)) r.pedidos.push({ u: u, jugador: porK.get(ped.k) });
+    if (vinc && vinc.estado === "aprobado" && porK.has(vinc.k)) { r.vinculados.push({ u: u, jugador: porK.get(vinc.k), tipo: "aprobado" }); continue; }
+    if (vinc && vinc.estado === "rechazado") { r.rechazados.push({ u: u }); continue; }
+    const b = buscarJugador(u.nombre || "", lista);
+    if (b.estado === "auto") r.vinculados.push({ u: u, jugador: porK.get(b.k), tipo: "automático" });
+    else if (ped) continue;
+    else if (b.estado === "dudoso") r.dudosos.push({ u: u, candidatos: b.candidatos.map((k) => porK.get(k)).filter(Boolean) });
+    else if (u.role === "player") r.sin.push({ u: u });
+  }
+  const cuenta = new Map();
+  r.vinculados.forEach((v) => cuenta.set(v.jugador.k, (cuenta.get(v.jugador.k) || 0) + 1));
+  r.vinculados.forEach((v) => { v.repetido = cuenta.get(v.jugador.k) > 1; });
+  return r;
+}
+// </logica>
+
+let datos = null, AJ = { alias: {}, ocultos: [] }, usuarios = [], vinculos = {}, pedidos = {}, jugadores = [], yoUid = "";
+const desc = (j) => j.nombre + " · " + j.equipos.join(" / ") + " · " + j.niveles.map((n) => "N" + n).join(", ") + (j.sd ? " ⭐" : "");
+const cuentaTxt = (u) => (u.nombre || "(sin nombre)") + (u.email ? " · " + u.email : "");
+
+async function escribir(f, ok) {
+  try { await f(); $("msg").textContent = ok || ""; await cargar(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+const guardarAjustes = () => setDoc(doc(db, "liga_config", "jugadores_ajustes"), { alias: AJ.alias, ocultos: AJ.ocultos });
+const aprobar = (u, j) => escribir(async () => {
+  await setDoc(doc(db, "liga_vinculos", u.id), { k: j.k, nombre: u.nombre || "", estado: "aprobado", por: yoUid, fecha: serverTimestamp() });
+  if (pedidos[u.id]) await deleteDoc(doc(db, "liga_vinculos_pedidos", u.id));
+}, "✔ " + (u.nombre || "La cuenta") + " vinculada con " + j.nombre + ".");
+const rechazar = (u) => escribir(async () => {
+  await setDoc(doc(db, "liga_vinculos", u.id), { estado: "rechazado", nombre: u.nombre || "", por: yoUid, fecha: serverTimestamp() });
+  if (pedidos[u.id]) await deleteDoc(doc(db, "liga_vinculos_pedidos", u.id));
+}, "✔ Marcada como no vinculable: " + (u.nombre || "la cuenta") + ".");
+const quitarVinculo = (u) => escribir(() => deleteDoc(doc(db, "liga_vinculos", u.id)), "✔ Vínculo quitado.");
+
+// ---------- elegir un jugador de la lista ----------
+function elegirJugador(titulo, alElegir) {
+  $("selTitulo").textContent = titulo;
+  $("selBuscar").value = "";
+  $("selRes").innerHTML = "";
+  $("sel").classList.remove("oculto");
+  const pinta = () => {
+    const q = clave($("selBuscar").value);
+    $("selRes").innerHTML = "";
+    if (q.length < 2) return;
+    jugadores.filter((j) => q.split(" ").every((t) => clave(j.nombre).includes(t) || j.equipos.some((e) => clave(e).includes(t)))).slice(0, 12).forEach((j) => {
+      const b = el("button", desc(j), "sec");
+      b.onclick = () => { $("sel").classList.add("oculto"); alElegir(j); };
+      $("selRes").append(b);
+    });
+  };
+  $("selBuscar").oninput = pinta;
+  $("selBuscar").focus();
+}
+$("selCerrar").onclick = () => $("sel").classList.add("oculto");
+
+// ---------- pintar ----------
+function lista(cont, filas, vacio, pinta) {
+  cont.innerHTML = "";
+  if (!filas.length) { cont.append(el("p", vacio, "vacio")); return; }
+  filas.forEach((f) => cont.append(pinta(f)));
+}
+function render() {
+  jugadores = jugadoresDe(datos, AJ);
+  const r = clasificarCuentas(usuarios, jugadores, vinculos, pedidos);
+  const visibles = jugadores.filter((j) => !j.oculto);
+  // resumen
+  const sdSin = visibles.filter((j) => j.sd && !r.vinculados.some((v) => v.jugador.k === j.k));
+  $("resumen").innerHTML = "";
+  [[jugadores.length, "jugadores en la liga"], [r.vinculados.length, "cuentas vinculadas"], [r.pedidos.length + r.dudosos.length + r.sin.length, "por revisar"]].forEach(([n, t]) => { const d = el("div", ""); d.append(el("b", String(n)), el("span", t)); $("resumen").append(d); });
+  $("nPed").textContent = "(" + r.pedidos.length + ")"; $("nDud").textContent = "(" + r.dudosos.length + ")"; $("nSin").textContent = "(" + r.sin.length + ")"; $("nVin").textContent = "(" + r.vinculados.length + ")";
+  // solicitudes
+  lista($("pedidos"), r.pedidos, "No hay solicitudes pendientes.", (p) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", cuentaTxt(p.u)), el("small", "Pide ser: " + desc(p.jugador)));
+    const a = el("button", "Aprobar: es " + p.jugador.nombre); a.onclick = () => aprobar(p.u, p.jugador);
+    const n = el("button", "Rechazar", "sec"); n.onclick = () => rechazar(p.u);
+    c.append(a, n);
+    return c;
+  });
+  // dudosos
+  lista($("dudosos"), r.dudosos, "No hay nombres dudosos.", (d) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", cuentaTxt(d.u)), el("small", "Puede ser:"));
+    d.candidatos.forEach((j) => { const b = el("button", "Es " + desc(j)); b.onclick = () => aprobar(d.u, j); c.append(b); });
+    const o = el("button", "Es otro jugador…", "sec"); o.onclick = () => elegirJugador("¿Quién es " + (d.u.nombre || "esta cuenta") + "?", (j) => aprobar(d.u, j));
+    const n = el("button", "No es ninguno", "sec"); n.onclick = () => rechazar(d.u);
+    c.append(o, n);
+    return c;
+  });
+  // sin coincidencia
+  lista($("sin"), r.sin, "Todas las cuentas de jugadores tienen coincidencia.", (s) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", cuentaTxt(s.u)), el("small", "Su nombre no aparece en la liga."));
+    const o = el("button", "Buscar su nombre en la liga…"); o.onclick = () => elegirJugador("¿Quién es " + (s.u.nombre || "esta cuenta") + "?", (j) => aprobar(s.u, j));
+    const n = el("button", "No juega en la liga", "sec"); n.onclick = () => rechazar(s.u);
+    c.append(o, n);
+    return c;
+  });
+  // vinculadas
+  lista($("vinculados"), r.vinculados.sort((a, b) => (b.repetido ? 1 : 0) - (a.repetido ? 1 : 0) || a.jugador.nombre.localeCompare(b.jugador.nombre)), "Todavía no hay cuentas vinculadas.", (v) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", cuentaTxt(v.u) + "  →  " + v.jugador.nombre), el("small", v.tipo === "aprobado" ? "Aprobada por el bar" : "Automática (el nombre coincide)"));
+    if (v.repetido) c.append(el("small", "⚠️ Hay otra cuenta vinculada al mismo jugador. Revisa si es una cuenta duplicada.", "aviso"));
+    const b = el("button", v.tipo === "aprobado" ? "Quitar vínculo" : "No es esta persona", "sec");
+    b.onclick = () => (v.tipo === "aprobado" ? quitarVinculo(v.u) : rechazar(v.u));
+    c.append(b);
+    return c;
+  });
+  // duplicados
+  const dups = duplicadosPosibles(visibles);
+  $("nDup").textContent = "(" + dups.length + ")";
+  lista($("dups"), dups, "No he visto nombres que parezcan duplicados.", (d) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", d.a.nombre + "  /  " + d.b.nombre), el("small", d.motivo), el("small", desc(d.a)), el("small", desc(d.b)));
+    const b = el("button", "Son la misma persona: juntar bajo «" + (d.a.nombre.length >= d.b.nombre.length ? d.a.nombre : d.b.nombre) + "»");
+    b.onclick = () => {
+      const [destino, origen] = d.a.nombre.length >= d.b.nombre.length ? [d.a, d.b] : [d.b, d.a];
+      escribir(async () => { origen.originales.forEach((o) => { AJ.alias[o] = destino.k; }); AJ.alias[origen.k] = destino.k; await guardarAjustes(); }, "✔ Juntados: ahora son un solo jugador.");
+    };
+    c.append(b);
+    return c;
+  });
+  const al = $("alias");
+  al.innerHTML = "";
+  const pares = Object.entries(AJ.alias);
+  if (pares.length) al.append(el("small", "Ya juntados:", "vacio"));
+  pares.forEach(([o, d]) => {
+    const c = el("div", "", "card");
+    c.append(el("small", o + "  →  " + d));
+    const b = el("button", "Deshacer", "sec");
+    b.onclick = () => escribir(async () => { delete AJ.alias[o]; await guardarAjustes(); }, "✔ Separados otra vez.");
+    c.append(b);
+    al.append(c);
+  });
+  // ocultos
+  const oc = jugadores.filter((j) => j.oculto);
+  $("nOc").textContent = "(" + oc.length + ")";
+  lista($("ocultos"), oc, "No hay jugadores ocultos.", (j) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", j.nombre), el("small", "No sale en las clasificaciones de nadie."));
+    const b = el("button", "Volver a mostrar", "sec");
+    b.onclick = () => escribir(async () => { AJ.ocultos = AJ.ocultos.filter((k) => k !== j.k); await guardarAjustes(); }, "✔ " + j.nombre + " vuelve a aparecer.");
+    c.append(b);
+    return c;
+  });
+  // Sweet Dreams sin cuenta
+  $("nSD").textContent = "(" + sdSin.length + ")";
+  lista($("sdSin"), sdSin, "Todos los jugadores de Sweet Dreams tienen cuenta vinculada.", (j) => { const c = el("div", "", "card"); c.append(el("strong", j.nombre), el("small", j.equipos.join(" / ") + " · " + j.niveles.map((n) => "N" + n).join(", "))); return c; });
+}
+$("ocultar").onclick = () => elegirJugador("¿A quién ocultamos?", (j) => {
+  if (!confirm("¿Ocultar a " + j.nombre + "? Dejará de salir en todas las clasificaciones.")) return;
+  escribir(async () => { if (!AJ.ocultos.includes(j.k)) AJ.ocultos.push(j.k); await guardarAjustes(); }, "✔ " + j.nombre + " está oculto.");
+});
+
+async function cargar() {
+  const [c, aj, us, vi, pe] = await Promise.all([getDoc(doc(db, "liga_config", "clasificaciones")), getDoc(doc(db, "liga_config", "jugadores_ajustes")), getDocs(collection(db, "users")), getDocs(collection(db, "liga_vinculos")), getDocs(collection(db, "liga_vinculos_pedidos"))]);
+  if (!c.exists() || !c.data().datos) { $("estado").textContent = "Todavía no hay clasificaciones cargadas. Pulsa «Buscar clasificaciones ahora» en el panel."; return; }
+  datos = JSON.parse(c.data().datos);
+  $("fecha").textContent = "informe del " + datos.informe;
+  AJ = { alias: (aj.exists() && aj.data().alias) || {}, ocultos: (aj.exists() && aj.data().ocultos) || [] };
+  usuarios = us.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  vinculos = {}; vi.docs.forEach((d) => { vinculos[d.id] = d.data(); });
+  pedidos = {}; pe.docs.forEach((d) => { pedidos[d.id] = d.data(); });
+  $("estado").textContent = "";
+  $("panel").classList.remove("oculto");
+  render();
+}
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    await cargar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
