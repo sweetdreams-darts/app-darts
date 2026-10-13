@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Eliminar datos de un socio</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.15rem;margin:26px 0 6px;color:#ffd166}
+button,input,textarea{font-family:inherit;font-size:1rem;border-radius:10px;border:1px solid #3d5380;padding:12px;margin-top:10px}
+input,textarea{width:100%;box-sizing:border-box;background:#0f1a30;color:#f1faee}
+textarea{height:220px;font-size:.78rem;font-family:ui-monospace,monospace}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;width:100%;text-align:left}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.peligro{background:#ff8787;color:#14213d}
+button:disabled{opacity:.5}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.aviso{background:#3b2a1a;border:1px solid #ffd166;border-radius:12px;padding:12px 14px;margin-top:12px;font-size:.92rem}
+.cifras{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.cifras div{background:#0f1a30;border-radius:10px;padding:10px;text-align:center}
+.cifras b{display:block;font-size:1.3rem;color:#ffd166}
+.cifras span{font-size:.75rem;opacity:.85}
+label.op{display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:.95rem}
+label.op input{width:22px;height:22px;margin:0;flex:none}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+.vacio{opacity:.65;font-size:.9rem}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Eliminar datos de un socio</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="aviso">Sirve para atender una petición de borrado (RGPD) o dar de baja a un socio. Elimina <strong>para siempre</strong> su saldo de puntos, sus movimientos, sus cupones, su giro de la ruleta y sus datos de la liga. <strong>No se puede deshacer.</strong> Tienes 30 días desde que lo pide.</div>
+
+  <h2>1. Busca al socio</h2>
+  <input id="q" type="search" placeholder="Número de socio, nombre o email" autocomplete="off">
+  <button id="buscar">Buscar</button>
+  <div id="resultados"></div>
+
+  <div id="ficha" class="oculto">
+    <h2>2. Sus datos</h2>
+    <div class="card"><strong id="fNombre"></strong><small id="fSub"></small></div>
+    <div class="cifras" id="cifras"></div>
+    <button id="ver" class="sec">Ver y copiar todos sus datos</button>
+    <textarea id="json" class="oculto" readonly></textarea>
+    <button id="copiar" class="sec oculto">Copiar</button>
+
+    <h2>3. Eliminar</h2>
+    <label class="op"><input type="checkbox" id="opCarne" checked><span>Quitarle también el carné de socio (su cuenta se mantiene)</span></label>
+    <label class="op"><input type="checkbox" id="opTokens" checked><span>Borrar también los avisos del móvil de esta cuenta</span></label>
+    <p style="margin-bottom:0">Para confirmar, escribe <strong>BORRAR</strong>:</p>
+    <input id="conf" placeholder="BORRAR" autocomplete="off">
+    <button id="borrar" class="peligro" disabled>Eliminar estos datos para siempre</button>
+  </div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, query, where, orderBy, limit, writeBatch, deleteField, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const sinTildes = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const clave = (s) => sinTildes(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Personas que coinciden con lo escrito: por número de socio, por nombre o email, y cuentas ya borradas que aún dejan huella en los movimientos.
+function candidatos(q, usuarios, movs) {
+  const txt = String(q || "").trim(), t = clave(txt), num = /^\d+$/.test(txt) ? Number(txt) : null;
+  if (!txt) return [];
+  const out = [], vistos = new Set(), ids = new Set(usuarios.map((u) => u.id));
+  for (const u of usuarios) {
+    const ok = num !== null ? u.socioNum === num : (t && t.split(" ").every((w) => clave(u.nombre).includes(w))) || (u.email && u.email.toLowerCase().includes(txt.toLowerCase()));
+    if (ok) { out.push({ uid: u.id, nombre: u.nombre || "(sin nombre)", email: u.email || "", socioNum: u.socioNum || 0, socio: u.socio === true, cuenta: true }); vistos.add(u.id); }
+  }
+  if (num === null && t) for (const m of movs) {
+    if (!m.uid || ids.has(m.uid) || vistos.has(m.uid)) continue;
+    if (t.split(" ").every((w) => clave(m.socioNombre).includes(w))) { out.push({ uid: m.uid, nombre: m.socioNombre || "(sin nombre)", email: "", socioNum: 0, socio: false, cuenta: false }); vistos.add(m.uid); }
+  }
+  return out.slice(0, 15);
+}
+// Todo lo que hay guardado de esa persona y lo que se va a borrar.
+function resumenDe(d) {
+  return {
+    saldo: d.puntos ? d.puntos.puntos : 0, tienePuntos: !!d.puntos,
+    movimientos: d.movs.length, cupones: d.cupones.length, pendientes: d.cupones.filter((c) => c.estado === "pendiente").length,
+    giro: d.giro ? 1 : 0, equipos: d.equipos ? 1 : 0, vinculo: d.vinculo ? 1 : 0, solicitud: d.solicitud ? 1 : 0, avisos: d.tokens.length
+  };
+}
+function refsABorrar(uid, d, op) {
+  const r = [];
+  if (d.puntos) r.push({ col: "socios_puntos", id: uid });
+  d.movs.forEach((m) => r.push({ col: "socios_mov", id: m.id }));
+  d.cupones.forEach((c) => r.push({ col: "cupones", id: c.id }));
+  if (d.giro) r.push({ col: "ruleta_giros", id: uid });
+  if (d.equipos) r.push({ col: "mis_equipos", id: uid });
+  if (d.vinculo) r.push({ col: "liga_vinculos", id: uid });
+  if (d.solicitud) r.push({ col: "liga_vinculos_pedidos", id: uid });
+  if (op.tokens) d.tokens.forEach((t) => r.push({ col: "push_tokens", id: t.id }));
+  return r;
+}
+const limpio = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : Array.isArray(v) ? v.map(limpio) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, limpio(x)])) : v);
+function exportar(uid, d) {
+  return JSON.stringify(limpio({ identificador: uid, cuenta: d.usuario ? { nombre: d.usuario.nombre, email: d.usuario.email, socio: d.usuario.socio === true, numeroDeSocio: d.usuario.socioNum || null } : null, saldoDePuntos: d.puntos || null, movimientosDePuntos: d.movs.map(({ id, ...x }) => x), cupones: d.cupones.map(({ id, ...x }) => x), giroDeLaRuleta: d.giro || null, equiposElegidos: d.equipos || null, vinculoConLaLiga: d.vinculo || null, solicitudDeVinculo: d.solicitud || null, avisosDelMovilRegistrados: d.tokens.length }), null, 2);
+}
+// </logica>
+
+let yoUid = "", usuarios = [], movs = [], actual = null;
+
+async function buscar() {
+  const q = $("q").value.trim();
+  $("msg").textContent = "";
+  $("ficha").classList.add("oculto");
+  const cont = $("resultados");
+  cont.innerHTML = "";
+  if (!q) return;
+  try {
+    const us = await getDocs(collection(db, "users"));
+    usuarios = us.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    const mv = await getDocs(query(collection(db, "socios_mov"), orderBy("creado", "desc"), limit(500)));
+    movs = mv.docs.map((d) => d.data());
+    const lista = candidatos(q, usuarios, movs);
+    if (!lista.length) { cont.append(el("p", "No encuentro a nadie con «" + q + "». Prueba con el número de socio, parte del nombre o el email.", "vacio")); return; }
+    lista.forEach((c) => {
+      const b = el("button", "", "sec");
+      b.textContent = c.nombre + (c.socioNum ? " · socio nº " + String(c.socioNum).padStart(4, "0") : "") + (c.email ? " · " + c.email : "") + (c.cuenta ? "" : " · cuenta ya borrada");
+      b.onclick = () => abrir(c);
+      cont.append(b);
+    });
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+
+async function datosDe(uid) {
+  const [u, p, mv, cu, gi, eq, vi, so, tk] = await Promise.all([
+    getDoc(doc(db, "users", uid)), getDoc(doc(db, "socios_puntos", uid)),
+    getDocs(query(collection(db, "socios_mov"), where("uid", "==", uid))), getDocs(query(collection(db, "cupones"), where("uid", "==", uid))),
+    getDoc(doc(db, "ruleta_giros", uid)), getDoc(doc(db, "mis_equipos", uid)), getDoc(doc(db, "liga_vinculos", uid)), getDoc(doc(db, "liga_vinculos_pedidos", uid)),
+    getDocs(query(collection(db, "push_tokens"), where("uid", "==", uid)))
+  ]);
+  const un = (s) => (s.exists() ? s.data() : null);
+  return { usuario: un(u), puntos: un(p), movs: mv.docs.map((d) => Object.assign({ id: d.id }, d.data())), cupones: cu.docs.map((d) => Object.assign({ id: d.id }, d.data())), giro: un(gi), equipos: un(eq), vinculo: un(vi), solicitud: un(so), tokens: tk.docs.map((d) => Object.assign({ id: d.id }, d.data())) };
+}
+
+async function abrir(c) {
+  $("msg").textContent = "Leyendo sus datos…";
+  try {
+    const d = await datosDe(c.uid);
+    actual = { uid: c.uid, c: c, d: d };
+    const r = resumenDe(d);
+    $("fNombre").textContent = c.nombre;
+    $("fSub").textContent = (c.cuenta ? "Cuenta activa" : "La cuenta ya no existe") + (c.email ? " · " + c.email : "") + (c.socioNum ? " · socio nº " + String(c.socioNum).padStart(4, "0") : "");
+    $("cifras").innerHTML = "";
+    [[r.saldo, "puntos de saldo"], [r.movimientos, "movimientos de puntos"], [r.cupones, "cupones (" + (r.pendientes === 1 ? "1 pendiente" : r.pendientes + " pendientes") + ")"], [r.giro, "giro de la ruleta"], [r.equipos + r.vinculo + r.solicitud, "datos de la liga"], [r.avisos, "avisos del móvil"]].forEach(([n, t]) => { const x = el("div", ""); x.append(el("b", String(n)), el("span", t)); $("cifras").append(x); });
+    $("opCarne").checked = !!(c.cuenta && d.usuario && d.usuario.socio === true);
+    $("opCarne").disabled = !c.cuenta;
+    $("json").classList.add("oculto"); $("copiar").classList.add("oculto");
+    $("conf").value = ""; $("borrar").disabled = true;
+    $("ficha").classList.remove("oculto");
+    $("msg").textContent = "";
+    $("ficha").scrollIntoView();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+}
+
+$("ver").onclick = () => { $("json").value = exportar(actual.uid, actual.d); $("json").classList.remove("oculto"); $("copiar").classList.remove("oculto"); };
+$("copiar").onclick = async () => { try { await navigator.clipboard.writeText($("json").value); $("msg").textContent = "✔ Copiado."; } catch (e) { $("json").select(); $("msg").textContent = "Selecciona el texto y cópialo a mano."; } };
+$("conf").oninput = () => { $("borrar").disabled = $("conf").value.trim() !== "BORRAR"; };
+
+$("borrar").onclick = async () => {
+  if (!actual || $("conf").value.trim() !== "BORRAR") return;
+  const { uid, c, d } = actual, op = { tokens: $("opTokens").checked };
+  $("borrar").disabled = true;
+  $("msg").textContent = "Eliminando…";
+  try {
+    const refs = refsABorrar(uid, d, op);
+    for (let i = 0; i < refs.length; i += 400) {
+      const b = writeBatch(db);
+      refs.slice(i, i + 400).forEach((r) => b.delete(doc(db, r.col, r.id)));
+      await b.commit();
+    }
+    if ($("opCarne").checked && c.cuenta && d.usuario) await updateDoc(doc(db, "users", uid), { socio: false, socioNum: deleteField() });
+    const r = resumenDe(d);
+    await setDoc(doc(collection(db, "borrados_log")), { fecha: serverTimestamp(), por: yoUid, movimientos: r.movimientos, cupones: r.cupones, giro: r.giro, datosLiga: r.equipos + r.vinculo + r.solicitud, avisos: op.tokens ? r.avisos : 0, carneQuitado: $("opCarne").checked && c.cuenta });
+    $("ficha").classList.add("oculto");
+    $("resultados").innerHTML = "";
+    $("q").value = "";
+    $("msg").textContent = "✔ Eliminados los datos de " + c.nombre + ": " + r.movimientos + " movimientos, " + r.cupones + " cupones" + (r.tienePuntos ? ", su saldo de " + r.saldo + " puntos" : "") + (r.giro ? ", su giro de la ruleta" : "") + (r.equipos + r.vinculo + r.solicitud ? " y sus datos de la liga" : "") + ".";
+    actual = null;
+  } catch (e) { $("msg").textContent = "Error al eliminar: " + (e.code || e.message) + ". Puede que se hayan borrado solo algunos datos: busca de nuevo al socio y repite."; $("borrar").disabled = false; }
+};
+$("buscar").onclick = buscar;
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") buscar(); });
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
