@@ -128,7 +128,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/fireba
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile, sendEmailVerification, reauthenticateWithCredential, EmailAuthProvider, deleteUser } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, documentId, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { proximos, etiquetaNivel, cuando, fechaLarga, mapsDe, norm } from "./proximo.js";
-
+import { montar as montarHoy } from "./hoy-sd.js";
+  
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -277,6 +278,7 @@ function mostrar(user, ficha) {
   mensaje("");
   vista("vistaUsuario");
   cargarProximo(user, ficha);
+  montarHoy(db, ficha);
 }
 
 async function cargarFicha(user) {
