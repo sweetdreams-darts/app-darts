@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Capitanes</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 14px 50px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+.tabs{display:flex;gap:8px;margin:10px 0}
+.tabs button{flex:1;margin:0;padding:11px 4px;font-size:.88rem}
+.peq{font-size:.82rem;opacity:.8}
+.cap-dias{display:flex;gap:6px;overflow-x:auto;padding:4px 0 8px}
+.cap-dias button{flex:none;margin:0;padding:8px 12px;font-size:.82rem}
+.cap-dias button.sel{background:var(--amarillo)!important;color:#1a1200!important;border-color:var(--amarillo)!important}
+.cap-tit{font-family:"Bungee","Rubik",sans-serif;font-size:.95rem;margin:16px 0 6px;color:#19f2ff}
+.cap-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cap-chip{padding:5px 10px;border-radius:999px;font-size:.78rem;font-weight:700;background:rgba(93,255,154,.16);border:1px solid #5dff9a;color:#5dff9a}
+.cap-chip.no{background:rgba(255,92,122,.12);border-color:#ff5c7a;color:#ff9aaa}
+.cap-diana{margin-top:10px;padding:10px 12px}
+.cap-diana strong{display:flex;justify-content:space-between;align-items:center}
+.cap-on{font-size:.68rem;padding:1px 8px;border-radius:999px;background:#19f2ff;color:#0a0612;font-weight:800}
+.cap-barra{display:flex;gap:1px;margin:8px 0 2px;height:16px}
+.cap-barra span{flex:1;border-radius:2px;background:#5dff9a}
+.cap-barra span.ocu{background:#ff5c7a}
+.cap-barra span.pas{background:#3a3050}
+.cap-horas{display:flex;justify-content:space-between;font-size:.66rem;opacity:.7}
+.cap-rangos{font-size:.8rem;margin-top:4px}
+.cap-leyenda{font-size:.74rem;opacity:.85;margin-top:8px}
+.cap-partido{margin-top:10px;padding:12px 14px}
+.cap-partido .t{font-weight:800}
+.cap-partido small{display:block;opacity:.85;margin-top:3px}
+.cap-et{display:inline-block;margin:6px 6px 0 0;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:800;background:rgba(255,225,77,.2);border:1px solid #ffe14d;color:#ffe14d}
+.cap-et.ok{background:rgba(93,255,154,.15);border-color:#5dff9a;color:#5dff9a}
+.cap-et.no{background:rgba(255,92,122,.15);border-color:#ff5c7a;color:#ff9aaa}
+.cap-partido button{width:100%;margin-top:10px;padding:11px}
+#cap-form{position:fixed;inset:0;background:#0a0612;padding:18px 16px 40px;overflow:auto;z-index:20}
+#cap-form label{display:block;margin-top:14px;font-weight:700}
+#cap-form input[type=date],#cap-form select,#cap-form textarea{width:100%;box-sizing:border-box;padding:12px;font-size:1rem;border-radius:12px;border:1.5px solid rgba(255,255,255,.2);background:#150d27;color:#fff;margin-top:6px}
+#cap-form textarea{height:84px;font-family:inherit}
+#cap-form .op{display:flex;gap:10px;align-items:flex-start;font-weight:400}
+#cap-form .op input{width:22px;height:22px;margin:0;flex:none}
+#cap-form button{width:100%;margin-top:12px;padding:13px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="dardos.html">← Universo Dardos</a></p>
+<header class="marca"><h1>Capitanes</h1></header>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status" style="min-height:1.3em;color:#ffe14d"></p>
+<div id="panel" class="oculto">
+  <p id="quien" class="peq"></p>
+  <div class="tabs"><button id="tLib" class="sel">Dianas libres</button><button id="tPar">Mis partidos</button><button id="tSol">Mis solicitudes</button></div>
+
+  <section id="vLib">
+    <div class="cap-dias" id="dias"></div>
+    <p class="cap-tit" style="margin-top:6px">¿A qué hora cabe mi partida?</p>
+    <select id="tipoH" style="width:100%;padding:10px;border-radius:12px;background:#150d27;color:#fff;border:1.5px solid rgba(255,255,255,.2)"><option value="parejas">Partida de parejas (unas 2 h)</option><option value="equipos">Partida online (hasta medianoche)</option></select>
+    <div class="cap-chips" id="huecos" style="margin-top:8px"></div>
+    <p class="cap-tit">Dianas, casi en directo</p>
+    <div id="dianas"></div>
+    <p class="cap-leyenda">🟩 libre · 🟥 ocupada (reserva o partido de liga) · ⬛ ya pasó. Se actualiza sola. Los horarios del bar son de 17:00 a 03:00 (04:00 jueves, 04:30 viernes y sábado).</p>
+  </section>
+
+  <section id="vPar" class="oculto">
+    <p class="peq">Tus próximos partidos. Para cambiar uno que se juega en Sweet Dreams, pulsa <b>Pedir cambio</b>: el bar comprueba que cabe y te contesta.</p>
+    <div id="misPartidos"></div>
+  </section>
+
+  <section id="vSol" class="oculto">
+    <div id="solicitudes"></div>
+  </section>
+</div>
+
+<div id="cap-form" class="oculto">
+  <h2 id="fTitulo" style="margin:0 0 4px"></h2>
+  <p id="fPartido" class="peq"></p>
+  <label>¿Qué quieres hacer?</label>
+  <label class="op"><input type="radio" name="tipoCambio" value="mover" checked><span>Cambiar de día y hora</span></label>
+  <label class="op"><input type="radio" name="tipoCambio" value="aplazar"><span>Aplazarlo (sin fecha nueva todavía)</span></label>
+  <div id="fMover">
+    <label>Día nuevo<input id="fFecha" type="date"></label>
+    <label>Hora de inicio<select id="fHora"></select></label>
+    <p id="fDisp" class="peq"></p>
+  </div>
+  <label class="op"><input type="checkbox" id="fRival"><span>El otro equipo está de acuerdo</span></label>
+  <label>Mensaje para el bar (opcional)<textarea id="fNota" maxlength="200" placeholder="Por ejemplo: jugamos mejor el jueves por el trabajo"></textarea></label>
+  <p id="fInfo" class="mal"></p>
+  <button id="fEnviar" class="pri">Enviar la solicitud</button>
+  <button id="fCancelar">Cancelar</button>
+</div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+window.addEventListener("unhandledrejection", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error: " + ((e.reason && (e.reason.code || e.reason.message)) || e.reason);
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, documentId, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const sinTildes = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const clave = (s) => sinTildes(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const DIAS_L = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const aMs = (dia, h, m) => { const [y, mo, d] = dia.split("-").map(Number); return new Date(y, mo - 1, d, h, m || 0).getTime(); };
+const diaCorto = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1]; };
+const diaLargo = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS_L[new Date(y, m - 1, d).getDay()] + " " + d + " de " + MESES_L[m - 1]; };
+// La jornada del bar acaba de madrugada: hasta las 6:00 todavía cuenta como "hoy" el día anterior.
+const diaDelBar = (ahora) => iso(new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - (ahora.getHours() < 6 ? 1 : 0)));
+const diasProximos = (hoy, n) => { const [y, m, d] = hoy.split("-").map(Number); return Array.from({ length: n }, (_, i) => iso(new Date(y, m - 1, d + i))); };
+const Q = 15 * 60000;
+// Lo que ocupa cada tipo de partida en la diana: 30 min antes + el partido (parejas) o hasta medianoche (online).
+function intervaloPara(cat, pMs) {
+  if (cat === "parejas") return [pMs - 30 * 60000, pMs + 90 * 60000];
+  const d = new Date(pMs);
+  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
+  if (fin <= pMs) fin = pMs + 150 * 60000;
+  return [pMs - 30 * 60000, fin];
+}
+const libreEn = (dianaId, iv, ocupados) => { for (let t = iv[0]; t < iv[1]; t += Q) if (ocupados.has(dianaId + "_" + t)) return false; return true; };
+const elegibles = (cat, dianas) => dianas.filter((d) => cat === "parejas" || d.online);
+// Tramos libres de una diana en la jornada (17:00–01:00), contando solo desde "ahora".
+function tramosLibres(dianaId, dia, ocupados, ahoraMs) {
+  const ini = aMs(dia, 17, 0), fin = aMs(dia, 25, 0), out = [];
+  let a = null;
+  for (let t = ini; t < fin; t += Q) {
+    const libre = t >= ahoraMs && !ocupados.has(dianaId + "_" + t);
+    if (libre && a === null) a = t;
+    if (!libre && a !== null) { out.push([a, t]); a = null; }
+  }
+  if (a !== null) out.push([a, fin]);
+  return out;
+}
+// Horas de inicio posibles para una partida de ese tipo y cuántas dianas quedan libres en cada una.
+function huecosPara(cat, dia, dianas, ocupados, ahoraMs) {
+  const out = [];
+  for (let m = 19 * 60; m <= 22 * 60 + 30; m += 30) {
+    const p = aMs(dia, Math.floor(m / 60), m % 60), iv = intervaloPara(cat, p);
+    if (iv[0] < ahoraMs) continue;
+    const libres = elegibles(cat, dianas).filter((d) => libreEn(d.id, iv, ocupados));
+    out.push({ hora: hhmm(p), libres: libres.map((d) => d.nombre) });
+  }
+  return out;
+}
+const rango = (t) => (t ? Number(String(t).slice(1)) * 10 + (t[0] === "I" ? 1 : 0) : 0);
+// Mis próximos partidos: de cada equipo del que soy capitán, con los cambios del bar aplicados.
+function partidosDe(equipos, partidos, cambios, hoy) {
+  const ultima = {};
+  for (const p of partidos) { const k = p.categoria + "|" + p.nivel; ultima[k] = Math.max(ultima[k] || 0, rango(p.temporada)); }
+  const vistos = new Set(), out = [];
+  for (const ek of equipos) {
+    const [cat, nivel, cl] = ek.split("|");
+    for (const p of partidos) {
+      if (p.categoria !== cat || String(p.nivel) !== nivel || rango(p.temporada) !== ultima[cat + "|" + nivel]) continue;
+      if (clave(p.local) !== cl && clave(p.visitante) !== cl) continue;
+      if (vistos.has(p.id + "|" + ek)) continue;
+      vistos.add(p.id + "|" + ek);
+      const c = cambios.get(p.id);
+      let dia = p.dia, hora = p.hora, estado = "normal", antes = "";
+      if (c && c.estado === "movido") { dia = c.dia; hora = c.hora; estado = "movido"; antes = diaCorto(p.dia) + " a las " + p.hora; }
+      else if (c && c.estado === "aplazado") estado = "aplazado";
+      if (estado !== "aplazado" && dia < hoy) continue;
+      if (estado === "aplazado" && p.dia < hoy) continue;
+      out.push({ id: p.id, equipoKey: ek, equipoNombre: clave(p.local) === cl ? p.local : p.visitante, cat: p.categoria, nivel: p.nivel, jornada: p.jornada, local: p.local, visitante: p.visitante, dia: dia, hora: hora, diaOriginal: p.dia, horaOriginal: p.hora, estado: estado, antes: antes, sede: p.sede || "", enSD: p.categoria === "parejas" ? p.enSweetDreams === true : true });
+    }
+  }
+  return out.sort((a, b) => a.dia.localeCompare(b.dia) || a.hora.localeCompare(b.hora) || a.id.localeCompare(b.id));
+}
+// Lista de huecos de hora para el formulario: de 19:00 a 22:30, y siempre incluye la hora de ahora.
+function horasFormulario(horaActual) {
+  const o = [];
+  for (let m = 19 * 60; m <= 22 * 60 + 30; m += 30) o.push(pad(Math.floor(m / 60)) + ":" + pad(m % 60));
+  if (horaActual && !o.includes(horaActual)) o.push(horaActual);
+  return o.sort();
+}
+function mensajeCambio(s) {
+  const liga = s.cat === "parejas" ? "Parejas nivel " + s.nivel : "Liga online equipos, nivel " + s.nivel;
+  const partido = s.local + " – " + s.visitante + " (" + liga + "), jornada " + (s.jornada || "?") + ", prevista el " + diaLargo(s.diaOriginal) + " a las " + s.horaOriginal;
+  const acuerdo = s.rivalDeAcuerdo ? " El otro equipo está de acuerdo." : " Falta confirmarlo con el otro equipo.";
+  if (s.tipo === "aplazar") return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos aplazar el partido " + partido + "." + acuerdo + " Os proponemos nueva fecha en cuanto la tengamos. Gracias.";
+  return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos cambiar el partido " + partido + " al " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + " en Sweet Dreams." + acuerdo + " ¿Os parece bien? Gracias.";
+}
+// Validación de lo que se envía.
+function validarSolicitud(s) {
+  if (!s.rivalDeAcuerdo) return "Marca que el otro equipo está de acuerdo, o habla antes con ellos.";
+  if (s.tipo === "mover") {
+    if (!s.diaNuevo) return "Elige el día nuevo.";
+    if (s.diaNuevo === s.diaOriginal && s.horaNueva === s.horaOriginal) return "Eso es lo que ya tenéis: elige otro día u otra hora.";
+    if (s.diaNuevo < s.hoy) return "Ese día ya ha pasado.";
+  }
+  if (s.nota && s.nota.length > 200) return "El mensaje es demasiado largo (máximo 200 letras).";
+  return "";
+}
+// </logica>
+
+let ficha = null, uid = "", dianas = [], ocupados = new Set(), diaSel = "", hoy = "", cancelar = null, partidos = [], cambios = new Map(), pedidos = [], itemForm = null, ocupadosForm = new Set(), pedidosEnviados = [];
+
+function pintarDias() {
+  const c = $("dias");
+  c.innerHTML = "";
+  diasProximos(hoy, 14).forEach((d, i) => {
+    const b = el("button", i === 0 ? "Hoy" : i === 1 ? "Mañana" : diaCorto(d));
+    b.type = "button";
+    if (d === diaSel) b.classList.add("sel");
+    b.onclick = () => { diaSel = d; pintarDias(); escuchar(); };
+    c.append(b);
+  });
+}
+function escuchar() {
+  if (cancelar) cancelar();
+  const a = new Date(aMs(diaSel, 6, 0)), b = new Date(aMs(diaSel, 30, 0));
+  cancelar = onSnapshot(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromDate(a)), where("inicio", "<", Timestamp.fromDate(b))), (s) => { ocupados = new Set(s.docs.map((d) => d.id)); pintarLibres(); });
+}
+function pintarLibres() {
+  const ahora = Date.now(), cont = $("dianas");
+  cont.innerHTML = "";
+  for (const d of dianas) {
+    const c = el("div", "", "card cap-diana");
+    const t = el("strong", d.nombre);
+    if (d.online) t.append(el("span", "online", "cap-on"));
+    c.append(t);
+    const barra = el("div", "", "cap-barra"), ini = aMs(diaSel, 17, 0);
+    for (let i = 0; i < 32; i++) { const x = ini + i * Q; barra.append(el("span", "", x < ahora ? "pas" : ocupados.has(d.id + "_" + x) ? "ocu" : "")); }
+    c.append(barra);
+    const h = el("div", "", "cap-horas");
+    ["17:00", "19:00", "21:00", "23:00", "01:00"].forEach((x) => h.append(el("span", x)));
+    c.append(h);
+    const tr = tramosLibres(d.id, diaSel, ocupados, ahora);
+    c.append(el("div", tr.length ? "Libre: " + tr.map((x) => hhmm(x[0]) + "–" + hhmm(x[1])).join(" · ") : "Sin huecos libres este día.", "cap-rangos"));
+    cont.append(c);
+  }
+  const hu = $("huecos"), cat = $("tipoH").value;
+  hu.innerHTML = "";
+  const lista = huecosPara(cat, diaSel, dianas, ocupados, ahora);
+  if (!lista.length) hu.append(el("span", "Ya no quedan horas hoy.", "peq"));
+  lista.forEach((x) => { const s = el("span", x.hora + (x.libres.length ? " · " + x.libres.length + (x.libres.length === 1 ? " diana" : " dianas") : " · no cabe"), "cap-chip" + (x.libres.length ? "" : " no")); s.title = x.libres.join(", "); hu.append(s); });
+}
+$("tipoH").onchange = pintarLibres;
+
+// ---------- Mis partidos ----------
+function textoEstado(p) {
+  return p.estado === "movido" ? "Cambiado de fecha (antes: " + p.antes + ")" : p.estado === "aplazado" ? "Aplazado: pendiente de nueva fecha" : "";
+}
+function pintarPartidos() {
+  const cont = $("misPartidos");
+  cont.innerHTML = "";
+  const eq = ficha.capitanDe || [];
+  if (!eq.length) { cont.append(el("p", "Todavía no eres capitán de ningún equipo. El bar te marcará como capitán cuando lo pidas.", "peq")); return; }
+  const lista = partidosDe(eq, partidos, cambios, hoy);
+  if (!lista.length) { cont.append(el("p", "No hay partidos próximos de tus equipos.", "peq")); return; }
+  for (const p of lista) {
+    const c = el("div", "", "card cap-partido");
+    c.append(el("div", (p.estado === "aplazado" ? "Sin fecha · " : diaCorto(p.dia) + " · " + p.hora + " · ") + (p.cat === "parejas" ? "Parejas" : "Online") + " N" + p.nivel + " · J" + (p.jornada || "?"), "t"));
+    c.append(el("div", p.local + " – " + p.visitante));
+    if (p.sede) c.append(el("small", "Se juega en: " + p.sede));
+    const e = textoEstado(p);
+    if (e) c.append(el("span", e, "cap-et"));
+    const pend = pedidosEnviados.find((s) => s.partidoId === p.id && s.estado === "pendiente");
+    if (pend) c.append(el("span", "⏳ Solicitud pendiente", "cap-et"));
+    if (p.enSD) {
+      const b = el("button", pend ? "Ya has pedido un cambio" : p.estado === "aplazado" ? "Pedir nueva fecha" : "Pedir cambio");
+      b.type = "button";
+      b.disabled = !!pend;
+      b.onclick = () => abrirForm(p);
+      c.append(b);
+    } else c.append(el("small", "Este partido se juega en otro local: el cambio se acuerda con ese local y con el otro equipo.", "peq"));
+    cont.append(c);
+  }
+}
+
+// ---------- Formulario de cambio ----------
+function abrirForm(p) {
+  itemForm = p;
+  $("fTitulo").textContent = p.estado === "aplazado" ? "Pedir nueva fecha" : "Pedir un cambio";
+  $("fPartido").textContent = p.local + " – " + p.visitante + " · " + (p.cat === "parejas" ? "Parejas" : "Online") + " N" + p.nivel + " · " + (p.estado === "aplazado" ? "aplazado" : diaLargo(p.dia) + " a las " + p.hora);
+  document.querySelector('input[name="tipoCambio"][value="mover"]').checked = true;
+  $("fFecha").value = p.dia < hoy ? hoy : p.dia;
+  $("fFecha").min = hoy;
+  $("fHora").innerHTML = "";
+  horasFormulario(p.hora).forEach((h) => $("fHora").add(new Option(h, h)));
+  $("fHora").value = p.hora;
+  $("fRival").checked = false;
+  $("fNota").value = "";
+  $("fInfo").textContent = "";
+  $("fMover").classList.remove("oculto");
+  $("cap-form").classList.remove("oculto");
+  comprobarForm();
+}
+async function comprobarForm() {
+  if (!itemForm) return;
+  const dia = $("fFecha").value, hora = $("fHora").value;
+  if (!dia || !hora) { $("fDisp").textContent = ""; return; }
+  try {
+    const a = new Date(aMs(dia, 6, 0)), b = new Date(aMs(dia, 30, 0));
+    const s = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromDate(a)), where("inicio", "<", Timestamp.fromDate(b))));
+    ocupadosForm = new Set(s.docs.map((d) => d.id));
+    const [h, m] = hora.split(":").map(Number), iv = intervaloPara(itemForm.cat, aMs(dia, h, m));
+    const libres = elegibles(itemForm.cat, dianas).filter((d) => libreEn(d.id, iv, ocupadosForm));
+    $("fDisp").textContent = libres.length ? "✔ A esa hora hay " + libres.length + (libres.length === 1 ? " diana libre" : " dianas libres") + ": " + libres.map((d) => d.nombre).join(", ") + "." : "⚠ A esa hora no hay ninguna diana libre. Puedes pedirlo igualmente y el bar mirará cómo encajarlo, o prueba otra hora.";
+  } catch (e) { $("fDisp").textContent = ""; }
+}
+$("fFecha").onchange = comprobarForm;
+$("fHora").onchange = comprobarForm;
+document.querySelectorAll('input[name="tipoCambio"]').forEach((r) => (r.onchange = () => $("fMover").classList.toggle("oculto", r.value === "aplazar" && r.checked)));
+$("fCancelar").onclick = () => { $("cap-form").classList.add("oculto"); itemForm = null; };
+$("fEnviar").onclick = async () => {
+  if (!itemForm) return;
+  const tipo = document.querySelector('input[name="tipoCambio"]:checked').value;
+  const s = { uid: uid, equipoKey: itemForm.equipoKey, equipoNombre: itemForm.equipoNombre, partidoId: itemForm.id, cat: itemForm.cat, nivel: itemForm.nivel, jornada: itemForm.jornada || 0, local: itemForm.local, visitante: itemForm.visitante, diaOriginal: itemForm.diaOriginal, horaOriginal: itemForm.horaOriginal, tipo: tipo, diaNuevo: tipo === "mover" ? $("fFecha").value : "", horaNueva: tipo === "mover" ? $("fHora").value : "", nota: $("fNota").value.trim(), rivalDeAcuerdo: $("fRival").checked, capitan: ficha.nombre || "" };
+  const err = validarSolicitud(Object.assign({ hoy: hoy }, s));
+  if (err) { $("fInfo").textContent = err; return; }
+  $("fEnviar").disabled = true;
+  try {
+    await setDoc(doc(collection(db, "cambios_pedidos")), Object.assign({}, s, { estado: "pendiente", creado: serverTimestamp() }));
+    $("cap-form").classList.add("oculto");
+    itemForm = null;
+    $("msg").textContent = "✔ Solicitud enviada. El bar la revisará y te contestará aquí.";
+    await cargarPedidos();
+    pintarPartidos();
+    pestana("sol");
+  } catch (e) { $("fInfo").textContent = "No se ha podido enviar: " + (e.code || e.message); }
+  $("fEnviar").disabled = false;
+};
+
+// ---------- Mis solicitudes ----------
+async function cargarPedidos() {
+  const s = await getDocs(query(collection(db, "cambios_pedidos"), where("uid", "==", uid)));
+  pedidosEnviados = s.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => (b.creado ? b.creado.toMillis() : 0) - (a.creado ? a.creado.toMillis() : 0));
+  pintarSolicitudes();
+}
+function pintarSolicitudes() {
+  const cont = $("solicitudes");
+  cont.innerHTML = "";
+  if (!pedidosEnviados.length) { cont.append(el("p", "Todavía no has pedido ningún cambio.", "peq")); return; }
+  for (const s of pedidosEnviados) {
+    const c = el("div", "", "card cap-partido");
+    c.append(el("div", s.local + " – " + s.visitante, "t"));
+    c.append(el("small", s.tipo === "aplazar" ? "Aplazarlo (antes: " + diaCorto(s.diaOriginal) + " a las " + s.horaOriginal + ")" : "De " + diaCorto(s.diaOriginal) + " " + s.horaOriginal + " a " + diaCorto(s.diaNuevo) + " " + s.horaNueva));
+    c.append(el("span", s.estado === "pendiente" ? "⏳ Pendiente de que el bar la revise" : s.estado === "aprobada" ? "✔ Aprobada" : "✘ Rechazada", "cap-et" + (s.estado === "aprobada" ? " ok" : s.estado === "rechazada" ? " no" : "")));
+    if (s.respuesta) c.append(el("small", "Respuesta del bar: " + s.respuesta));
+    const cp = el("button", "Copiar mensaje para el otro equipo y la organización");
+    cp.type = "button";
+    cp.onclick = async () => { try { await navigator.clipboard.writeText(mensajeCambio(s)); $("msg").textContent = "✔ Mensaje copiado."; } catch (e) { $("msg").textContent = mensajeCambio(s); } };
+    c.append(cp);
+    if (s.estado === "pendiente") {
+      const x = el("button", "Cancelar la solicitud");
+      x.type = "button";
+      x.onclick = async () => { if (!confirm("¿Cancelar esta solicitud?")) return; try { await deleteDoc(doc(db, "cambios_pedidos", s.id)); await cargarPedidos(); pintarPartidos(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); } };
+      c.append(x);
+    }
+    cont.append(c);
+  }
+}
+
+function pestana(cual) {
+  $("vLib").classList.toggle("oculto", cual !== "lib");
+  $("vPar").classList.toggle("oculto", cual !== "par");
+  $("vSol").classList.toggle("oculto", cual !== "sol");
+  $("tLib").classList.toggle("sel", cual === "lib");
+  $("tPar").classList.toggle("sel", cual === "par");
+  $("tSol").classList.toggle("sel", cual === "sol");
+  if (cual !== "lib" && cancelar) { cancelar(); cancelar = null; }
+  if (cual === "lib") escuchar();
+}
+$("tLib").onclick = () => pestana("lib");
+$("tPar").onclick = () => pestana("par");
+$("tSol").onclick = () => pestana("sol");
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    uid = u.uid;
+    const f = await getDoc(doc(db, "users", u.uid));
+    ficha = f.exists() ? f.data() : null;
+    if (!ficha || !["player", "admin"].includes(ficha.role)) { $("estado").textContent = "Esta zona es solo para jugadores oficiales de la liga."; return; }
+    const equipos = ficha.capitanDe || [];
+    if (!equipos.length && ficha.role !== "admin") { $("estado").innerHTML = 'Esta pantalla es para los capitanes de los equipos de Sweet Dreams. Si eres capitán, pídele al bar que te marque como tal. <a href="dardos.html">Volver</a>'; return; }
+    hoy = diaDelBar(new Date());
+    diaSel = hoy;
+    dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
+    const pares = [...new Set(equipos.map((k) => k.split("|").slice(0, 2).join("|")))];
+    const trozos = await Promise.all(pares.map((k) => { const [c, n] = k.split("|"); return getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", c), where("nivel", "==", Number(n)))); }));
+    partidos = trozos.flatMap((t) => t.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+    cambios = new Map();
+    (await getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`")))).forEach((d) => cambios.set(d.id.slice(7), d.data()));
+    await cargarPedidos();
+    $("quien").textContent = (ficha.nombre || "") + (equipos.length ? " · capitán de " + equipos.length + (equipos.length === 1 ? " equipo" : " equipos") : " · administrador");
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    pintarDias();
+    pintarPartidos();
+    escuchar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
