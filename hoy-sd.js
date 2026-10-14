@@ -22,13 +22,34 @@ function textoDia(dia) {
   return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1];
 }
 const etiqueta = (cat, nivel) => (cat === "parejas" ? "Parejas" : "Equipos") + (nivel ? " N" + nivel : "");
+const NORMAL_PAREJAS = 90 * 60000;
+// Los encadenados se reconocen por cómo están colocados (así el aviso nunca se queda viejo).
+function relaciones(lista) {
+  const rel = new Map();
+  for (const o of lista) {
+    if (o.categoria === "parejas") continue;
+    const p = lista.find((x) => x !== o && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + NORMAL_PAREJAS);
+    if (p) { rel.set(o.id, { tras: p }); rel.set(p.id, { por: o }); }
+  }
+  return rel;
+}
+function avisoDe(b, rel) {
+  const r = rel.get(b.id);
+  if (r && r.tras) return "Empieza a su hora, justo después de " + etiqueta(r.tras.categoria, r.tras.nivel) + " · " + (r.tras.local || "?") + " (que acaba a las " + hhmm(r.tras.finMs) + ")";
+  if (r && r.por) return "Debe acabar antes de las " + hhmm(b.finMs) + ": después va " + etiqueta(r.por.categoria, r.por.nivel) + " · " + (r.por.local || "?");
+  if (b.categoria === "parejas" && b.finMs < b.partidoMs + NORMAL_PAREJAS) return "⚠ Acortada hasta las " + hhmm(b.finMs) + " sin online detrás";
+  return "";
+}
+const notaManual = (b) => (b.nota && !/^(Empieza a su hora|Debe terminar antes)/.test(b.nota) ? b.nota : "");
 // Junta lo que hay bloqueado hoy con los partidos del calendario que son de Sweet Dreams y aún no tienen diana.
 function construirLista(o) {
   const items = [], conBloqueo = new Set();
+  const rel = relaciones(o.bloqueos.filter((b) => b.estado === "activo"));
   for (const b of o.bloqueos) {
     conBloqueo.add(b.id);
     if (b.estado === "activo") {
-      items.push({ ms: b.partidoMs, hora: hhmm(b.partidoMs), etiqueta: etiqueta(b.categoria, b.nivel), local: b.local || "?", visitante: b.visitante || "?", diana: o.dianas.get(b.dianaId) || "Diana ?", nota: b.nota || "", estado: "activo", manual: b.origen === "manual" });
+      const dd = o.dianas.get(b.dianaId);
+      items.push({ ms: b.partidoMs, hora: hhmm(b.partidoMs), etiqueta: etiqueta(b.categoria, b.nivel), local: b.local || "?", visitante: b.visitante || "?", diana: dd ? dd.nombre : "Diana ?", nota: avisoDe(b, rel), notaManual: notaManual(b), sinOnline: b.categoria !== "parejas" && !!dd && dd.online === false, estado: "activo", manual: b.origen === "manual" });
     } else if (b.estado === "aplazado") {
       items.push({ ms: b.partidoMs, hora: hhmm(b.partidoMs), etiqueta: etiqueta(b.categoria, b.nivel), local: b.local || "?", visitante: b.visitante || "?", diana: "", nota: "", estado: "aplazado" });
     }
@@ -81,7 +102,7 @@ async function leer(db, hoy) {
   const bloqueos = bl.docs.map((d) => Object.assign({ id: d.id }, d.data()));
   const partidos = pa.docs.map((d) => Object.assign({ id: d.id }, d.data()));
   const nombresSD = new Set(cfg.exists() ? (cfg.data().nombres || []).map(norm) : []);
-  const dianas = new Map(di.docs.map((d) => [d.id, d.data().nombre || d.id]));
+  const dianas = new Map(di.docs.map((d) => [d.id, { nombre: d.data().nombre || d.id, online: d.data().online === true }]));
   // partidos de hoy de Sweet Dreams sin bloqueo de hoy: puede que estén bloqueados en otra fecha (movidos) o aplazados
   const ya = new Set(bloqueos.map((b) => b.id));
   const sd = partidos.filter((p) => !ya.has(p.id) && (p.categoria === "parejas" ? p.enSweetDreams === true : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)))));
@@ -128,7 +149,9 @@ function pintar(caja, hoy, datos) {
     const sm = document.createElement("small");
     sm.textContent = it.etiqueta + (it.manual ? " · añadida a mano" : "");
     q.append(eq, sm);
-    if (it.nota) { const n = document.createElement("em"); n.textContent = "⏰ " + it.nota; q.appendChild(n); }
+    if (it.nota) { const n = document.createElement("em"); n.textContent = (it.nota.startsWith("⚠") ? "" : "⏰ ") + it.nota; q.appendChild(n); }
+    if (it.notaManual) { const n = document.createElement("em"); n.textContent = "📝 " + it.notaManual; q.appendChild(n); }
+    if (it.sinOnline) { const n = document.createElement("em"); n.textContent = "⚠ Partida online en una diana sin online"; q.appendChild(n); }
     const d = document.createElement("span");
     d.className = "hoy-d" + (it.estado === "sinDiana" ? " hoy-mal" : it.estado === "aplazado" ? " hoy-apl" : "");
     d.textContent = it.estado === "sinDiana" ? "SIN DIANA" : it.estado === "aplazado" ? "APLAZADA" : it.diana;
