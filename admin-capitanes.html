@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Capitanes de equipo</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 4px;color:#ffd166}
+button,input{font-family:inherit;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;padding:10px 12px;margin-top:8px}
+input{width:100%;box-sizing:border-box;background:#0f1a30;color:#f1faee}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;width:100%;text-align:left}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button:disabled{opacity:.45}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.cap{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.1)}
+.cap button{width:auto;margin:0;padding:5px 10px;font-size:.8rem}
+#sel{position:fixed;inset:0;background:#14213d;padding:20px;overflow:auto;z-index:10}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+.vacio{opacity:.65;font-size:.9rem}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Capitanes de equipo</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <p style="opacity:.85;font-size:.92rem">Marca quién es capitán de cada equipo de Sweet Dreams. Los capitanes ven las dianas libres casi en directo y pueden pedirte cambios de partido. Un capitán tiene que ser <b>jugador oficial</b> (acreditado).</p>
+  <div id="equipos"></div>
+  <h2 id="hOtros" class="oculto">Otros capitanes (equipos que ya no están en la lista)</h2>
+  <div id="otros"></div>
+</div>
+
+<div id="sel" class="oculto">
+  <h2 id="selTitulo" style="margin-top:0"></h2>
+  <input id="selBuscar" type="search" placeholder="Nombre o email de la cuenta" autocomplete="off">
+  <div id="selRes"></div>
+  <button id="selCerrar" class="sec">Cancelar</button>
+</div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const sinTildes = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const clave = (s) => sinTildes(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const rango = (t) => (t ? Number(String(t).slice(1)) * 10 + (t[0] === "I" ? 1 : 0) : 0);
+// Equipos de Sweet Dreams de la temporada actual: los de parejas que juegan en el bar y los online que has marcado.
+function equiposSD(ligaEquipos, nombresSD) {
+  const sd = new Set((nombresSD || []).map(clave)), maxTemp = {};
+  for (const e of ligaEquipos) maxTemp[e.categoria] = Math.max(maxTemp[e.categoria] || 0, rango(e.temporada));
+  const out = new Map();
+  for (const e of ligaEquipos) {
+    if (rango(e.temporada) !== maxTemp[e.categoria]) continue;
+    const es = e.categoria === "parejas" ? clave(e.local) === "sweet dreams" : sd.has(clave(e.nombre));
+    if (!es) continue;
+    const key = e.categoria + "|" + e.nivel + "|" + clave(e.nombre);
+    out.set(key, { key: key, nombre: e.nombre, cat: e.categoria, nivel: e.nivel });
+  }
+  return [...out.values()].sort((a, b) => a.cat.localeCompare(b.cat) || a.nivel - b.nivel || a.nombre.localeCompare(b.nombre));
+}
+const capitanesDe = (usuarios, key) => usuarios.filter((u) => (u.capitanDe || []).includes(key));
+// Cuentas que coinciden con lo escrito (nombre o email).
+function buscarCuentas(q, usuarios) {
+  const t = clave(q), txt = String(q || "").trim().toLowerCase();
+  if (txt.length < 2) return [];
+  return usuarios.filter((u) => (t && t.split(" ").every((w) => clave(u.nombre).includes(w))) || (u.email && u.email.toLowerCase().includes(txt))).slice(0, 10);
+}
+const esOficial = (u) => u.role === "player" || u.role === "admin";
+// </logica>
+
+let usuarios = [], equipos = [], yoUid = "";
+const etiqueta = (e) => e.nombre + " · " + (e.cat === "parejas" ? "Parejas" : "Online") + " N" + e.nivel;
+async function escribir(f, ok) { try { await f(); $("msg").textContent = ok; await cargar(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); } }
+const anadir = (u, key, nombre) => escribir(() => updateDoc(doc(db, "users", u.id), { capitanDe: arrayUnion(key) }), "✔ " + (u.nombre || "La cuenta") + " es ahora capitán de " + nombre + ".");
+const quitar = (u, key, nombre) => escribir(() => updateDoc(doc(db, "users", u.id), { capitanDe: arrayRemove(key) }), "✔ " + (u.nombre || "La cuenta") + " ya no es capitán de " + nombre + ".");
+
+function elegirCuenta(titulo, alElegir) {
+  $("selTitulo").textContent = titulo;
+  $("selBuscar").value = "";
+  $("selRes").innerHTML = "";
+  $("sel").classList.remove("oculto");
+  $("selBuscar").oninput = () => {
+    $("selRes").innerHTML = "";
+    const l = buscarCuentas($("selBuscar").value, usuarios);
+    if (!l.length && $("selBuscar").value.trim().length >= 2) $("selRes").append(el("p", "No encuentro ninguna cuenta con eso.", "vacio"));
+    l.forEach((u) => {
+      const b = el("button", (u.nombre || "(sin nombre)") + (u.email ? " · " + u.email : "") + (esOficial(u) ? "" : " · NO es jugador oficial: acredítalo antes"), "sec");
+      b.disabled = !esOficial(u);
+      b.onclick = () => { $("sel").classList.add("oculto"); alElegir(u); };
+      $("selRes").append(b);
+    });
+  };
+  $("selBuscar").focus();
+}
+$("selCerrar").onclick = () => $("sel").classList.add("oculto");
+
+function render() {
+  const cont = $("equipos");
+  cont.innerHTML = "";
+  if (!equipos.length) cont.append(el("p", "Todavía no hay equipos de Sweet Dreams. Aparecerán cuando se cargue el calendario y marques tus equipos online en «Liga: equipos y bloqueos».", "vacio"));
+  for (const e of equipos) {
+    const c = el("div", "", "card");
+    c.append(el("strong", etiqueta(e)));
+    const caps = capitanesDe(usuarios, e.key);
+    if (!caps.length) c.append(el("small", "Sin capitán todavía."));
+    caps.forEach((u) => {
+      const f = el("div", "", "cap");
+      f.append(el("span", (u.nombre || "(sin nombre)") + (u.email ? " · " + u.email : "")));
+      const q = el("button", "Quitar", "sec");
+      q.onclick = () => { if (confirm("¿Quitar a " + (u.nombre || "esta cuenta") + " como capitán de " + e.nombre + "?")) quitar(u, e.key, e.nombre); };
+      f.append(q);
+      c.append(f);
+    });
+    const a = el("button", "Añadir capitán…", "sec");
+    a.onclick = () => elegirCuenta("Capitán de " + etiqueta(e), (u) => anadir(u, e.key, e.nombre));
+    c.append(a);
+    cont.append(c);
+  }
+  const conocidas = new Set(equipos.map((e) => e.key)), otros = [];
+  for (const u of usuarios) for (const k of u.capitanDe || []) if (!conocidas.has(k)) otros.push({ u: u, k: k });
+  $("hOtros").classList.toggle("oculto", !otros.length);
+  const oc = $("otros");
+  oc.innerHTML = "";
+  otros.forEach((x) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", (x.u.nombre || "(sin nombre)")), el("small", x.k));
+    const q = el("button", "Quitar", "sec");
+    q.onclick = () => quitar(x.u, x.k, x.k);
+    c.append(q);
+    oc.append(c);
+  });
+}
+
+async function cargar() {
+  const [le, cfg, us] = await Promise.all([getDocs(collection(db, "liga_equipos")), getDoc(doc(db, "liga_config", "equiposSweetDreams")), getDocs(collection(db, "users"))]);
+  usuarios = us.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  equipos = equiposSD(le.docs.map((d) => d.data()), cfg.exists() ? cfg.data().nombres || [] : []);
+  $("estado").textContent = "";
+  $("panel").classList.remove("oculto");
+  render();
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    await cargar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
