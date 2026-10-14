@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Solicitudes de capitanes</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 4px;color:#ffd166}
+button,input{font-family:inherit;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;padding:10px 12px;margin-top:8px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;width:100%;text-align:left}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+button:disabled{opacity:.45}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:10px}
+.card small{display:block;opacity:.88;margin-top:3px}
+.nota{margin-top:8px;padding:8px 10px;border-radius:8px;background:#0f1a30;font-size:.9rem}
+.ok{margin-top:8px;padding:8px 10px;border-radius:8px;background:#16351f;border:1px solid #5dff9a;font-size:.9rem}
+.aviso{margin-top:8px;padding:8px 10px;border-radius:8px;background:#3b2a1a;border:1px solid #ffd166;font-size:.9rem}
+.est{display:inline-block;padding:1px 9px;border-radius:999px;font-size:.74rem;font-weight:800;margin-top:6px}
+.est.ap{background:#16351f;color:#5dff9a}.est.re{background:#3a1a1f;color:#ff9aaa}
+#msg{min-height:1.4em;color:#ffd166}
+.oculto{display:none!important}
+.vacio{opacity:.65;font-size:.9rem}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Solicitudes de capitanes</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <h2>Pendientes <small id="nPend"></small></h2>
+  <div id="pendientes"></div>
+  <h2>Últimas resueltas</h2>
+  <div id="resueltas"></div>
+  <p style="opacity:.8;font-size:.88rem;margin-top:24px">Cuando apruebas un cambio, la partida se mueve sola en las dianas y en la Zona Liga. Recuerda avisar también a la organización de la liga: el botón <b>Copiar mensaje</b> te lo deja preparado.</p>
+</div>
+
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, updateDoc, writeBatch, query, where, orderBy, limit, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const pad = (n) => String(n).padStart(2, "0");
+const hhmm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const DIAS_L = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const aMs = (dia, h, m) => { const [y, mo, d] = dia.split("-").map(Number); return new Date(y, mo - 1, d, h, m || 0).getTime(); };
+const diaCorto = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1]; };
+const diaLargo = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS_L[new Date(y, m - 1, d).getDay()] + " " + d + " de " + MESES_L[m - 1]; };
+const Q = 15 * 60000, NORMAL_PAREJAS = 90 * 60000;
+function intervaloPara(cat, pMs) {
+  if (cat === "parejas") return [pMs - 30 * 60000, pMs + 90 * 60000];
+  const d = new Date(pMs);
+  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
+  if (fin <= pMs) fin = pMs + 150 * 60000;
+  return [pMs - 30 * 60000, fin];
+}
+const idsSlots = (dId, iv) => { const r = []; for (let t = iv[0]; t < iv[1]; t += Q) r.push(dId + "_" + t); return r; };
+// Una partida online va "encadenada" cuando empieza justo cuando acaba una de parejas acortada en la misma diana.
+function relaciones(lista) {
+  const rel = new Map();
+  for (const o of lista) {
+    if (o.estado !== "activo" || o.categoria === "parejas") continue;
+    const p = lista.find((x) => x !== o && x.estado === "activo" && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + NORMAL_PAREJAS);
+    if (p) { rel.set(o.id, p); rel.set(p.id, o); }
+  }
+  return rel;
+}
+// Qué dianas están libres para ese partido a esa hora (sin contar las huecos del propio partido).
+function dianasLibres(cat, pMs, dianas, slots, partidoId) {
+  const iv = intervaloPara(cat, pMs);
+  return dianas.filter((d) => cat === "parejas" || d.online).map((d) => {
+    let libre = true;
+    for (let t = iv[0]; t < iv[1]; t += Q) { const s = slots.get(d.id + "_" + t); if (s && s.partidoId !== partidoId) { libre = false; break; } }
+    return { diana: d, libre: libre, iv: iv };
+  });
+}
+const notaManual = (b) => (b && b.nota && !/^(Empieza a su hora|Debe terminar antes)/.test(b.nota) ? b.nota : "");
+// ¿Ya está aplicado lo que pide la solicitud? (por ejemplo porque lo hiciste a mano en «Liga: equipos y bloqueos»)
+function estaAplicada(s, b, p) {
+  if (!p) return null;
+  if (s.tipo === "aplazar") return b && b.estado === "aplazado" ? "La partida ya está aplazada." : null;
+  if (b && b.estado === "activo" && b.dia === s.diaNuevo && hhmm(b.partidoMs) === s.horaNueva) return "La partida ya está el " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + ".";
+  if (!b && p.dia === s.diaNuevo && p.hora === s.horaNueva) return "El calendario de la liga ya la tiene el " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + ".";
+  return null;
+}
+// Todo lo que hay que escribir para mover una partida a otra diana, fecha y hora.
+function opsMover(s, b, p, dianaId) {
+  const pMs = aMs(s.diaNuevo, Number(s.horaNueva.slice(0, 2)), Number(s.horaNueva.slice(3))), iv = intervaloPara(p.categoria, pMs);
+  const nuevos = idsSlots(dianaId, iv);
+  const borrar = b && b.estado === "activo" ? idsSlots(b.dianaId, [b.inicioMs, b.finMs]).filter((id) => !nuevos.includes(id)) : [];
+  const bloqueo = { origen: b ? b.origen : "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, dianaId: dianaId, partidoMs: pMs, inicioMs: iv[0], finMs: iv[1], estado: "activo", dia: s.diaNuevo, nota: notaManual(b) };
+  const igualOriginal = s.diaNuevo === p.dia && s.horaNueva === p.hora;
+  return { borrar: borrar, escribir: nuevos, bloqueo: bloqueo, cambio: igualOriginal ? { accion: "borrar" } : { accion: "poner", datos: { estado: "movido", dia: s.diaNuevo, hora: s.horaNueva, diaOriginal: p.dia, horaOriginal: p.hora } } };
+}
+function opsAplazar(s, b, p) {
+  const borrar = b && b.estado === "activo" ? idsSlots(b.dianaId, [b.inicioMs, b.finMs]) : [];
+  let aplazado = null;
+  if (b) { aplazado = Object.assign({}, b, { estado: "aplazado" }); delete aplazado.id; }
+  return { borrar: borrar, escribir: [], bloqueo: aplazado, cambio: { accion: "poner", datos: { estado: "aplazado", diaOriginal: p.dia, horaOriginal: p.hora } } };
+}
+function mensajeCambio(s) {
+  const liga = s.cat === "parejas" ? "Parejas nivel " + s.nivel : "Liga online equipos, nivel " + s.nivel;
+  const partido = s.local + " – " + s.visitante + " (" + liga + "), jornada " + (s.jornada || "?") + ", prevista el " + diaLargo(s.diaOriginal) + " a las " + s.horaOriginal;
+  const acuerdo = s.rivalDeAcuerdo ? " El otro equipo está de acuerdo." : " Falta confirmarlo con el otro equipo.";
+  if (s.tipo === "aplazar") return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos aplazar el partido " + partido + "." + acuerdo + " Os proponemos nueva fecha en cuanto la tengamos. Gracias.";
+  return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos cambiar el partido " + partido + " al " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + " en Sweet Dreams." + acuerdo + " ¿Os parece bien? Gracias.";
+}
+// </logica>
+
+let yoUid = "", dianas = [], solicitudes = [], ctx = new Map(), abiertas = new Set();
+const nombreDiana = (id) => (dianas.find((d) => d.id === id) || {}).nombre || "sin diana";
+async function escribirOps(ops, partidoId) {
+  const lote = [];
+  ops.borrar.forEach((id) => lote.push((b) => b.delete(doc(db, "slots", id))));
+  ops.escribir.forEach((id) => lote.push((b) => b.set(doc(db, "slots", id), { dianaId: ops.bloqueo.dianaId, inicio: Timestamp.fromMillis(Number(id.split("_")[1])), uid: "liga", tipo: "liga", partidoId: partidoId })));
+  if (ops.bloqueo) lote.push((b) => b.set(doc(db, "liga_bloqueos", partidoId), ops.bloqueo));
+  lote.push((b) => (ops.cambio.accion === "borrar" ? b.delete(doc(db, "liga_config", "cambio_" + partidoId)) : b.set(doc(db, "liga_config", "cambio_" + partidoId), ops.cambio.datos)));
+  for (let i = 0; i < lote.length; i += 400) { const b = writeBatch(db); lote.slice(i, i + 400).forEach((f) => f(b)); await b.commit(); }
+}
+const resolver = (s, estado, respuesta) => updateDoc(doc(db, "cambios_pedidos", s.id), { estado: estado, respuesta: respuesta, resuelto: serverTimestamp(), por: yoUid });
+async function hacer(f, ok) { try { await f(); $("msg").textContent = ok; await cargar(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); } }
+
+async function abrirContexto(s) {
+  const c = ctx.get(s.id);
+  if (!c || !c.p) return;
+  const dia = s.tipo === "mover" ? s.diaNuevo : s.diaOriginal;
+  const [sl, bl] = await Promise.all([
+    getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(aMs(dia, 6, 0))), where("inicio", "<", Timestamp.fromMillis(aMs(dia, 30, 0))))),
+    c.b ? getDocs(query(collection(db, "liga_bloqueos"), where("dia", "==", c.b.dia))) : Promise.resolve({ docs: [] })
+  ]);
+  c.slots = new Map(sl.docs.map((d) => [d.id, d.data()]));
+  c.delDia = bl.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  c.abierta = true;
+  render();
+}
+
+function tarjeta(s) {
+  const c = ctx.get(s.id) || {}, card = el("div", "", "card");
+  card.append(el("strong", s.equipoNombre + " · " + s.local + " – " + s.visitante));
+  card.append(el("small", (s.cat === "parejas" ? "Parejas" : "Online") + " N" + s.nivel + " · jornada " + (s.jornada || "?") + " · capitán/a: " + (s.capitan || "?")));
+  card.append(el("small", "Ahora: " + diaCorto(s.diaOriginal) + " a las " + s.horaOriginal));
+  card.append(el("small", s.tipo === "aplazar" ? "Pide: APLAZARLO" : "Pide: pasarlo al " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva));
+  card.append(el("small", s.rivalDeAcuerdo ? "✔ El otro equipo está de acuerdo" : "⚠ Falta el acuerdo del otro equipo"));
+  if (s.nota) card.append(el("div", "💬 " + s.nota, "nota"));
+  if (!c.p) { card.append(el("div", "No encuentro este partido en el calendario de la liga.", "aviso")); }
+  else {
+    const ya = estaAplicada(s, c.b, c.p);
+    if (ya) {
+      card.append(el("div", "✔ " + ya + " No hace falta tocar nada más.", "ok"));
+      const m = el("button", "Marcar como aprobada y avisar a la capitana");
+      m.onclick = () => hacer(() => resolver(s, "aprobada", "Hecho: " + ya), "✔ Marcada como aprobada.");
+      card.append(m);
+    } else if (c.b && c.b.estado === "activo" && relaciones(c.delDia || [c.b]).has(c.b.id) && c.abierta) {
+      card.append(el("div", "Este partido va encadenado con otro en la misma diana. Para ajustar los dos a la vez, hazlo en «Liga: equipos y bloqueos» (Cambiar fecha, hora o diana); esta solicitud se marcará como hecha al volver aquí.", "aviso"));
+    } else if (!c.abierta) {
+      const v = el("button", s.tipo === "aplazar" ? "Ver y aprobar el aplazamiento" : "Ver dónde cabe");
+      v.onclick = () => abrirContexto(s);
+      card.append(v);
+    } else if (s.tipo === "aplazar") {
+      card.append(el("div", "Se liberará la diana" + (c.b && c.b.estado === "activo" ? " (" + nombreDiana(c.b.dianaId) + ")" : "") + " y el partido quedará en «Aplazadas pendientes».", "nota"));
+      const a = el("button", "Aprobar el aplazamiento");
+      a.onclick = () => hacer(async () => { await escribirOps(opsAplazar(s, c.b, c.p), s.partidoId); await resolver(s, "aprobada", "Partido aplazado. Cuando tengáis fecha nueva, pedídmela desde aquí."); }, "✔ Aplazado y avisada la capitana.");
+      card.append(a);
+    } else {
+      const pMs = aMs(s.diaNuevo, Number(s.horaNueva.slice(0, 2)), Number(s.horaNueva.slice(3)));
+      const op = dianasLibres(c.p.categoria, pMs, dianas, c.slots, s.partidoId), libres = op.filter((x) => x.libre);
+      card.append(el("div", libres.length ? "A esa hora se bloquea de " + hhmm(op[0].iv[0]) + " a " + hhmm(op[0].iv[1]) + ". Dianas libres:" : "A esa hora no hay ninguna diana libre" + (c.p.categoria === "equipos" ? " con online" : "") + ". Puedes rechazarla, proponer otra hora, o encajarla a mano en «Liga: equipos y bloqueos» (allí se puede encadenar).", libres.length ? "ok" : "aviso"));
+      libres.forEach((x) => {
+        const a = el("button", "Aprobar y poner en " + x.diana.nombre + (x.diana.online ? " · online" : ""));
+        a.onclick = () => hacer(async () => { await escribirOps(opsMover(s, c.b, c.p, x.diana.id), s.partidoId); await resolver(s, "aprobada", "Hecho: " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + " en " + x.diana.nombre + ". Recordad avisar al otro equipo."); }, "✔ Cambio aplicado: " + diaCorto(s.diaNuevo) + " " + s.horaNueva + " · " + x.diana.nombre + ".");
+        card.append(a);
+      });
+    }
+  }
+  const r = el("button", "Rechazar…", "sec");
+  r.onclick = () => { const m = prompt("Motivo para la capitana (se lo enseñará la app):", "No hay hueco ese día. Proponed otro."); if (m !== null) hacer(() => resolver(s, "rechazada", m || "Rechazada."), "✔ Rechazada."); };
+  const cp = el("button", "Copiar mensaje para la liga y el otro equipo", "sec");
+  cp.onclick = async () => { try { await navigator.clipboard.writeText(mensajeCambio(s)); $("msg").textContent = "✔ Mensaje copiado."; } catch (e) { $("msg").textContent = mensajeCambio(s); } };
+  card.append(r, cp);
+  return card;
+}
+function render() {
+  const pen = solicitudes.filter((s) => s.estado === "pendiente"), res = solicitudes.filter((s) => s.estado !== "pendiente").slice(0, 10);
+  $("nPend").textContent = "(" + pen.length + ")";
+  $("pendientes").innerHTML = "";
+  if (!pen.length) $("pendientes").append(el("p", "No hay solicitudes pendientes.", "vacio"));
+  pen.forEach((s) => $("pendientes").append(tarjeta(s)));
+  $("resueltas").innerHTML = "";
+  if (!res.length) $("resueltas").append(el("p", "Todavía no has resuelto ninguna.", "vacio"));
+  res.forEach((s) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", s.equipoNombre + " · " + s.local + " – " + s.visitante), el("small", s.tipo === "aplazar" ? "Aplazarlo" : "Al " + diaCorto(s.diaNuevo) + " a las " + s.horaNueva), el("span", s.estado === "aprobada" ? "✔ Aprobada" : "✘ Rechazada", "est " + (s.estado === "aprobada" ? "ap" : "re")));
+    if (s.respuesta) c.append(el("small", s.respuesta));
+    $("resueltas").append(c);
+  });
+}
+async function cargar() {
+  const snap = await getDocs(query(collection(db, "cambios_pedidos"), orderBy("creado", "desc"), limit(40)));
+  solicitudes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const nuevo = new Map();
+  await Promise.all(solicitudes.filter((s) => s.estado === "pendiente").map(async (s) => {
+    const [p, b] = await Promise.all([getDoc(doc(db, "liga_partidos", s.partidoId)), getDoc(doc(db, "liga_bloqueos", s.partidoId))]);
+    const antes = ctx.get(s.id);
+    nuevo.set(s.id, { p: p.exists() ? p.data() : null, b: b.exists() ? Object.assign({ id: s.partidoId }, b.data()) : null, abierta: false, slots: antes && antes.slots, delDia: antes && antes.delDia });
+  }));
+  ctx = nuevo;
+  $("estado").textContent = "";
+  $("panel").classList.remove("oculto");
+  render();
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
+    await cargar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
