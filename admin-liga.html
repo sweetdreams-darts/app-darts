@@ -47,6 +47,7 @@ label.campo{display:block;margin-top:14px;font-weight:700}
   <div id="cambiosLiga"></div>
 
   <h2>3. Partidos bloqueados</h2>
+  <div id="durAviso"></div>
   <div id="bloqueados"></div>
 
   <h2>4. Aplazadas pendientes</h2>
@@ -103,17 +104,17 @@ const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCa
 let dianas = [], nuevos = [], existentes = new Map(), bloqueos = new Map(), nombresSD = [], edit = null;
 
 // <logica>
-function intervaloPara(cat, pMs) {
-  const base = 60000;
-  if (cat === "parejas") return [pMs - 30 * base, pMs + 90 * base];
-  const d = new Date(pMs);
-  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
-  if (fin <= pMs) fin = pMs + 150 * base;
-  return [pMs - 30 * base, fin];
+// Duración de cada partida (el bloqueo empieza 30 minutos antes de la hora del partido):
+//   Parejas: niveles 1 a 5 → 1 h 15 · nivel 6 o más → 1 h 30
+//   Equipos: niveles 1 a 5 → 2 h 15 · nivel 6 o más → 2 h 30
+function duracion(cat, nivel) {
+  const bajo = Number(nivel) >= 1 && Number(nivel) <= 5;
+  return (cat === "parejas" ? (bajo ? 75 : 90) : (bajo ? 135 : 150)) * 60000;
 }
+function intervaloPara(cat, pMs, nivel) { return [pMs - 30 * 60000, pMs + duracion(cat, nivel)]; }
+const finNormal = (b) => b.partidoMs + duracion(b.categoria, b.nivel);
 // Una partida online puede ir en la misma diana, justo después de una de parejas. SOLO en ese caso:
-// la de parejas se acorta hasta la hora de la online (p. ej. 20:00–21:30) y la online va de su hora a medianoche (21:30–00:00).
-const MIN_ONLINE = 120 * 60000;    // lo mínimo que debe quedar hasta medianoche para jugar la partida online (2 h)
+// la de parejas se acorta hasta la hora de la online (p. ej. 20:00–21:30) y la online empieza a su hora, sin los 30 min previos.
 const MIN_PAREJAS = 60 * 60000;    // lo mínimo que debe quedarle a la partida de parejas para jugar antes de que entre la online (1 h)
 function encadenar(fila, filas, dianas) {
   const solapa = (a, b) => a[0] < b[1] && b[0] < a[1];
@@ -123,7 +124,7 @@ function encadenar(fila, filas, dianas) {
     if (bloq.length !== 1 || bloq[0].p.categoria !== "parejas" || bloq[0].acortada) continue;
     const r = bloq[0], corte = fila.p.fechaMs, inicioP = r.p.fechaMs || r.iv[0] + 30 * 60000;
     const ivOnline = [corte, fila.iv[1]];
-    if (corte >= r.iv[1] || corte - inicioP < MIN_PAREJAS || ivOnline[1] - ivOnline[0] < MIN_ONLINE) continue;
+    if (corte >= r.iv[1] || corte - inicioP < MIN_PAREJAS) continue;
     if (filas.some((g) => g !== fila && g !== r && g.dianaId === d.id && solapa(g.iv, ivOnline))) continue;
     candidatas.push({ diana: d, tras: r, ivOnline, corte });
   }
@@ -136,7 +137,7 @@ function deshacerEncadenado(f) {
   const t = f.encadena.tras;
   t.iv = f.encadena.antes;
   t.acortada = null;
-  f.iv = intervaloPara("equipos", f.p.fechaMs);
+  f.iv = intervaloPara("equipos", f.p.fechaMs, f.p.nivel);
   f.encadena = null;
 }
 function asignar(partidos, dianas, fijos) {
@@ -144,7 +145,7 @@ function asignar(partidos, dianas, fijos) {
   const filas = fijos.map((f) => ({ p: f.p, iv: f.iv, dianaId: f.dianaId, fijo: true, ref: f.ref }));
   const libre = (dId, iv, salvo) => !filas.some((f) => f !== salvo && f.dianaId === dId && iv[0] < f.iv[1] && f.iv[0] < iv[1]);
   for (const p of orden) {
-    const iv = intervaloPara(p.categoria, p.fechaMs), online = p.categoria === "equipos";
+    const iv = intervaloPara(p.categoria, p.fechaMs, p.nivel), online = p.categoria === "equipos";
     const fila = { p: p, iv: iv, dianaId: "" };
     let d = dianas.find((x) => (!online || x.online) && libre(x.id, iv, fila));
     if (!d && online) {
@@ -210,23 +211,22 @@ function explicar(f, filas, dianas) {
 }
 // ---------- Bloqueos ya guardados: los encadenados se reconocen por cómo están colocados ----------
 // (así los avisos se calculan siempre al momento y nunca se quedan viejos)
-const NORMAL_PAREJAS = 90 * 60000;
 const etiquetaBloque = (b) => (b.categoria === "parejas" ? "Parejas" : "Equipos") + (b.nivel ? " N" + b.nivel : "") + " · " + (b.local || "?") + " – " + (b.visitante || "?");
 const horaDe = (ms) => { const d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 function relaciones(lista) {
   const rel = new Map();
   for (const o of lista) {
     if (o.estado !== "activo" || o.categoria === "parejas") continue;
-    const p = lista.find((x) => x !== o && x.estado === "activo" && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + NORMAL_PAREJAS);
+    const p = lista.find((x) => x !== o && x.estado === "activo" && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < finNormal(x));
     if (p) { rel.set(o.id, { tras: p }); rel.set(p.id, { por: o }); }
   }
   return rel;
 }
-const acortadaSola = (b, rel) => b.estado === "activo" && b.categoria === "parejas" && b.finMs < b.partidoMs + NORMAL_PAREJAS && !rel.has(b.id);
+const acortadaSola = (b, rel) => b.estado === "activo" && b.categoria === "parejas" && b.finMs < finNormal(b) && !rel.has(b.id);
 function alertaDe(b, rel) {
   const r = rel.get(b.id);
   if (r && r.tras) return "⏰ Empieza a su hora (" + horaDe(b.partidoMs) + ") justo después de " + etiquetaBloque(r.tras) + " (" + horaDe(r.tras.inicioMs) + "–" + horaDe(r.tras.finMs) + "), que debe terminar antes de las " + horaDe(b.inicioMs) + ". Avisa a los dos equipos.";
-  if (r && r.por) return "⏰ Debe terminar antes de las " + horaDe(b.finMs) + " (su bloqueo normal llegaría a las " + horaDe(b.partidoMs + NORMAL_PAREJAS) + "): después va " + etiquetaBloque(r.por) + " (" + horaDe(r.por.inicioMs) + "–" + horaDe(r.por.finMs) + "). Avisa a los dos equipos.";
+  if (r && r.por) return "⏰ Debe terminar antes de las " + horaDe(b.finMs) + " (su bloqueo normal llegaría a las " + horaDe(finNormal(b)) + "): después va " + etiquetaBloque(r.por) + " (" + horaDe(r.por.inicioMs) + "–" + horaDe(r.por.finMs) + "). Avisa a los dos equipos.";
   if (acortadaSola(b, rel)) return "⚠ Su bloqueo sigue acortado hasta las " + horaDe(b.finMs) + ", pero ya no va ninguna partida online detrás.";
   return "";
 }
@@ -237,8 +237,8 @@ function reservaEn(dId, iv, mapa) {
   return false;
 }
 // Qué se puede hacer en cada diana con un partido de esta categoría y hora (sin contar el propio partido que se está moviendo).
-function opcionesDiana(cat, pMs, otros, dianas, mapa) {
-  const nom = intervaloPara(cat, pMs), online = cat !== "parejas";
+function opcionesDiana(cat, pMs, nivel, otros, dianas, mapa) {
+  const nom = intervaloPara(cat, pMs, nivel), online = cat !== "parejas";
   return dianas.map((d) => {
     if (online && !d.online) return { diana: d, estado: "sinOnline" };
     const solapa = otros.filter((b) => b.estado === "activo" && b.dianaId === d.id && b.inicioMs < nom[1] && nom[0] < b.finMs);
@@ -247,12 +247,12 @@ function opcionesDiana(cat, pMs, otros, dianas, mapa) {
       const s = solapa[0];
       if (online && s.categoria === "parejas") {
         const iv = [pMs, nom[1]];
-        if (pMs > s.inicioMs && pMs < s.finMs && pMs - s.partidoMs >= MIN_PAREJAS && iv[1] - iv[0] >= MIN_ONLINE && !reservaEn(d.id, iv, mapa))
+        if (pMs > s.inicioMs && pMs < s.finMs && pMs - s.partidoMs >= MIN_PAREJAS && !reservaEn(d.id, iv, mapa))
           return { diana: d, estado: "encadenar", iv: iv, socio: { b: s, iv: [s.inicioMs, pMs] } };
       }
       if (!online && s.categoria !== "parejas") {
         const corte = s.partidoMs, iv = [nom[0], corte];
-        if (corte > nom[0] && corte < nom[1] && corte - pMs >= MIN_PAREJAS && s.finMs - corte >= MIN_ONLINE && !reservaEn(d.id, iv, mapa))
+        if (corte > nom[0] && corte < nom[1] && corte - pMs >= MIN_PAREJAS && corte < s.finMs && !reservaEn(d.id, iv, mapa))
           return { diana: d, estado: "encadenar", iv: iv, socio: { b: s, iv: [corte, s.finMs] } };
       }
     }
@@ -267,13 +267,23 @@ function planCambios(viejo, nuevo, socio, lista, mapa) {
   cambios.push({ viejo: viejo, nuevo: nuevo });
   const r = viejo ? relaciones(lista).get(viejo.id) : null, antiguo = r && (r.tras || r.por);
   if (antiguo && !(socio && socio.b.id === antiguo.id)) {
-    const iv = antiguo.categoria === "parejas" ? [antiguo.finMs, antiguo.partidoMs + NORMAL_PAREJAS] : [antiguo.partidoMs - 30 * 60000, antiguo.inicioMs];
+    const iv = antiguo.categoria === "parejas" ? [antiguo.finMs, finNormal(antiguo)] : [antiguo.partidoMs - 30 * 60000, antiguo.inicioMs];
     const ocupado = lista.some((b) => b.id !== antiguo.id && b.id !== viejo.id && b.estado === "activo" && b.dianaId === antiguo.dianaId && b.inicioMs < iv[1] && iv[0] < b.finMs)
       || (nuevo && nuevo.estado === "activo" && nuevo.dianaId === antiguo.dianaId && nuevo.inicioMs < iv[1] && iv[0] < nuevo.finMs)
       || reservaEn(antiguo.dianaId, iv, mapa);
     if (!ocupado) cambios.push({ viejo: antiguo, nuevo: Object.assign({}, antiguo, antiguo.categoria === "parejas" ? { finMs: iv[1] } : { inicioMs: iv[0] }), restaurado: true });
   }
   return cambios;
+}
+// Lo que debería ocupar un bloqueo con las duraciones actuales (respetando los encadenados). null = ya está bien.
+function ajusteDuracion(b, rel) {
+  if (b.estado !== "activo") return null;
+  const r = rel.get(b.id);
+  let iv;
+  if (r && r.tras) iv = [b.partidoMs, finNormal(b)];
+  else if (r && r.por) iv = [b.partidoMs - 30 * 60000, Math.min(b.finMs, finNormal(b))];
+  else iv = [b.partidoMs - 30 * 60000, finNormal(b)];
+  return iv[0] === b.inicioMs && iv[1] === b.finMs ? null : iv;
 }
 // Partidos cuya fecha u hora ha cambiado la liga después de bloquearlos (y que no has movido tú a propósito).
 function cambiosDeLiga(activos, partidos, cambiosAdmin) {
@@ -290,7 +300,7 @@ function cambiosDeLiga(activos, partidos, cambiosAdmin) {
   }
   return out.sort((x, y) => x.b.partidoMs - y.b.partidoMs);
 }
-  // </logica>
+// </logica>
 
 const idsSlots = (dId, iv) => { const r = []; for (let t = iv[0]; t < iv[1]; t += Q) r.push(dId + "_" + t); return r; };
 const choque = (dId, iv, propio, mapa) => {
@@ -507,7 +517,7 @@ function pintarBloqueos() {
       if (notaManual(b)) c.append(el("small", "📝 " + notaManual(b), "aviso"));
       const dd = dianas.find((x) => x.id === b.dianaId);
       if (b.categoria !== "parejas" && dd && !dd.online) c.append(el("small", "⚠ Partida online en una diana sin online. Muévela a una diana con online.", "mal"));
-      if (acortadaSola(b, rel)) { const r = el("button", "Devolver su horario normal (hasta las " + hhmm(b.partidoMs + NORMAL_PAREJAS) + ")"); r.onclick = () => devolverHorario(b); c.append(r); }
+      if (acortadaSola(b, rel)) { const r = el("button", "Devolver su horario normal (hasta las " + hhmm(finNormal(b)) + ")"); r.onclick = () => devolverHorario(b); c.append(r); }
       const e = el("button", "Cambiar fecha, hora o diana", "sec");
       e.onclick = () => abrirEditor("cambiar", b);
       const a = el("button", "Aplazar (liberar la diana)", "sec");
@@ -528,6 +538,51 @@ function pintarBloqueos() {
   }
   if (!n) act.append(el("p", "No hay partidos bloqueados todavía."));
   if (!apl.children.length) apl.append(el("p", "No hay partidas aplazadas pendientes."));
+  pintarDuraciones(todos, rel);
+}
+// ---------- Bloqueos con la duración antigua ----------
+function pintarDuraciones(todos, rel) {
+  const cont = $("durAviso");
+  cont.innerHTML = "";
+  const lista = todos.filter((b) => b.estado === "activo" && b.finMs >= Date.now()).map((b) => ({ b: b, iv: ajusteDuracion(b, rel) })).filter((x) => x.iv);
+  if (!lista.length) return;
+  const c = el("div", "", "motivo");
+  c.append(el("strong", "⚠ " + lista.length + (lista.length === 1 ? " bloqueo tiene" : " bloqueos tienen") + " una duración que no es la actual"));
+  c.append(el("div", "Parejas: niveles 1 a 5 → 1 h 15, resto → 1 h 30. Equipos: niveles 1 a 5 → 2 h 15, resto → 2 h 30. Más 30 minutos antes del partido.", "peq"));
+  const ul = document.createElement("ul");
+  lista.slice(0, 8).forEach((x) => ul.append(el("li", diaBonito(x.b.partidoMs) + " · " + etiquetaBloque(x.b) + ": " + hhmm(x.b.inicioMs) + "–" + hhmm(x.b.finMs) + " → " + hhmm(x.iv[0]) + "–" + hhmm(x.iv[1]))));
+  if (lista.length > 8) ul.append(el("li", "… y " + (lista.length - 8) + " más."));
+  c.append(ul);
+  const b = el("button", "Ajustar " + lista.length + (lista.length === 1 ? " bloqueo" : " bloqueos") + " a las duraciones nuevas");
+  b.onclick = () => ajustarDuraciones(lista);
+  c.append(b);
+  cont.append(c);
+}
+async function ajustarDuraciones(lista) {
+  if (!confirm("¿Ajustar " + lista.length + " bloqueos a las duraciones nuevas?")) return;
+  $("msg").textContent = "Ajustando…";
+  try {
+    // primero los que se acortan (liberan huecos) y después los que se alargan
+    const orden = lista.slice().sort((a, b) => ((a.iv[1] - a.iv[0]) - (a.b.finMs - a.b.inicioMs)) - ((b.iv[1] - b.iv[0]) - (b.b.finMs - b.b.inicioMs)));
+    const ops = [], fallan = [], hechos = [];
+    for (const x of orden) {
+      const tramos = [];
+      if (x.iv[0] < x.b.inicioMs) tramos.push([x.iv[0], x.b.inicioMs]);
+      if (x.iv[1] > x.b.finMs) tramos.push([x.b.finMs, x.iv[1]]);
+      let choca = "";
+      for (const t of tramos) {
+        const otro = [...bloqueos.values()].find((o) => o.id !== x.b.id && o.estado === "activo" && o.dianaId === x.b.dianaId && o.inicioMs < t[1] && t[0] < o.finMs && !hechos.some((h) => h.b.id === o.id && !(h.iv[0] < t[1] && t[0] < h.iv[1])));
+        if (otro) { choca = "choca con " + etiquetaBloque(otro); break; }
+        if (reservaEn(x.b.dianaId, t, await cargarSlots(t[0], t[1]))) { choca = "hay una reserva de cliente"; break; }
+      }
+      if (choca) { fallan.push(etiquetaBloque(x.b) + " (" + choca + ")"); continue; }
+      ops.push(...opsBloqueo(Object.assign({}, x.b, { inicioMs: x.iv[0], finMs: x.iv[1], nota: notaManual(x.b) }), x.b));
+      hechos.push(x);
+    }
+    if (ops.length) await enviar(ops);
+    await cargarBloqueos();
+    $("msg").textContent = "✔ Ajustados " + hechos.length + " bloqueos." + (fallan.length ? " No se pudieron alargar: " + fallan.join("; ") + ". Revísalos a mano." : "");
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 }
 async function aplicarPlan(plan, conCambio) {
   const ops = [];
@@ -544,7 +599,7 @@ async function cambiarEstado(b, estado) {
   return aplicarPlan(planCambios(b, nuevo, null, [...bloqueos.values()], mapa), nuevo);
 }
 async function devolverHorario(b) {
-  const iv = [b.finMs, b.partidoMs + NORMAL_PAREJAS];
+  const iv = [b.finMs, finNormal(b)];
   const mapa = await cargarSlots(iv[0], iv[1]);
   const ocupado = [...bloqueos.values()].some((x) => x.id !== b.id && x.estado === "activo" && x.dianaId === b.dianaId && x.inicioMs < iv[1] && iv[0] < x.finMs) || reservaEn(b.dianaId, iv, mapa);
   if (ocupado) { $("msg").textContent = "No se puede: la " + nombreDiana(b.dianaId) + " está ocupada entre las " + hhmm(iv[0]) + " y las " + hhmm(iv[1]) + "."; return; }
@@ -580,15 +635,15 @@ function edDatos() {
   const f = $("edFecha").value, h = $("edHora").value;
   if (!f || !h) return null;
   const [y, m, d] = f.split("-").map(Number), [hh, mi] = h.split(":").map(Number);
-  return { pMs: new Date(y, m - 1, d, hh, mi).getTime(), cat: edit.modo === "nuevo" ? $("edCat").value : edit.b.categoria };
+  return { pMs: new Date(y, m - 1, d, hh, mi).getTime(), cat: edit.modo === "nuevo" ? $("edCat").value : edit.b.categoria, nivel: edit.modo === "nuevo" ? Number($("edNivel").value) || 0 : edit.b.nivel };
 }
 async function edCalcular() {
   const x = edDatos();
   if (!x) return null;
-  const iv = intervaloPara(x.cat, x.pMs);
+  const iv = intervaloPara(x.cat, x.pMs, x.nivel);
   edMapa = await cargarSlots(iv[0] - 3 * 60 * MIN, iv[1] + 3 * 60 * MIN);
   const otros = [...bloqueos.values()].filter((b) => !edit.b || b.id !== edit.b.id);
-  edOpciones = opcionesDiana(x.cat, x.pMs, otros, dianas, edMapa);
+  edOpciones = opcionesDiana(x.cat, x.pMs, x.nivel, otros, dianas, edMapa);
   return x;
 }
 const sirve = (o) => o.estado === "libre" || o.estado === "encadenar";
@@ -627,6 +682,7 @@ function edInfo() {
 $("edFecha").onchange = edRevisar;
 $("edHora").onchange = edRevisar;
 $("edCat").onchange = edRevisar;
+$("edNivel").onchange = edRevisar;
 $("edDiana").onchange = edInfo;
 $("edCancelar").onclick = () => { $("editor").classList.add("oculto"); edit = null; };
 $("aniadir").onclick = () => { $("edNivel").value = ""; $("edLocal").value = ""; $("edVisitante").value = ""; abrirEditor("nuevo", null); };
