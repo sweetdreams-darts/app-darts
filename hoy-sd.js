@@ -22,13 +22,13 @@ function textoDia(dia) {
   return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1];
 }
 const etiqueta = (cat, nivel) => (cat === "parejas" ? "Parejas" : "Equipos") + (nivel ? " N" + nivel : "");
-const NORMAL_PAREJAS = 90 * 60000;
+const durParejas = (nivel) => (Number(nivel) >= 1 && Number(nivel) <= 5 ? 75 : 90) * 60000;
 // Los encadenados se reconocen por cómo están colocados (así el aviso nunca se queda viejo).
 function relaciones(lista) {
   const rel = new Map();
   for (const o of lista) {
     if (o.categoria === "parejas") continue;
-    const p = lista.find((x) => x !== o && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + NORMAL_PAREJAS);
+    const p = lista.find((x) => x !== o && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + durParejas(x.nivel));
     if (p) { rel.set(o.id, { tras: p }); rel.set(p.id, { por: o }); }
   }
   return rel;
@@ -37,7 +37,7 @@ function avisoDe(b, rel) {
   const r = rel.get(b.id);
   if (r && r.tras) return "Empieza a su hora, justo después de " + etiqueta(r.tras.categoria, r.tras.nivel) + " · " + (r.tras.local || "?") + " (que acaba a las " + hhmm(r.tras.finMs) + ")";
   if (r && r.por) return "Debe acabar antes de las " + hhmm(b.finMs) + ": después va " + etiqueta(r.por.categoria, r.por.nivel) + " · " + (r.por.local || "?");
-  if (b.categoria === "parejas" && b.finMs < b.partidoMs + NORMAL_PAREJAS) return "⚠ Acortada hasta las " + hhmm(b.finMs) + " sin online detrás";
+  if (b.categoria === "parejas" && b.finMs < b.partidoMs + durParejas(b.nivel)) return "⚠ Acortada hasta las " + hhmm(b.finMs) + " sin online detrás";
   return "";
 }
 const notaManual = (b) => (b.nota && !/^(Empieza a su hora|Debe terminar antes)/.test(b.nota) ? b.nota : "");
