@@ -762,6 +762,47 @@ $("guardarEq").onclick = async () => {
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 };
 
+// ---------- Abrir desde una solicitud de capitán (pantalla «Solicitudes de capitanes») ----------
+let solicitudURL = null;
+async function cerrarSolicitud(respuesta) {
+  if (!solicitudURL) return;
+  try {
+    const { updateDoc, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js");
+    await updateDoc(doc(db, "cambios_pedidos", solicitudURL), { estado: "aprobada", respuesta: respuesta, resuelto: serverTimestamp(), por: auth.currentUser ? auth.currentUser.uid : "" });
+    $("msg").textContent += " ✔ La solicitud del capitán queda aprobada.";
+  } catch (e) { $("msg").textContent += " (No se pudo marcar la solicitud como aprobada: márcala en Solicitudes.)"; }
+  solicitudURL = null;
+}
+async function procesarURL() {
+  const q = new URLSearchParams(location.search), id = q.get("editar") || q.get("aplazar");
+  if (!id) return;
+  solicitudURL = q.get("sol");
+  history.replaceState(null, "", location.pathname);
+  let b = bloqueos.get(id);
+  if (!b) {
+    const s = await getDoc(doc(db, "liga_partidos", id));
+    if (!s.exists()) { $("msg").textContent = "No encuentro ese partido en el calendario."; solicitudURL = null; return; }
+    const p = s.data();
+    b = { id: id, origen: "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, partidoMs: p.fecha.toMillis(), inicioMs: 0, finMs: 0, dianaId: "", estado: "sinBloqueo", dia: p.dia, nota: "" };
+  }
+  if (q.get("aplazar")) {
+    if (b.estado !== "activo") { $("msg").textContent = "Ese partido no tiene ninguna diana bloqueada: apruébalo desde «Solicitudes de capitanes»."; solicitudURL = null; return; }
+    await aplazar(b);
+    if ($("msg").textContent.startsWith("✔ Diana liberada")) await cerrarSolicitud("Partido aplazado. Cuando tengáis fecha nueva, pedídmela desde aquí.");
+    else solicitudURL = null;
+    return;
+  }
+  abrirEditor(b.estado === "aplazado" ? "reprogramar" : "cambiar", b, q.get("dia") && q.get("hora") ? { dia: q.get("dia"), hora: q.get("hora") } : null);
+  $("edTitulo").textContent += " · solicitud de capitán";
+}
+const guardarDelEditor = $("edGuardar").onclick;
+$("edGuardar").onclick = async () => {
+  await guardarDelEditor();
+  if (solicitudURL && $("msg").textContent.startsWith("✔ Guardado: ")) await cerrarSolicitud("Hecho: " + $("msg").textContent.slice(12).split(").")[0] + "). Recordad avisar al otro equipo.");
+};
+$("edCancelar").addEventListener("click", () => { solicitudURL = null; });
+const esperarCarga = setInterval(() => { if (!$("panel").classList.contains("oculto")) { clearInterval(esperarCarga); procesarURL(); } }, 200);
+  
 onAuthStateChanged(auth, async (u) => {
   $("panel").classList.add("oculto");
   if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
