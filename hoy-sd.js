@@ -86,7 +86,8 @@ function estilos() {
     ".hoy .hoy-d.hoy-apl{background:#8f87a6;color:#0a0612}" +
     ".hoy .hoy-pie{display:flex;gap:8px;margin-top:8px;font-size:.78rem;align-items:center;justify-content:space-between}" +
     ".hoy .hoy-pie a{color:#19f2ff!important}" +
-    ".hoy .hoy-vacio{font-size:.84rem;opacity:.85;margin:4px 0}";
+    ".hoy .hoy-vacio{font-size:.84rem;opacity:.85;margin:4px 0}" +
+    ".hoy .hoy-sol{display:block;margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#ffe14d;color:#0a0612!important;font-weight:800;font-size:.8rem;text-decoration:none}";
   document.head.appendChild(s);
 }
 
@@ -108,7 +109,9 @@ async function leer(db, hoy) {
   const sd = partidos.filter((p) => !ya.has(p.id) && (p.categoria === "parejas" ? p.enSweetDreams === true : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)))));
   const bloqueosExtra = new Set();
   await Promise.all(sd.map(async (p) => { try { if ((await getDoc(doc(db, "liga_bloqueos", p.id))).exists()) bloqueosExtra.add(p.id); } catch (e) {} }));
-  return { items: construirLista({ bloqueos: bloqueos, partidos: partidos, bloqueosExtra: bloqueosExtra, nombresSD: nombresSD, dianas: dianas }), reservas: re.docs.length };
+  let solicitudes = 0;
+  try { solicitudes = (await getDocs(query(collection(db, "cambios_pedidos"), where("estado", "==", "pendiente")))).docs.length; } catch (e) {}
+  return { items: construirLista({ bloqueos: bloqueos, partidos: partidos, bloqueosExtra: bloqueosExtra, nombresSD: nombresSD, dianas: dianas }), reservas: re.docs.length, solicitudes: solicitudes };
 }
 
 function pintar(caja, hoy, datos) {
@@ -130,6 +133,7 @@ function pintar(caja, hoy, datos) {
   r.onclick = () => montar(caja.__db, caja.__ficha, true);
   cab.append(t, r);
   caja.appendChild(cab);
+  if (datos.solicitudes) { const sol = document.createElement("a"); sol.className = "hoy-sol"; sol.href = "admin-solicitudes.html"; sol.textContent = "📩 " + datos.solicitudes + (datos.solicitudes === 1 ? " solicitud de capitán pendiente ›" : " solicitudes de capitanes pendientes ›"); caja.appendChild(sol); }
   if (!datos.items.length) {
     const v = document.createElement("p");
     v.className = "hoy-vacio";
