@@ -156,7 +156,7 @@ function tramosLibres(dianaId, dia, ocupados, ahoraMs) {
 // Horas de inicio posibles para una partida de ese tipo y cuántas dianas quedan libres en cada una.
 function huecosPara(cat, nivel, dia, dianas, ocupados, ahoraMs) {
   const out = [];
-  for (let m = 19 * 60; m <= 22 * 60 + 30; m += 30) {
+    for (let m = 17 * 60 + 30; m <= 22 * 60 + 30; m += 30) {
     const p = aMs(dia, Math.floor(m / 60), m % 60), iv = intervaloPara(cat, p, nivel);
     if (iv[0] < ahoraMs) continue;
     const libres = elegibles(cat, dianas).filter((d) => libreEn(d.id, iv, ocupados));
@@ -191,7 +191,7 @@ function partidosDe(equipos, partidos, cambios, hoy) {
 // Lista de huecos de hora para el formulario: de 19:00 a 22:30, y siempre incluye la hora de ahora.
 function horasFormulario(horaActual) {
   const o = [];
-  for (let m = 19 * 60; m <= 22 * 60 + 30; m += 30) o.push(pad(Math.floor(m / 60)) + ":" + pad(m % 60));
+  for (let m = 17 * 60 + 30; m <= 22 * 60 + 30; m += 30) o.push(pad(Math.floor(m / 60)) + ":" + pad(m % 60));
   if (horaActual && !o.includes(horaActual)) o.push(horaActual);
   return o.sort();
 }
