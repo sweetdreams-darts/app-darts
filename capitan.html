@@ -53,7 +53,7 @@ main{width:100%;max-width:560px}
   <section id="vLib">
     <div class="cap-dias" id="dias"></div>
     <p class="cap-tit" style="margin-top:6px">¿A qué hora cabe mi partida?</p>
-    <select id="tipoH" style="width:100%;padding:10px;border-radius:12px;background:#150d27;color:#fff;border:1.5px solid rgba(255,255,255,.2)"><option value="parejas">Partida de parejas (unas 2 h)</option><option value="equipos">Partida online (hasta medianoche)</option></select>
+    <select id="tipoH" style="width:100%;padding:10px;border-radius:12px;background:#150d27;color:#fff;border:1.5px solid rgba(255,255,255,.2)"><option value="parejas|1">Parejas, niveles 1 a 5 (1 h 15)</option><option value="parejas|6">Parejas, nivel 6 o más (1 h 30)</option><option value="equipos|1">Online, niveles 1 a 5 (2 h 15)</option><option value="equipos|6">Online, nivel 6 o más (2 h 30)</option></select>
     <div class="cap-chips" id="huecos" style="margin-top:8px"></div>
     <p class="cap-tit">Dianas, casi en directo</p>
     <div id="dianas"></div>
@@ -132,14 +132,13 @@ const diaLargo = (dia) => { const [y, m, d] = dia.split("-").map(Number); return
 const diaDelBar = (ahora) => iso(new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() - (ahora.getHours() < 6 ? 1 : 0)));
 const diasProximos = (hoy, n) => { const [y, m, d] = hoy.split("-").map(Number); return Array.from({ length: n }, (_, i) => iso(new Date(y, m - 1, d + i))); };
 const Q = 15 * 60000;
-// Lo que ocupa cada tipo de partida en la diana: 30 min antes + el partido (parejas) o hasta medianoche (online).
-function intervaloPara(cat, pMs) {
-  if (cat === "parejas") return [pMs - 30 * 60000, pMs + 90 * 60000];
-  const d = new Date(pMs);
-  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
-  if (fin <= pMs) fin = pMs + 150 * 60000;
-  return [pMs - 30 * 60000, fin];
+// Duración de cada partida (el bloqueo empieza 30 minutos antes de la hora del partido):
+//   Parejas: niveles 1 a 5 → 1 h 15 · nivel 6 o más → 1 h 30 · Equipos: niveles 1 a 5 → 2 h 15 · nivel 6 o más → 2 h 30
+function duracion(cat, nivel) {
+  const bajo = Number(nivel) >= 1 && Number(nivel) <= 5;
+  return (cat === "parejas" ? (bajo ? 75 : 90) : (bajo ? 135 : 150)) * 60000;
 }
+function intervaloPara(cat, pMs, nivel) { return [pMs - 30 * 60000, pMs + duracion(cat, nivel)]; }
 const libreEn = (dianaId, iv, ocupados) => { for (let t = iv[0]; t < iv[1]; t += Q) if (ocupados.has(dianaId + "_" + t)) return false; return true; };
 const elegibles = (cat, dianas) => dianas.filter((d) => cat === "parejas" || d.online);
 // Tramos libres de una diana en la jornada (17:00–01:00), contando solo desde "ahora".
@@ -155,10 +154,10 @@ function tramosLibres(dianaId, dia, ocupados, ahoraMs) {
   return out;
 }
 // Horas de inicio posibles para una partida de ese tipo y cuántas dianas quedan libres en cada una.
-function huecosPara(cat, dia, dianas, ocupados, ahoraMs) {
+function huecosPara(cat, nivel, dia, dianas, ocupados, ahoraMs) {
   const out = [];
   for (let m = 19 * 60; m <= 22 * 60 + 30; m += 30) {
-    const p = aMs(dia, Math.floor(m / 60), m % 60), iv = intervaloPara(cat, p);
+    const p = aMs(dia, Math.floor(m / 60), m % 60), iv = intervaloPara(cat, p, nivel);
     if (iv[0] < ahoraMs) continue;
     const libres = elegibles(cat, dianas).filter((d) => libreEn(d.id, iv, ocupados));
     out.push({ hora: hhmm(p), libres: libres.map((d) => d.nombre) });
@@ -252,9 +251,9 @@ function pintarLibres() {
     c.append(el("div", tr.length ? "Libre: " + tr.map((x) => hhmm(x[0]) + "–" + hhmm(x[1])).join(" · ") : "Sin huecos libres este día.", "cap-rangos"));
     cont.append(c);
   }
-  const hu = $("huecos"), cat = $("tipoH").value;
+  const hu = $("huecos"), [cat, niv] = $("tipoH").value.split("|");
   hu.innerHTML = "";
-  const lista = huecosPara(cat, diaSel, dianas, ocupados, ahora);
+  const lista = huecosPara(cat, Number(niv), diaSel, dianas, ocupados, ahora);
   if (!lista.length) hu.append(el("span", "Ya no quedan horas hoy.", "peq"));
   lista.forEach((x) => { const s = el("span", x.hora + (x.libres.length ? " · " + x.libres.length + (x.libres.length === 1 ? " diana" : " dianas") : " · no cabe"), "cap-chip" + (x.libres.length ? "" : " no")); s.title = x.libres.join(", "); hu.append(s); });
 }
@@ -317,7 +316,7 @@ async function comprobarForm() {
     const a = new Date(aMs(dia, 6, 0)), b = new Date(aMs(dia, 30, 0));
     const s = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromDate(a)), where("inicio", "<", Timestamp.fromDate(b))));
     ocupadosForm = new Set(s.docs.map((d) => d.id));
-    const [h, m] = hora.split(":").map(Number), iv = intervaloPara(itemForm.cat, aMs(dia, h, m));
+    const [h, m] = hora.split(":").map(Number), iv = intervaloPara(itemForm.cat, aMs(dia, h, m), itemForm.nivel);
     const libres = elegibles(itemForm.cat, dianas).filter((d) => libreEn(d.id, iv, ocupadosForm));
     $("fDisp").textContent = libres.length ? "✔ A esa hora hay " + libres.length + (libres.length === 1 ? " diana libre" : " dianas libres") + ": " + libres.map((d) => d.nombre).join(", ") + "." : "⚠ A esa hora no hay ninguna diana libre. Puedes pedirlo igualmente y el bar mirará cómo encajarlo, o prueba otra hora.";
   } catch (e) { $("fDisp").textContent = ""; }
@@ -401,6 +400,7 @@ onAuthStateChanged(auth, async (u) => {
     if (!equipos.length && ficha.role !== "admin") { $("estado").innerHTML = 'Esta pantalla es para los capitanes de los equipos de Sweet Dreams. Si eres capitán, pídele al bar que te marque como tal. <a href="dardos.html">Volver</a>'; return; }
     hoy = diaDelBar(new Date());
     diaSel = hoy;
+    if (equipos.length) { const [c0, n0] = equipos[0].split("|"); $("tipoH").value = c0 + "|" + (Number(n0) >= 1 && Number(n0) <= 5 ? 1 : 6); }
     dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
     const pares = [...new Set(equipos.map((k) => k.split("|").slice(0, 2).join("|")))];
     const trozos = await Promise.all(pares.map((k) => { const [c, n] = k.split("|"); return getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", c), where("nivel", "==", Number(n)))); }));
