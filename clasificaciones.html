@@ -21,6 +21,8 @@ select.filtrado,input.filtrado{border-color:#ffe14d!important;box-shadow:0 0 12p
 .filtrosAct .lbl{opacity:.7}
 .filtrosAct .fchip{padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);font-weight:700}
 .filtrosAct .limpiar{margin:0 0 0 auto;padding:4px 10px;font-size:.78rem;width:auto}
+.ambito{margin:10px 0 0;padding:9px 12px;border-radius:12px;font-size:.84rem;font-weight:700;line-height:1.35;background:rgba(25,242,255,.08);border:1.5px solid rgba(25,242,255,.45);color:#19f2ff}
+.ambito.amb-sd{background:rgba(255,225,77,.1);border-color:#ffe14d;color:#ffe14d}
 .filtros{margin:6px 0 4px}
 .filtroFila{display:flex;gap:8px;align-items:center}
 select,input[type=search]{width:100%;padding:11px 12px;font-size:.95rem;border-radius:12px;border:1.5px solid rgba(255,255,255,.18);background:#0a0612;color:#fff;margin:0}
@@ -105,6 +107,7 @@ svg.graf{width:100%;height:84px;margin-top:10px;display:block}
     <div class="tabs mini oculto" id="tabsSub"><button data-s="jug">Jugadores</button><button data-s="eq">Equipos y resultados</button></div>
   </div>
   <div id="filtros" class="filtrosAct"></div>
+  <p id="ambito" class="ambito oculto"></p>
   <div id="podio" class="podio"></div>
   <div id="contenido"></div>
   <div id="ayuda" class="ayuda oculto"></div>
@@ -299,10 +302,12 @@ function render() {
   pintarFiltros();
   if (est.vista !== "general" && est.sub === "eq") return pintarEquipos();
   // jugadores
-  const todas = poblacion(), pos = puestos(todas);
-  const prev = previas(), flechas = prev.length ? cambios(todas, prev) : null;
+  // los puestos (y las flechas) se cuentan dentro de lo que se está viendo: toda la liga, o solo Sweet Dreams
+  const todas = poblacion().filter((f) => !est.sd || f.sd), pos = puestos(todas);
+  const prev = previas().filter((f) => !est.sd || f.sd), flechas = prev.length ? cambios(todas, prev) : null;
+  pintarAmbito(todas.length, "jugadores");
   const q = clave(est.q);
-  let filas = todas.filter((f) => (!est.sd || f.sd) && (!q || clave(f.nombre).includes(q) || clave(f.equipo).includes(q)));
+  let filas = todas.filter((f) => !q || clave(f.nombre).includes(q) || clave(f.equipo).includes(q));
   cacheFilas = todas;
   // podio (con lo que se está viendo)
   const top = filas.slice().sort((a, b) => b.v.media - a.v.media || b.v.pj - a.v.pj).slice(0, 3);
@@ -354,7 +359,7 @@ function pintarFiltros() {
   const partes = [{ general: "General", parejas: "Parejas", equipos: "Equipos" }[est.vista]];
   partes.push(est.vista !== "general" && est.sub === "eq" ? "Equipos y resultados" : TIPOS[est.tipo].nombre);
   if (est.nivel !== "todos") partes.push("Nivel " + est.nivel);
-  if (est.sd) partes.push("⭐ Solo Sweet Dreams");
+  partes.push(est.sd ? "⭐ Solo Sweet Dreams" : "🌍 Toda la liga");
   if (est.q) partes.push("«" + est.q + "»");
   const c = $("filtros");
   c.innerHTML = "";
@@ -367,25 +372,39 @@ function pintarFiltros() {
   }
 }
 
+// Franja que deja claro de quién es la clasificación que se ve.
+function pintarAmbito(n, deQue) {
+  const a = $("ambito");
+  if (!n) { a.className = "ambito oculto"; return; }
+  const que = est.vista === "general" ? "parejas y equipos" : est.vista === "parejas" ? "liga de parejas" : "liga online de equipos";
+  const nivel = est.nivel !== "todos" ? " · nivel " + est.nivel : "";
+  a.className = "ambito" + (est.sd ? " amb-sd" : "");
+  a.textContent = est.sd
+    ? "⭐ Solo Sweet Dreams · " + n + " " + deQue + " del bar" + nivel + ". Los puestos se cuentan solo entre ellos."
+    : "🌍 Toda la liga Bullshooter Valladolid (" + que + ") · " + n + " " + deQue + nivel + ".";
+}
+
 function pintarEquipos() {
   const c = $("contenido");
   $("podio").innerHTML = "";
   c.innerHTML = "";
   const niv = datos.niveles.filter((n) => n.cat === est.vista && (est.nivel === "todos" || String(n.n) === String(est.nivel)));
   const q = clave(est.q);
-  if (!niv.length) { c.append(el("div", "Todavía no hay datos de equipos.", "vacio")); return; }
+  if (!niv.length) { pintarAmbito(0); c.append(el("div", "Todavía no hay datos de equipos.", "vacio")); return; }
+  pintarAmbito(niv.reduce((a, n) => a + n.equipos.filter((e) => !est.sd || e.sd).length, 0), "equipos");
   niv.forEach((n) => {
-    let eqs = n.equipos.slice().sort((a, b) => b.pct - a.pct || b.pg - a.pg).filter((e) => (!est.sd || e.sd) && (!q || clave(e.e).includes(q)));
+    // el puesto se cuenta dentro de lo que se ve (toda la liga o solo Sweet Dreams); el buscador no lo cambia
+    const base = n.equipos.slice().sort((a, b) => b.pct - a.pct || b.pg - a.pg).filter((e) => !est.sd || e.sd), puestoEq = new Map();
+    base.forEach((e, i) => { const ant = base[i - 1]; puestoEq.set(e, ant && ant.pct === e.pct && ant.pg === e.pg ? puestoEq.get(ant) : i + 1); });
+    const eqs = base.filter((e) => !q || clave(e.e).includes(q));
     if (!eqs.length) return;
     const bloque = el("div", "", "eqTabla");
     bloque.append(el("h3", "Nivel " + n.n + " · clasificación por victorias"));
     const wrap = el("div", "", "wrap"), tabla = document.createElement("table"), cab = document.createElement("tr");
     [["#", "pos"], ["Equipo", "jug"], ["%V", ""], ["PJ", ""], ["PG", ""]].forEach(([t, cl]) => cab.append(el("th", t, cl)));
     tabla.append(cab);
-    let ant = null, puesto = 0;
-    eqs.forEach((e, i) => {
-      if (!ant || ant.pct !== e.pct || ant.pg !== e.pg) puesto = i + 1;
-      ant = e;
+    eqs.forEach((e) => {
+      const puesto = puestoEq.get(e);
       const tr = document.createElement("tr");
       if (e.sd) tr.classList.add("fsd");
       const tdj = el("td", "", "jug");
@@ -439,13 +458,14 @@ function abrirPerfil(k) {
     mod.append(el("h4", T.nombre));
     const cif = el("div", "", "cifras");
     const c1 = (b, s) => { const d = el("div", "", "cif"); d.append(el("b", String(b)), el("span", s)); return d; };
-    cif.append(c1(fmt(yoGen.v.media, 2), T.media + (mias.length > 1 ? " · media simple de " + mias.length + " niveles" : "")), c1("#" + pg.get(yoGen), "puesto general de " + gen.length), c1(yoGen.v.pj, "partidas"), c1(Math.round(yoGen.v.pct) + "%", "victorias"));
+    cif.append(c1(fmt(yoGen.v.media, 2), T.media + (mias.length > 1 ? " · media simple de " + mias.length + " niveles" : "")), c1("#" + pg.get(yoGen), "en toda la liga, de " + gen.length), c1(yoGen.v.pj, "partidas"), c1(Math.round(yoGen.v.pct) + "%", "victorias"));
+    if (yoGen.sd) { const genSD = gen.filter((f) => f.sd), pSD = puestos(genSD); cif.append(c1("#" + pSD.get(genSD.find((f) => f.k === k)), "⭐ en Sweet Dreams, de " + genSD.length)); }
     mod.append(cif);
     const lin = el("div", "", "lineas");
     mias.slice().sort((a, b) => a.n - b.n).forEach((e) => {
       const pobl = entTipo.filter((x) => x.cat === e.cat && x.n === e.n).map(filaDe), pn = puestos(pobl);
       const f = pobl.find((x) => x.id === e.clv);
-      lin.append(el("div", "Nivel " + e.n + " · " + e.equipo + ": " + T.media + " " + fmt(e.v.media, 2) + " · puesto #" + pn.get(f) + " de " + pobl.length + " · " + e.v.pj + " partidas · " + e.v.pg + " ganadas"));
+      lin.append(el("div", "Nivel " + e.n + " · " + e.equipo + ": " + T.media + " " + fmt(e.v.media, 2) + " · puesto #" + pn.get(f) + " de " + pobl.length + " del nivel · " + e.v.pj + " partidas · " + e.v.pg + " ganadas"));
     });
     if (mias.length > 1) lin.append(el("div", "Media simple de todos los niveles: " + T.media + " " + fmt(yoGen.v.media, 2), "total"));
     mod.append(lin);
@@ -499,8 +519,9 @@ function pintarYo() {
   } else yo = buscarJugador(miNombre, lista.map((j) => ({ k: j.k })));
   if (yo.estado === "auto") {
     const gen = agregar(entradasDe(datos.niveles, "x"), "x", PONDERAR), p = puestos(gen), f = gen.find((x) => x.k === yo.k);
+    const genSD = gen.filter((x) => x.sd), pSD = puestos(genSD);
     c.className = "yo";
-    c.append(caja("Tu perfil: " + (f ? f.nombre : miNombre), f ? "501: puesto #" + p.get(f) + " de " + gen.length + " · " + TIPOS.x.media + " " + fmt(f.v.media, 2) : ""), el("span", "Ver ›"));
+    c.append(caja("Tu perfil: " + (f ? f.nombre : miNombre), f ? "501: #" + p.get(f) + " de " + gen.length + " en toda la liga" + (f.sd ? " · #" + pSD.get(f) + " de " + genSD.length + " en Sweet Dreams" : "") + " · " + TIPOS.x.media + " " + fmt(f.v.media, 2) : ""), el("span", "Ver ›"));
     c.onclick = () => abrirPerfil(yo.k);
     return;
   }
@@ -535,7 +556,7 @@ function pintarYo() {
 }
 
 // ---------- eventos ----------
-document.querySelectorAll("#tabsVista button").forEach((b) => (b.onclick = () => { est.vista = b.dataset.v; est.nivel = "todos"; est.sub = "jug"; est.col = "media"; est.dir = -1; render(); }));
+  document.querySelectorAll("#tabsVista button").forEach((b) => (b.onclick = () => { est.vista = b.dataset.v; est.nivel = "todos"; est.sub = "jug"; est.col = "media"; est.dir = -1; render(); }));
 document.querySelectorAll("#tabsTipo button").forEach((b) => (b.onclick = () => { est.tipo = b.dataset.t; est.col = "media"; est.dir = -1; render(); }));
 document.querySelectorAll("#tabsSub button").forEach((b) => (b.onclick = () => { est.sub = b.dataset.s; render(); }));
 $("nivel").onchange = () => { est.nivel = $("nivel").value; render(); };
@@ -545,7 +566,7 @@ $("verAyuda").onclick = (e) => {
   e.preventDefault();
   const a = $("ayuda");
   a.classList.toggle("oculto");
-  a.innerHTML = "<b>PPD</b> es la media del 501 y <b>MPR</b> la media del cricket: las calcula Bullshooter y aquí se copian tal cual. <b>PJ</b> = partidas jugadas, <b>PG</b> = ganadas, <b>%V</b> = porcentaje de victorias. El resto de columnas son marcas oficiales de Bullshooter (Hats, 3BD, 6DO… 9MR). La flecha <span class='sube'>▲</span>/<span class='baja'>▼</span> compara con la semana anterior. Si un jugador juega en varios niveles, en <b>General</b> sale una sola vez: su media es la <b>media simple</b> de las de cada nivel (que se ven debajo de su nombre) y sus marcas se suman. ⭐ = equipo de Sweet Dreams.";
+  a.innerHTML = "<b>PPD</b> es la media del 501 y <b>MPR</b> la media del cricket: las calcula Bullshooter y aquí se copian tal cual. <b>PJ</b> = partidas jugadas, <b>PG</b> = ganadas, <b>%V</b> = porcentaje de victorias. El resto de columnas son marcas oficiales de Bullshooter (Hats, 3BD, 6DO… 9MR). La flecha <span class='sube'>▲</span>/<span class='baja'>▼</span> compara con la semana anterior. Si un jugador juega en varios niveles, en <b>General</b> sale una sola vez: su media es la <b>media simple</b> de las de cada nivel (que se ven debajo de su nombre) y sus marcas se suman. ⭐ = equipo de Sweet Dreams. Sin filtros, las clasificaciones son de <b>toda la liga Bullshooter</b>; con «Solo Sweet Dreams» los puestos se cuentan solo entre los jugadores del bar.";
 };
 
 async function leerJson(ruta) {
