@@ -68,28 +68,28 @@ const MESES_L = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 const aMs = (dia, h, m) => { const [y, mo, d] = dia.split("-").map(Number); return new Date(y, mo - 1, d, h, m || 0).getTime(); };
 const diaCorto = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS[new Date(y, m - 1, d).getDay()] + " " + d + " " + MESES[m - 1]; };
 const diaLargo = (dia) => { const [y, m, d] = dia.split("-").map(Number); return DIAS_L[new Date(y, m - 1, d).getDay()] + " " + d + " de " + MESES_L[m - 1]; };
-const Q = 15 * 60000, NORMAL_PAREJAS = 90 * 60000;
-function intervaloPara(cat, pMs) {
-  if (cat === "parejas") return [pMs - 30 * 60000, pMs + 90 * 60000];
-  const d = new Date(pMs);
-  let fin = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0).getTime();
-  if (fin <= pMs) fin = pMs + 150 * 60000;
-  return [pMs - 30 * 60000, fin];
+const Q = 15 * 60000;
+// Duración de cada partida (el bloqueo empieza 30 minutos antes de la hora del partido):
+//   Parejas: niveles 1 a 5 → 1 h 15 · nivel 6 o más → 1 h 30 · Equipos: niveles 1 a 5 → 2 h 15 · nivel 6 o más → 2 h 30
+function duracion(cat, nivel) {
+  const bajo = Number(nivel) >= 1 && Number(nivel) <= 5;
+  return (cat === "parejas" ? (bajo ? 75 : 90) : (bajo ? 135 : 150)) * 60000;
 }
+function intervaloPara(cat, pMs, nivel) { return [pMs - 30 * 60000, pMs + duracion(cat, nivel)]; }
 const idsSlots = (dId, iv) => { const r = []; for (let t = iv[0]; t < iv[1]; t += Q) r.push(dId + "_" + t); return r; };
 // Una partida online va "encadenada" cuando empieza justo cuando acaba una de parejas acortada en la misma diana.
 function relaciones(lista) {
   const rel = new Map();
   for (const o of lista) {
     if (o.estado !== "activo" || o.categoria === "parejas") continue;
-    const p = lista.find((x) => x !== o && x.estado === "activo" && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + NORMAL_PAREJAS);
+    const p = lista.find((x) => x !== o && x.estado === "activo" && x.categoria === "parejas" && x.dianaId === o.dianaId && x.finMs === o.inicioMs && o.inicioMs === o.partidoMs && x.finMs < x.partidoMs + duracion("parejas", x.nivel));
     if (p) { rel.set(o.id, p); rel.set(p.id, o); }
   }
   return rel;
 }
 // Qué dianas están libres para ese partido a esa hora (sin contar las huecos del propio partido).
-function dianasLibres(cat, pMs, dianas, slots, partidoId) {
-  const iv = intervaloPara(cat, pMs);
+function dianasLibres(cat, pMs, nivel, dianas, slots, partidoId) {
+  const iv = intervaloPara(cat, pMs, nivel);
   return dianas.filter((d) => cat === "parejas" || d.online).map((d) => {
     let libre = true;
     for (let t = iv[0]; t < iv[1]; t += Q) { const s = slots.get(d.id + "_" + t); if (s && s.partidoId !== partidoId) { libre = false; break; } }
@@ -107,7 +107,7 @@ function estaAplicada(s, b, p) {
 }
 // Todo lo que hay que escribir para mover una partida a otra diana, fecha y hora.
 function opsMover(s, b, p, dianaId) {
-  const pMs = aMs(s.diaNuevo, Number(s.horaNueva.slice(0, 2)), Number(s.horaNueva.slice(3))), iv = intervaloPara(p.categoria, pMs);
+  const pMs = aMs(s.diaNuevo, Number(s.horaNueva.slice(0, 2)), Number(s.horaNueva.slice(3))), iv = intervaloPara(p.categoria, pMs, p.nivel);
   const nuevos = idsSlots(dianaId, iv);
   const borrar = b && b.estado === "activo" ? idsSlots(b.dianaId, [b.inicioMs, b.finMs]).filter((id) => !nuevos.includes(id)) : [];
   const bloqueo = { origen: b ? b.origen : "calendario", categoria: p.categoria, nivel: p.nivel, local: p.local, visitante: p.visitante, dianaId: dianaId, partidoMs: pMs, inicioMs: iv[0], finMs: iv[1], estado: "activo", dia: s.diaNuevo, nota: notaManual(b) };
@@ -185,7 +185,7 @@ function tarjeta(s) {
       card.append(a);
     } else {
       const pMs = aMs(s.diaNuevo, Number(s.horaNueva.slice(0, 2)), Number(s.horaNueva.slice(3)));
-      const op = dianasLibres(c.p.categoria, pMs, dianas, c.slots, s.partidoId), libres = op.filter((x) => x.libre);
+      const op = dianasLibres(c.p.categoria, pMs, c.p.nivel, dianas, c.slots, s.partidoId), libres = op.filter((x) => x.libre);
       card.append(el("div", libres.length ? "A esa hora se bloquea de " + hhmm(op[0].iv[0]) + " a " + hhmm(op[0].iv[1]) + ". Dianas libres:" : "A esa hora no hay ninguna diana libre" + (c.p.categoria === "equipos" ? " con online" : "") + ". Puedes rechazarla, proponer otra hora, o encajarla a mano en «Liga: equipos y bloqueos» (allí se puede encadenar).", libres.length ? "ok" : "aviso"));
       libres.forEach((x) => {
         const a = el("button", "Aprobar y poner en " + x.diana.nombre + (x.diana.online ? " · online" : ""));
