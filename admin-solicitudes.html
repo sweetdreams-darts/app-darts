@@ -194,6 +194,11 @@ function tarjeta(s) {
       });
     }
   }
+  if (c.p && !estaAplicada(s, c.b, c.p)) {
+   const ed = el("button", s.tipo === "aplazar" ? "Aplazarla desde «Liga: equipos y bloqueos»" : "Abrir el editor de bloqueos ya rellenado", "sec");
+   ed.onclick = () => { location.href = "admin-liga.html?" + (s.tipo === "aplazar" ? "aplazar=" + encodeURIComponent(s.partidoId) : "editar=" + encodeURIComponent(s.partidoId) + "&dia=" + s.diaNuevo + "&hora=" + s.horaNueva) + "&sol=" + encodeURIComponent(s.id); };
+   card.append(ed);
+  }
   const r = el("button", "Rechazar…", "sec");
   r.onclick = () => { const m = prompt("Motivo para la capitana (se lo enseñará la app):", "No hay hueco ese día. Proponed otro."); if (m !== null) hacer(() => resolver(s, "rechazada", m || "Rechazada."), "✔ Rechazada."); };
   const cp = el("button", "Copiar mensaje para la liga y el otro equipo", "sec");
