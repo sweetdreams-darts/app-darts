@@ -50,6 +50,10 @@ label.op input{width:20px;height:20px;margin:0}
   <textarea id="texto" placeholder='[{"cat":"Cine y series","p":"¿…?","ok":"Respuesta buena","mal":["otra","otra","otra"]}]'></textarea>
   <label>¿Cuántas van a la partida libre? (el resto se guardan en secreto para los retos diarios)<select id="porcLibre"><option value="0.2">20 %</option><option value="0.3" selected>30 %</option><option value="0.5">50 %</option></select></label>
   <button id="cargar">Cargar preguntas</button>
+
+  <h2>Preguntas del trivial con amigos</h2>
+  <p class="peq">Copia a la competición las preguntas del trivial con amigos (las de <b>preguntas.js</b>). El trivial con amigos las sigue teniendo igual. Las que ya estén copiadas no se repiten. Dardos y Bar y copas entran en «Dardos y bar».</p>
+  <button id="cargarAmigos" class="sec">Copiar las preguntas del trivial con amigos</button>
 </div>
 <script>
 window.addEventListener("error", function (e) {
@@ -103,6 +107,13 @@ function preparar(lista, porcLibre, rnd) {
     buenas.push({ id: id, p: x.p.trim(), ops: ops, c: ops.indexOf(x.ok.trim()), cat: x.cat.trim(), estado: rnd() < porcLibre ? "libre" : "reserva" });
   });
   return { buenas, errores };
+}
+// Las preguntas del trivial con amigos ([pregunta, buena, mala, mala, mala]) al formato de la competición.
+const CAT_AMIGOS = { "Dardos": "Dardos y bar", "Bar y copas": "Dardos y bar" };
+function desdeAmigos(banco) {
+  const out = [];
+  for (const cat in banco) for (const q of banco[cat]) out.push({ cat: CAT_AMIGOS[cat] || cat, p: q[0], ok: q[1], mal: q.slice(2, 5) });
+  return out;
 }
 // </logica>
 
@@ -158,9 +169,21 @@ async function pintarGanadores() {
 $("cargar").onclick = async () => {
   let lista;
   try { lista = JSON.parse($("texto").value.trim()); } catch (e) { $("msg").textContent = "El bloque no está bien copiado: asegúrate de pegarlo entero, desde [ hasta ]."; return; }
+  if (await cargarLista(lista)) $("texto").value = "";
+};
+$("cargarAmigos").onclick = async () => {
+  try {
+    const { BANCO } = await import("./preguntas.js");
+    const lista = desdeAmigos(BANCO);
+    if (!confirm("¿Copiar las " + lista.length + " preguntas del trivial con amigos a la competición?")) return;
+    await cargarLista(lista);
+  } catch (e) { $("msg").textContent = "No se han podido leer las preguntas del trivial con amigos: " + (e.code || e.message); }
+};
+async function cargarLista(lista) {
   const { buenas, errores } = preparar(lista, Number($("porcLibre").value), Math.random);
-  if (!buenas.length) { $("msg").textContent = "No hay preguntas válidas. " + errores.slice(0, 3).join(" "); return; }
+  if (!buenas.length) { $("msg").textContent = "No hay preguntas válidas. " + errores.slice(0, 3).join(" "); return false; }
   $("cargar").disabled = true;
+  $("cargarAmigos").disabled = true;
   $("msg").textContent = "Cargando…";
   try {
     let nuevas = 0, repetidas = 0;
@@ -183,11 +206,12 @@ $("cargar").onclick = async () => {
       nuevas += frescas.length;
     }
     $("msg").textContent = "✔ Cargadas " + nuevas + " preguntas nuevas" + (repetidas ? " (" + repetidas + " ya estaban)" : "") + (errores.length ? ". No se cargaron " + errores.length + ": " + errores.slice(0, 3).join(" ") : ".");
-    $("texto").value = "";
     await cargarTodo();
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
   $("cargar").disabled = false;
-};
+  $("cargarAmigos").disabled = false;
+  return true;
+}
 async function cargarTodo() {
   const c = await getDoc(doc(db, "trivial_config", "ajustes"));
   cfg = c.exists() ? c.data() : {};
