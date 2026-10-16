@@ -14,16 +14,26 @@ button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
 .op.mala{background:rgba(255,92,122,.2)!important;border-color:#ff5c7a!important;color:#ff5c7a!important}
 .fila3{display:flex;gap:8px}
 .fila3 button{margin-top:10px}
-.marcador{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .pregunta{font-size:1.2rem;font-weight:700;margin:14px 0 4px}
 .barra{height:8px;border-radius:99px;background:rgba(255,255,255,.12);margin-top:10px;overflow:hidden}
 .barra div{height:100%;width:100%;background:linear-gradient(90deg,#ff2bd6,#19f2ff)}
 .chk{display:flex;align-items:center;gap:10px;margin-top:14px}
 .chk input{width:22px;height:22px;margin:0}
-.puesto{display:flex;justify-content:space-between;padding:10px 14px;margin-top:8px;font-size:1.1rem}
 .grande{font-family:"Bungee","Rubik",sans-serif;font-size:1.8rem;text-align:center;margin:14px 0}
 .centro{text-align:center}
+.peq{font-size:.82rem;opacity:.8}
 #msg{min-height:1.4em;color:var(--amarillo)}
+.tv-cab{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.tv-cat{display:inline-block;padding:4px 12px;border-radius:999px;font-weight:800;font-size:.85rem;color:#0a0612}
+.tv-ruleta{margin:18px auto 6px;width:100%;padding:22px 10px;border-radius:18px;text-align:center;font-family:"Bungee","Rubik",sans-serif;font-size:1.35rem;color:#0a0612;background:#3a3050;transition:background .1s}
+.tv-quesito{display:block;margin:0 auto}
+.tv-fila{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:8px;border-radius:12px;background:rgba(255,255,255,.06)}
+.tv-fila .n{flex:1;font-weight:700}
+.tv-fila .c{font-size:.8rem;opacity:.85}
+.tv-fila.turno{outline:2px solid #ffe14d}
+.tv-aviso{font-weight:800;font-size:1.05rem;margin:10px 0 0;min-height:1.4em}
+.tv-leyenda{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tv-cats button{color:#0a0612!important;border:0!important;font-weight:800!important}
 </style></head>
 <body><main>
 <p><a href="./">← Inicio</a></p>
@@ -32,25 +42,29 @@ button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
 
 <section id="menu" class="ver">
   <div class="tiles">
-    <a class="tile t-amarillo grande" href="trivial.html"><span class="emoji">🏆</span><strong>Trivial competitivo</strong><small>Reto diario, partidas libres y ranking con premios</small></a>
-    <a id="bSolo" class="tile t-violeta grande" href="#"><span class="emoji">🧠</span><strong>Trivial en solitario</strong><small>Elige una categoría y pon a prueba tu cabeza</small></a>
-    <a id="bVarios" class="tile t-rosa grande" href="#"><span class="emoji">👥</span><strong>Trivial por turnos</strong><small>Varias personas con un solo móvil</small></a>
+    <a id="bTrivial" class="tile t-violeta grande" href="#"><span class="emoji">🧠</span><strong>Trivial</strong><small>Con amigos en un móvil, o compitiendo con todo el bar</small></a>
     <a class="tile t-amarillo grande" href="ocalimocho.html"><span class="emoji">🥂</span><strong>Ocalimocho</strong><small>El juego de la oca de bar · +18 · con modo sin alcohol</small></a>
   </div>
 </section>
 
-<section id="cfg" class="zona">
-  <h2 id="cfgTitulo"></h2>
-  <div id="jugadoresCaja">
-    <p style="margin-bottom:0">Jugadores (de 2 a 8)</p>
-    <div id="nombres"></div>
-    <div class="fila3"><button id="masJ" type="button">Añadir jugador</button><button id="menosJ" type="button">Quitar</button></div>
+<section id="trivialMenu">
+  <div class="tiles">
+    <a id="bAmigos" class="tile t-rosa grande" href="#"><span class="emoji">👥</span><strong>Trivial con amigos</strong><small>Un solo móvil · consigue los quesitos de todos los colores</small></a>
+    <a class="tile t-amarillo grande" href="trivial.html"><span class="emoji">🏆</span><strong>Competición de trivial</strong><small>Reto diario, partidas libres y ranking con premios</small></a>
   </div>
-  <p style="margin-bottom:0">Categoría</p>
-  <select id="cat"></select>
-  <p id="nTxt" style="margin-bottom:0"></p>
-  <select id="nPreg"></select>
+  <button id="tmAtras" type="button">Atrás</button>
+</section>
+
+<section id="cfg" class="zona">
+  <h2>Trivial con amigos</h2>
+  <p class="peq">Cada categoría es un color. Acierta para ganar su quesito y seguir jugando; si fallas, pasa el turno. Cuando tengas todos los quesitos, los demás eligen la categoría de tu pregunta final. ¡Si la aciertas, ganas!</p>
+  <p style="margin-bottom:0">Jugadores (de 2 a 8)</p>
+  <div id="nombres"></div>
+  <div class="fila3"><button id="masJ" type="button">Añadir jugador</button><button id="menosJ" type="button">Quitar</button></div>
+  <p style="margin-bottom:0">Tipo de partida</p>
+  <select id="objetivo"></select>
   <label class="chk"><input id="tiempo" type="checkbox"> Con tiempo (20 segundos por pregunta)</label>
+  <div class="tv-leyenda" id="leyenda"></div>
   <button id="empezar" class="pri" type="button">¡Empezar!</button>
   <button id="cfgAtras" type="button">Atrás</button>
 </section>
@@ -58,20 +72,24 @@ button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
 <section id="pase" class="zona centro">
   <p>Pasa el móvil a</p>
   <div id="paseNombre" class="grande"></div>
+  <div id="paseQuesito"></div>
+  <p id="paseInfo" class="peq"></p>
   <button id="listo" class="pri" type="button">Estoy listo</button>
+  <div id="marcador" style="text-align:left;margin-top:14px"></div>
 </section>
 
 <section id="juego">
-  <div class="marcador"><strong id="quien"></strong><span id="punt"></span></div>
-  <div id="progreso" style="opacity:.8"></div>
+  <div class="tv-cab"><strong id="quien"></strong><span id="quesitoMini"></span></div>
+  <div id="fase"></div>
   <div class="barra" id="barraCaja"><div id="barra"></div></div>
   <p id="pregunta" class="pregunta"></p>
   <div id="opciones"></div>
-  <button id="siguiente" class="pri" type="button" style="display:none">Siguiente</button>
+  <p id="aviso" class="tv-aviso"></p>
+  <button id="seguir" class="pri" type="button" style="display:none">Seguir</button>
 </section>
 
 <section id="fin" class="zona">
-  <h2>Resultado</h2>
+  <div id="ganador" class="grande"></div>
   <div id="resultado"></div>
   <button id="otra" class="pri" type="button">Jugar otra vez</button>
   <button id="alMenu" type="button">Volver a los juegos</button>
@@ -80,174 +98,223 @@ button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
 <script type="module">
 import { BANCO } from "./preguntas.js";
 const $ = (id) => document.getElementById(id);
-const PANTALLAS = ["menu", "cfg", "pase", "juego", "fin"];
-const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
-let modo = "solo", jugadores = [], cola = [], idx = 0, temporizador = null, ultimaConfig = null;
+const PANTALLAS = ["menu", "trivialMenu", "cfg", "pase", "juego", "fin"];
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
 
 // <logica>
-function mezclar(a) {
-  const r = a.slice();
-  for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; }
-  return r;
+// Un color por categoría (como los quesitos del Trivial). Si un día hay categorías nuevas, cogen colores de reserva.
+const COLORES = { "Dardos": "#ff4d5e", "Cultura general": "#3d8bff", "Música": "#ff5fd2", "Cine y series": "#a46bff", "Deportes": "#ff9d2e", "Bar y copas": "#3ddc84", "Valladolid y España": "#ffd23d" };
+const RESERVA = ["#19f2ff", "#c0c0c0", "#8bc34a", "#ff7043", "#ba68c8"];
+const colorDe = (cat, cats) => COLORES[cat] || RESERVA[Math.max(0, cats.filter((c) => !COLORES[c]).indexOf(cat)) % RESERVA.length];
+function mezclar(a, rnd) { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor((rnd || Math.random)() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; }
+function nuevaPartida(nombres, cats, objetivo) {
+  return { jugadores: nombres.map((n) => ({ nombre: n, quesitos: [], aciertos: 0, fallos: 0 })), turno: 0, cats: cats.slice(), objetivo: Math.min(objetivo, cats.length), usadas: {}, ganador: null };
 }
-function armarCola(banco, cat, total) {
-  const base = cat === "todas" ? Object.values(banco).flat() : banco[cat];
-  let lista = [];
-  while (lista.length < total) lista = lista.concat(mezclar(base));
-  return lista.slice(0, total).map((q) => ({ p: q[0], correcta: q[1], opciones: mezclar(q.slice(1)) }));
+const actual = (e) => e.jugadores[e.turno];
+const enFinal = (e, j) => (j || actual(e)).quesitos.length >= e.objetivo;
+// Categorías que puede tocar en la ruleta: las que aún no tiene (en la pregunta final eligen los demás).
+const posibles = (e) => e.cats.filter((c) => !actual(e).quesitos.includes(c));
+// Pregunta de esa categoría que no haya salido en la partida (si se acaban, vuelven a salir).
+function sacarPregunta(e, banco, cat, rnd) {
+  const lista = banco[cat] || [];
+  const usadas = (e.usadas[cat] = e.usadas[cat] || []);
+  let libres = lista.map((_, i) => i).filter((i) => !usadas.includes(i));
+  if (!libres.length) { usadas.length = 0; libres = lista.map((_, i) => i); }
+  const i = libres[Math.floor((rnd || Math.random)() * libres.length)];
+  usadas.push(i);
+  const q = lista[i];
+  return { cat: cat, p: q[0], correcta: q[1], opciones: mezclar(q.slice(1), rnd) };
 }
-function clasificar(js) {
-  const orden = js.slice().sort((a, b) => b.puntos - a.puntos);
-  let puesto = 0, prev = null;
-  return orden.map((j, i) => { if (j.puntos !== prev) { puesto = i + 1; prev = j.puntos; } return { nombre: j.nombre, puntos: j.puntos, puesto: puesto }; });
+// Aplica la respuesta y dice qué ha pasado: "ganado", "quesito", "completo" (ya tiene todos: toca la final), "falloFinal" o "fallo".
+function responderEn(e, cat, acierto) {
+  const j = actual(e);
+  if (acierto) j.aciertos++; else j.fallos++;
+  if (enFinal(e)) {
+    if (acierto) { e.ganador = j; return "ganado"; }
+    e.turno = (e.turno + 1) % e.jugadores.length;
+    return "falloFinal";
+  }
+  if (acierto) {
+    if (!j.quesitos.includes(cat)) j.quesitos.push(cat);
+    return enFinal(e) ? "completo" : "quesito";
+  }
+  e.turno = (e.turno + 1) % e.jugadores.length;
+  return "fallo";
+}
+function clasificacion(e) {
+  return e.jugadores.slice().sort((a, b) => (b === e.ganador) - (a === e.ganador) || b.quesitos.length - a.quesitos.length || b.aciertos - a.aciertos || a.fallos - b.fallos);
+}
+// Dibujo del quesito: un círculo con un trozo por categoría; los conseguidos van en su color.
+function svgQuesito(cats, tiene, tam) {
+  const n = cats.length, r = tam / 2 - 3, c = tam / 2;
+  let s = '<svg class="tv-quesito" width="' + tam + '" height="' + tam + '" viewBox="0 0 ' + tam + " " + tam + '">';
+  cats.forEach((cat, i) => {
+    const a0 = (i / n) * 2 * Math.PI - Math.PI / 2, a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2;
+    const x0 = c + r * Math.cos(a0), y0 = c + r * Math.sin(a0), x1 = c + r * Math.cos(a1), y1 = c + r * Math.sin(a1);
+    const lleno = tiene.includes(cat);
+    s += '<path d="M' + c + "," + c + " L" + x0.toFixed(2) + "," + y0.toFixed(2) + " A" + r + "," + r + " 0 0,1 " + x1.toFixed(2) + "," + y1.toFixed(2) + ' Z" fill="' + (lleno ? colorDe(cat, cats) : "rgba(255,255,255,.07)") + '" stroke="' + colorDe(cat, cats) + '" stroke-opacity="' + (lleno ? 1 : 0.55) + '" stroke-width="1.5"/>';
+  });
+  return s + "</svg>";
 }
 // </logica>
 
+let estado = null, nombresUltimos = [], q = null, temporizador = null, ruletaTimer = null, esFinal = false;
+const CATS = Object.keys(BANCO);
 function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
 
-function llenarConfig() {
-  const cat = $("cat");
-  cat.innerHTML = "";
-  cat.add(new Option("Todas las categorías mezcladas", "todas"));
-  for (const c of Object.keys(BANCO)) cat.add(new Option(c, c));
-  const n = $("nPreg");
-  n.innerHTML = "";
-  const opciones = modo === "solo" ? [10, 20, 30, 40] : [5, 10, 15];
-  for (const v of opciones) n.add(new Option(modo === "solo" ? v + " preguntas" : v + " preguntas por jugador", v));
-  n.value = modo === "solo" ? 10 : 5;
-  $("nTxt").textContent = modo === "solo" ? "Número de preguntas" : "Preguntas por jugador";
-  $("jugadoresCaja").style.display = modo === "solo" ? "none" : "block";
-  $("cfgTitulo").textContent = modo === "solo" ? "Trivial en solitario" : "Trivial por turnos";
-}
 function pintarNombres(n) {
   const caja = $("nombres");
   const prev = [...caja.querySelectorAll("input")].map((i) => i.value);
   caja.innerHTML = "";
   for (let i = 0; i < n; i++) {
     const inp = document.createElement("input");
-    inp.type = "text";
-    inp.maxLength = 20;
-    inp.placeholder = "Jugador " + (i + 1);
-    inp.value = prev[i] || "";
+    inp.type = "text"; inp.maxLength = 20; inp.placeholder = "Jugador " + (i + 1); inp.value = prev[i] || nombresUltimos[i] || "";
     caja.append(inp);
   }
 }
 const numJugadores = () => $("nombres").querySelectorAll("input").length;
-
-function abrirCfg(m) {
-  modo = m;
-  llenarConfig();
-  if (m === "varios") pintarNombres(Math.max(2, numJugadores() || 2));
-  $("msg").textContent = "";
+function abrirCfg() {
+  const o = $("objetivo");
+  o.innerHTML = "";
+  o.add(new Option("Partida completa (" + CATS.length + " quesitos)", String(CATS.length)));
+  o.add(new Option("Partida rápida (4 quesitos)", "4"));
+  const ley = $("leyenda");
+  ley.innerHTML = "";
+  CATS.forEach((c) => { const s = el("span", c, "tv-cat"); s.style.background = colorDe(c, CATS); ley.append(s); });
+  pintarNombres(Math.max(2, numJugadores() || nombresUltimos.length || 2));
   pantalla("cfg");
 }
 
-function empezar() {
-  const cat = $("cat").value, n = Number($("nPreg").value), conTiempo = $("tiempo").checked;
-  if (modo === "solo") {
-    jugadores = [{ nombre: "Tú", puntos: 0 }];
-    cola = armarCola(BANCO, cat, n);
+function marcador(caja) {
+  caja.innerHTML = "";
+  estado.jugadores.forEach((j, i) => {
+    const f = el("div", "", "tv-fila" + (i === estado.turno ? " turno" : ""));
+    f.insertAdjacentHTML("beforeend", svgQuesito(estado.cats, j.quesitos, 34));
+    const t = el("div", "", "n");
+    t.append(document.createTextNode(j.nombre), el("div", j.quesitos.length + " de " + estado.objetivo + " quesitos" + (enFinal(estado, j) ? " · ¡a por la final!" : ""), "c"));
+    f.append(t);
+    caja.append(f);
+  });
+}
+function turnoNuevo() {
+  const j = actual(estado);
+  $("paseNombre").textContent = j.nombre;
+  $("paseQuesito").innerHTML = svgQuesito(estado.cats, j.quesitos, 110);
+  $("paseInfo").textContent = enFinal(estado) ? "¡Tienes todos los quesitos! Te toca la pregunta final." : j.quesitos.length + " de " + estado.objetivo + " quesitos";
+  marcador($("marcador"));
+  pantalla("pase");
+}
+function cabecera() {
+  const j = actual(estado);
+  $("quien").textContent = j.nombre;
+  $("quesitoMini").innerHTML = svgQuesito(estado.cats, j.quesitos, 40);
+}
+function empezarTurno() {
+  clearInterval(temporizador); clearInterval(ruletaTimer);
+  cabecera();
+  $("pregunta").textContent = "";
+  $("opciones").innerHTML = "";
+  $("aviso").textContent = "";
+  $("seguir").style.display = "none";
+  $("barraCaja").style.display = "none";
+  const f = $("fase");
+  f.innerHTML = "";
+  esFinal = enFinal(estado);
+  if (esFinal) {
+    f.append(el("p", "🏁 ¡Pregunta final! Los demás eligen la categoría:", "tv-aviso"));
+    const caja = el("div", "", "tv-cats");
+    estado.cats.forEach((c) => { const b = el("button", c); b.type = "button"; b.style.setProperty("background", colorDe(c, estado.cats), "important"); b.onclick = () => preguntar(c); caja.append(b); });
+    f.append(caja);
   } else {
-    const nombres = [...$("nombres").querySelectorAll("input")].map((i, k) => i.value.trim() || "Jugador " + (k + 1));
-    jugadores = nombres.map((nombre) => ({ nombre: nombre, puntos: 0 }));
-    cola = armarCola(BANCO, cat, n * jugadores.length);
+    const r = el("div", "Gira la ruleta", "tv-ruleta");
+    const b = el("button", "🎡 Girar la ruleta", "pri");
+    b.type = "button";
+    b.onclick = () => {
+      b.disabled = true;
+      const opciones = posibles(estado), elegida = opciones[Math.floor(Math.random() * opciones.length)];
+      let vueltas = 0;
+      ruletaTimer = setInterval(() => {
+        const c = vueltas < 14 ? opciones[vueltas % opciones.length] : elegida;
+        r.textContent = c; r.style.background = colorDe(c, estado.cats);
+        if (++vueltas > 14) { clearInterval(ruletaTimer); setTimeout(() => preguntar(elegida), 600); }
+      }, 90);
+    };
+    f.append(r, b);
   }
-  ultimaConfig = { modo: modo, cat: cat, n: n, tiempo: conTiempo };
-  idx = 0;
-  $("msg").textContent = "";
-  siguientePregunta();
+  pantalla("juego");
 }
-
-function jugadorActual() { return jugadores[idx % jugadores.length]; }
-
-function siguientePregunta() {
-  clearInterval(temporizador);
-  if (idx >= cola.length) return terminar();
-  if (modo === "varios" && jugadores.length > 1) {
-    $("paseNombre").textContent = jugadorActual().nombre;
-    pantalla("pase");
-  } else mostrarPregunta();
-}
-
-function mostrarPregunta() {
-  const q = cola[idx];
-  $("quien").textContent = modo === "solo" ? "Pregunta" : jugadorActual().nombre;
-  $("punt").textContent = modo === "solo" ? jugadores[0].puntos + " puntos" : jugadorActual().puntos + " puntos";
-  $("progreso").textContent = modo === "solo" ? (idx + 1) + " de " + cola.length : "Pregunta " + (idx + 1) + " de " + cola.length;
+function preguntar(cat) {
+  q = sacarPregunta(estado, BANCO, cat);
+  const f = $("fase");
+  f.innerHTML = "";
+  const etiqueta = el("span", (esFinal ? "🏁 Final · " : "") + cat, "tv-cat");
+  etiqueta.style.background = colorDe(cat, estado.cats);
+  f.append(etiqueta);
   $("pregunta").textContent = q.p;
-  $("siguiente").style.display = "none";
   const caja = $("opciones");
   caja.innerHTML = "";
-  q.opciones.forEach((o) => {
-    const b = el("button", o, "op");
-    b.type = "button";
-    b.onclick = () => responder(o, b);
-    caja.append(b);
-  });
-  const tiempo = ultimaConfig.tiempo;
+  q.opciones.forEach((o) => { const b = el("button", o, "op"); b.type = "button"; b.onclick = () => responder(o, b); caja.append(b); });
+  const tiempo = $("tiempo").checked;
   $("barraCaja").style.display = tiempo ? "block" : "none";
   if (tiempo) {
     let resto = 200;
     $("barra").style.width = "100%";
-    temporizador = setInterval(() => {
-      resto--;
-      $("barra").style.width = (resto / 2) + "%";
-      if (resto <= 0) { clearInterval(temporizador); responder(null, null); }
-    }, 100);
+    temporizador = setInterval(() => { resto--; $("barra").style.width = (resto / 2) + "%"; if (resto <= 0) { clearInterval(temporizador); responder(null, null); } }, 100);
   }
-  pantalla("juego");
 }
-
 function responder(texto, boton) {
   clearInterval(temporizador);
-  const q = cola[idx];
-  const bien = texto === q.correcta;
-  if (bien) jugadorActual().puntos++;
-  [...$("opciones").children].forEach((b) => {
-    b.disabled = true;
-    if (b.textContent === q.correcta) b.classList.add("bien");
-    else if (b === boton) b.classList.add("mala");
-  });
-  $("punt").textContent = jugadorActual().puntos + " puntos";
+  const bien = texto === q.correcta, quien = actual(estado);
+  [...$("opciones").children].forEach((b) => { b.disabled = true; if (b.textContent === q.correcta) b.classList.add("bien"); else if (b === boton) b.classList.add("mala"); });
   if (navigator.vibrate) navigator.vibrate(bien ? 40 : [60, 40, 60]);
-  $("siguiente").textContent = idx + 1 >= cola.length ? "Ver resultado" : "Siguiente";
-  $("siguiente").style.display = "block";
+  const r = responderEn(estado, q.cat, bien);
+  const siguiente = actual(estado);
+  const textos = {
+    ganado: "🏆 ¡" + quien.nombre + " gana la partida!",
+    completo: "🎉 ¡Quesito de " + q.cat + "! Ya tienes todos: sigue jugando y te toca la pregunta final.",
+    quesito: "🎉 ¡Quesito de " + q.cat + "! Vuelves a tirar.",
+    falloFinal: (texto === null ? "⏱ Se acabó el tiempo. " : "✘ Fallaste la final. ") + "Turno de " + siguiente.nombre + ".",
+    fallo: (texto === null ? "⏱ Se acabó el tiempo. " : "✘ No era esa. ") + "Turno de " + siguiente.nombre + "."
+  };
+  $("aviso").textContent = textos[r];
+  cabecera();
+  $("quien").textContent = quien.nombre;
+  $("quesitoMini").innerHTML = svgQuesito(estado.cats, quien.quesitos, 40);
+  const b = $("seguir");
+  b.textContent = r === "ganado" ? "Ver resultado" : r === "quesito" || r === "completo" ? "Seguir jugando" : "Pasar el móvil";
+  b.style.display = "block";
+  b.onclick = () => (r === "ganado" ? terminar() : r === "quesito" || r === "completo" ? empezarTurno() : turnoNuevo());
 }
-
 function terminar() {
+  $("ganador").textContent = "🏆 " + estado.ganador.nombre;
   const caja = $("resultado");
   caja.innerHTML = "";
-  if (modo === "solo") {
-    const p = jugadores[0].puntos, t = cola.length, r = p / t;
-    caja.append(el("div", p + " de " + t, "grande"));
-    caja.append(el("p", r === 1 ? "¡Perfecto! Eres una máquina." : r >= 0.7 ? "¡Muy bien! Sabes un montón." : r >= 0.4 ? "No está mal. Otra ronda para mejorar." : "Hoy no es tu día. ¡La revancha es gratis!", "centro"));
-  } else {
-    const medallas = ["🥇", "🥈", "🥉"];
-    for (const j of clasificar(jugadores)) {
-      const f = el("div", "", "puesto zona");
-      f.append(el("span", (medallas[j.puesto - 1] || j.puesto + "º") + " " + j.nombre), el("strong", j.puntos + " pts"));
-      caja.append(f);
-    }
-  }
+  clasificacion(estado).forEach((j, i) => {
+    const f = el("div", "", "tv-fila");
+    f.insertAdjacentHTML("beforeend", svgQuesito(estado.cats, j.quesitos, 34));
+    const t = el("div", "", "n");
+    t.append(document.createTextNode((["🥇", "🥈", "🥉"][i] || i + 1 + "º") + " " + j.nombre), el("div", j.quesitos.length + " quesitos · " + j.aciertos + " aciertos · " + j.fallos + " fallos", "c"));
+    f.append(t);
+    caja.append(f);
+  });
   pantalla("fin");
 }
+function empezar() {
+  const nombres = [...$("nombres").querySelectorAll("input")].map((i, k) => i.value.trim() || "Jugador " + (k + 1));
+  nombresUltimos = nombres;
+  estado = nuevaPartida(mezclar(nombres), CATS, Number($("objetivo").value));
+  turnoNuevo();
+}
 
-$("bSolo").onclick = (e) => { e.preventDefault(); abrirCfg("solo"); };
-$("bVarios").onclick = (e) => { e.preventDefault(); abrirCfg("varios"); };
+$("bTrivial").onclick = (e) => { e.preventDefault(); pantalla("trivialMenu"); };
+$("bAmigos").onclick = (e) => { e.preventDefault(); abrirCfg(); };
+$("tmAtras").onclick = () => pantalla("menu");
 $("masJ").onclick = () => { if (numJugadores() < 8) pintarNombres(numJugadores() + 1); };
 $("menosJ").onclick = () => { if (numJugadores() > 2) pintarNombres(numJugadores() - 1); };
-$("cfgAtras").onclick = () => pantalla("menu");
+$("cfgAtras").onclick = () => pantalla("trivialMenu");
 $("empezar").onclick = empezar;
-$("listo").onclick = mostrarPregunta;
-$("siguiente").onclick = () => { idx++; siguientePregunta(); };
-$("otra").onclick = () => {
-  modo = ultimaConfig.modo;
-  const nombres = jugadores.map((j) => j.nombre);
-  if (modo === "solo") { jugadores = [{ nombre: "Tú", puntos: 0 }]; cola = armarCola(BANCO, ultimaConfig.cat, ultimaConfig.n); }
-  else { jugadores = nombres.map((nombre) => ({ nombre: nombre, puntos: 0 })); cola = armarCola(BANCO, ultimaConfig.cat, ultimaConfig.n * jugadores.length); }
-  idx = 0;
-  siguientePregunta();
-};
+$("listo").onclick = empezarTurno;
+$("otra").onclick = () => { estado = nuevaPartida(mezclar(estado.jugadores.map((j) => j.nombre)), CATS, estado.objetivo); turnoNuevo(); };
 $("alMenu").onclick = () => pantalla("menu");
 </script>
 </main></body></html>
