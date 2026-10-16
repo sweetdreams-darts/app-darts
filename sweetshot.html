@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sweet Shot</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 16px 40px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+section{display:none}
+section.ver{display:block}
+input[type=text],select{width:100%;box-sizing:border-box;padding:12px;font-size:1rem;margin-top:8px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
+.peq{font-size:.82rem;opacity:.8}
+.fila{display:flex;gap:8px}
+.fila button{margin-top:8px}
+.chk{display:flex;align-items:center;gap:10px;margin-top:14px;font-weight:700}
+.chk input{width:22px;height:22px;margin:0}
+.ss-niveles{display:flex;gap:8px;margin-top:8px}
+.ss-niveles button{flex:1;margin:0;padding:12px 4px;font-size:.9rem}
+.ss-niveles button.sel{background:#ffe14d!important;color:#0a0612!important;border-color:#ffe14d!important}
+#ss-carta{min-height:58vh;border-radius:26px;padding:26px 22px;display:flex;flex-direction:column;justify-content:center;gap:14px;cursor:pointer;user-select:none;box-shadow:0 10px 40px rgba(0,0,0,.45);transition:background .25s}
+#ss-tipo{font-family:"Bungee","Rubik",sans-serif;font-size:.95rem;letter-spacing:.6px;opacity:.9}
+#ss-texto{font-size:1.45rem;font-weight:800;line-height:1.35}
+#ss-toca{font-size:.78rem;opacity:.75;margin-top:auto}
+.ss-cab{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:.85rem;opacity:.85}
+.ss-cab button{width:auto;margin:0;padding:6px 12px;font-size:.8rem}
+.ss-aviso{padding:14px;border-radius:14px;border:1.5px solid #ffe14d;background:rgba(255,225,77,.08);margin-top:10px}
+.ss-jug{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.ss-jug span{padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.1);font-size:.85rem}
+.ss-jug span b{margin-left:6px;cursor:pointer;opacity:.7}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="juegos.html">← Juegos</a></p>
+<header class="marca"><h1>Sweet Shot</h1></header>
+
+<section id="edad">
+  <div class="ss-aviso">
+    <p style="margin-top:0"><b>🔞 Juego para mayores de 18 años.</b></p>
+    <p>Bebe con cabeza: nadie está obligado a beber y siempre puedes jugar en <b>modo sin alcohol</b>. Si vas a conducir, ni una gota.</p>
+  </div>
+  <button id="soyMayor" class="pri" type="button">Tengo 18 años o más</button>
+  <button id="noMayor" type="button">Volver a los juegos</button>
+</section>
+
+<section id="cfg">
+  <p class="peq">Una carta tras otra con vuestros nombres: retos, votaciones, duelos, preguntas y reglas que duran varias rondas. Pasad el móvil o leed en voz alta.</p>
+  <p style="margin-bottom:0"><b>Jugadores</b> (mínimo 2)</p>
+  <div class="fila"><input id="nuevo" type="text" maxlength="16" placeholder="Nombre" autocomplete="off"><button id="anadir" type="button" style="width:auto;padding:12px 16px">Añadir</button></div>
+  <div id="jugadores" class="ss-jug"></div>
+  <p style="margin-bottom:0"><b>Nivel</b></p>
+  <div class="ss-niveles" id="niveles"><button data-n="1" type="button">😇 Suave</button><button data-n="2" type="button" class="sel">🎉 Fiesta</button><button data-n="3" type="button">🌶️ Atrevido</button></div>
+  <p style="margin-bottom:0"><b>Duración</b></p>
+  <select id="largo"><option value="30">Corta (30 cartas)</option><option value="50" selected>Normal (50 cartas)</option><option value="80">Larga (80 cartas)</option></select>
+  <label class="chk"><input id="sinAlcohol" type="checkbox"> Modo sin alcohol</label>
+  <select id="castigo" class="oculto"><option value="sentadilla">En vez de tragos: sentadillas</option><option value="flexion">En vez de tragos: flexiones</option><option value="punto">En vez de tragos: puntos de castigo</option><option value="agua">En vez de tragos: tragos de agua o refresco</option></select>
+  <p id="cfgInfo" class="peq" style="color:#ff9aaa"></p>
+  <button id="empezar" class="pri" type="button">¡A jugar!</button>
+</section>
+
+<section id="juego">
+  <div class="ss-cab"><button id="atras" type="button">← Anterior</button><span id="progreso"></span><button id="terminar" type="button">Terminar</button></div>
+  <div id="ss-carta"><div id="ss-tipo"></div><div id="ss-texto"></div><div id="ss-toca">Toca la carta para seguir</div></div>
+</section>
+
+<section id="fin" class="centro">
+  <p style="font-size:3rem;margin:20px 0 0;text-align:center">🥂</p>
+  <h2 style="text-align:center">¡Fin de la partida!</h2>
+  <p class="peq" style="text-align:center">Gracias por jugar en Sweet Dreams. Bebed agua y volved a casa con cabeza.</p>
+  <button id="otra" class="pri" type="button">Otra partida</button>
+  <button id="cambiar" type="button">Cambiar jugadores o nivel</button>
+</section>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const PANTALLAS = ["edad", "cfg", "juego", "fin"];
+function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
+
+// <logica>
+// Cartas. Tipos: todos, reto, voto, duelo, juego, verdad, regla (con su fin). n = nivel (1 suave, 2 fiesta, 3 atrevido).
+// En el texto: {J} y {J2} son jugadores distintos; [b2] = «bebe 2 tragos» (él/ella), [t2] = lo mismo hablándote a ti
+// (en modo sin alcohol: «hace» / «haz»), [bb2] = «beben 2 tragos», [r2] = «reparte 2 tragos».
+const CARTAS = [
+  { t: "todos", n: 1, x: "Todos los que lleven algo negro, [bb1]." },
+  { t: "todos", n: 1, x: "Los que tengan hermanos, [bb1]. Los hijos únicos, [bb2]." },
+  { t: "todos", n: 1, x: "Quien tenga el móvil con menos batería, [b2]." },
+  { t: "todos", n: 1, x: "Todos los que hayan suspendido alguna vez el carné de conducir, [bb2]." },
+  { t: "todos", n: 1, x: "Los que hayan jugado a los dardos esta semana, [r1] cada uno." },
+  { t: "todos", n: 1, x: "Los que estén solteros, [bb1]. Los que tengan pareja, brindad y [bb1] también." },
+  { t: "todos", n: 1, x: "Los que sean del Real Valladolid, [bb1] por la alegría. Los que no, [bb1] por la pena." },
+  { t: "todos", n: 1, x: "El más alto del grupo [r2]." },
+  { t: "todos", n: 1, x: "El más joven del grupo [b1]." },
+  { t: "todos", n: 1, x: "Brindis general por {J}: todos [bb1]." },
+  { t: "todos", n: 1, x: "El último en tocarse la nariz [b2]. ¡Ya!" },
+  { t: "todos", n: 1, x: "Los que hayan llegado tarde hoy, [bb1]." },
+  { t: "todos", n: 2, x: "Los que hayan escrito a su ex este año, [bb2]." },
+  { t: "todos", n: 2, x: "Quien tenga el último mensaje de WhatsApp más vergonzoso lo lee en alto o [b3]." },
+  { t: "todos", n: 2, x: "Todos los que hayan mentido hoy, [bb1]. Sabemos quiénes sois." },
+  { t: "todos", n: 2, x: "Los que se hayan quedado dormidos en una fiesta, [bb2]." },
+  { t: "todos", n: 2, x: "Quien haya llorado viendo una película este año, [b1]." },
+  { t: "todos", n: 2, x: "Los que hayan perdido el móvil de fiesta alguna vez, [bb2]." },
+  { t: "todos", n: 3, x: "Los que hayan ligado por una app este mes, [bb2]." },
+  { t: "todos", n: 3, x: "Los que hayan besado a alguien de este grupo, [bb2]. Mirad bien quién bebe." },
+  { t: "todos", n: 3, x: "Los que hayan tenido una cita a ciegas, [bb2] y contad cómo fue." },
+  { t: "reto", n: 1, x: "{J}, imita a alguien del grupo sin decir quién es. Si lo adivinan en tres intentos, [r2]. Si no, [t2]." },
+  { t: "reto", n: 1, x: "{J}, di tres cosas buenas de {J2} o [t2]." },
+  { t: "reto", n: 1, x: "{J}, cuenta un chiste. Si nadie se ríe, [t2]." },
+  { t: "reto", n: 1, x: "{J}, baila 10 segundos sin música o [t2]." },
+  { t: "reto", n: 1, x: "{J}, di cinco bebidas en 10 segundos o [t2]." },
+  { t: "reto", n: 1, x: "{J}, [r3] entre quien quieras." },
+  { t: "reto", n: 1, x: "{J}, inventa un brindis ahora mismo. Si no convence al grupo, [t2]." },
+  { t: "reto", n: 1, x: "{J}, di sin equivocarte: «Tres tristes tigres tragaban trigo en un trigal». Si fallas, [t2]." },
+  { t: "reto", n: 1, x: "{J}, cámbiate de sitio con {J2}." },
+  { t: "reto", n: 1, x: "{J}, di cinco jugadores de fútbol o de dardos en 10 segundos o [t2]." },
+  { t: "reto", n: 1, x: "{J}, habla como un locutor de radio hasta tu próxima carta. Si se te olvida, [t1]." },
+  { t: "reto", n: 2, x: "{J}, enseña la última foto de tu galería o [t3]." },
+  { t: "reto", n: 2, x: "{J}, deja que {J2} escriba tu estado de WhatsApp durante una hora o [t3]." },
+  { t: "reto", n: 2, x: "{J}, llama a alguien de tu agenda y cántale «Cumpleaños feliz» o [t3]." },
+  { t: "reto", n: 2, x: "{J}, cuenta tu peor resaca o [t2]." },
+  { t: "reto", n: 2, x: "{J}, imita a tu profesor más pesado del colegio o [t2]." },
+  { t: "reto", n: 2, x: "{J}, haz una declaración de amor dramática a la diana más cercana o [t2]." },
+  { t: "reto", n: 3, x: "{J}, cuenta tu cita más desastrosa o [t3]." },
+  { t: "reto", n: 3, x: "{J}, dile a {J2} tu mejor frase para ligar. Si {J2} se ríe, {J} [b2]." },
+  { t: "reto", n: 3, x: "{J}, da un masaje de hombros de 20 segundos a {J2} o [t3]." },
+  { t: "reto", n: 3, x: "{J}, guiña un ojo a {J2} durante toda la próxima carta. Si se te olvida, [t2]." },
+  { t: "voto", n: 1, x: "A la de tres, señalad a quien llega tarde a todo. El más señalado [b2]." },
+  { t: "voto", n: 1, x: "Votación: ¿quién sería el peor compañero de piso? El más votado [b2]." },
+  { t: "voto", n: 1, x: "Votación: ¿quién acabará esta noche cantando? El más votado [r2]." },
+  { t: "voto", n: 1, x: "Votación: ¿quién es el más presumido del grupo? El más votado [b2]." },
+  { t: "voto", n: 1, x: "Votación: ¿quién sería el mejor presidente del Gobierno? El más votado [r3]." },
+  { t: "voto", n: 1, x: "Votación: ¿quién saldría antes en un concurso de la tele? El más votado [b1]." },
+  { t: "voto", n: 2, x: "Votación: ¿quién se haría el despistado para no pagar la ronda? El más votado [b2]." },
+  { t: "voto", n: 2, x: "Votación: ¿quién tiene el móvil más desordenado? El más votado [b2]." },
+  { t: "voto", n: 2, x: "Señalad a quien caería primero en esta partida. El más señalado [b2]." },
+  { t: "voto", n: 3, x: "Votación: ¿quién liga más? El más votado [b3]." },
+  { t: "voto", n: 3, x: "Votación: ¿quién ha tenido la peor cita? El más votado la cuenta o [b3]." },
+  { t: "voto", n: 3, x: "Votación: ¿quién es el más romántico del grupo? El más votado [b2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: piedra, papel o tijera. Quien pierda, [b2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: duelo de miradas. El primero que se ría [b2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: decid marcas de cerveza por turnos. Quien se quede en blanco, [b2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: pulso de pulgares. Quien pierda, [b2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: quien tenga más batería en el móvil [r2]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: quien haya nacido antes [b1]." },
+  { t: "duelo", n: 1, x: "{J} contra {J2}: decid capitales de Europa por turnos. Quien falle o repita, [b2]." },
+  { t: "duelo", n: 2, x: "{J} contra {J2}: decid excusas para no ir a trabajar. El primero que se atasque [b2]." },
+  { t: "duelo", n: 2, x: "{J} contra {J2}: quien haya tenido más parejas [b2]. Hay que decir la verdad." },
+  { t: "juego", n: 1, x: "Categorías: empezando por {J}, decid marcas de coches. Quien se quede en blanco o repita, [b2]." },
+  { t: "juego", n: 1, x: "Categorías: empezando por {J}, decid canciones del verano. Quien falle, [b2]." },
+  { t: "juego", n: 1, x: "Yo nunca: {J} dice algo que nunca ha hecho. Los que sí lo hayan hecho, [bb1]." },
+  { t: "juego", n: 1, x: "Rimas: {J} dice una palabra y, por turnos, decid palabras que rimen. Quien falle, [b2]." },
+  { t: "juego", n: 1, x: "Empezando por {J}, contad del 1 al 30, pero en los múltiplos de 3 hay que decir «¡diana!». Quien se equivoque, [b2]." },
+  { t: "juego", n: 1, x: "El último en levantar la mano [b2]. ¡Ya!" },
+  { t: "juego", n: 1, x: "Categorías: empezando por {J}, decid jugadores de la selección española. Quien se quede en blanco, [b2]." },
+  { t: "juego", n: 2, x: "Historia en cadena: {J} dice una palabra y cada uno añade otra. Quien se trabe o rompa la frase, [b2]." },
+  { t: "juego", n: 2, x: "Categorías: empezando por {J}, decid cosas que se pueden pedir en una barra. Quien falle, [b2]." },
+  { t: "juego", n: 2, x: "Yo nunca, ronda picante: {J} empieza. Los que sí lo hayan hecho, [bb2]." },
+  { t: "verdad", n: 1, x: "{J}, contesta o [t2]: ¿cuál es tu canción vergonzosa favorita?" },
+  { t: "verdad", n: 1, x: "{J}, contesta o [t2]: ¿qué es lo más infantil que todavía haces?" },
+  { t: "verdad", n: 1, x: "{J}, contesta o [t2]: ¿cuál es tu mayor manía?" },
+  { t: "verdad", n: 2, x: "{J}, contesta o [t2]: ¿a quién del grupo llamarías a las 4 de la mañana?" },
+  { t: "verdad", n: 2, x: "{J}, contesta o [t2]: ¿cuál es la excusa más gorda que has puesto para no quedar con alguien?" },
+  { t: "verdad", n: 2, x: "{J}, contesta o [t2]: ¿qué mensaje te arrepientes de haber enviado?" },
+  { t: "verdad", n: 2, x: "{J}, contesta o [t2]: ¿qué es lo peor que has hecho en una fiesta?" },
+  { t: "verdad", n: 3, x: "{J}, contesta o [t3]: ¿quién del grupo te parece más atractivo?" },
+  { t: "verdad", n: 3, x: "{J}, contesta o [t3]: ¿cuál ha sido tu cita más rara?" },
+  { t: "verdad", n: 3, x: "{J}, contesta o [t3]: ¿te ha gustado alguna vez alguien de este bar?" },
+  { t: "regla", n: 1, x: "Nueva regla: nadie puede decir «beber» ni «trago». Quien lo diga, [b1].", fin: "Fin de la regla: ya se puede decir «beber» y «trago»." },
+  { t: "regla", n: 1, x: "{J} es el rey del pulgar: cuando ponga el pulgar en la mesa, todos deben hacerlo. El último, [b1].", fin: "{J} ya no es el rey del pulgar." },
+  { t: "regla", n: 1, x: "Nueva regla: hay que hablar con una mano en la barbilla. Quien se olvide, [b1].", fin: "Fin de la regla: ya podéis quitar la mano de la barbilla." },
+  { t: "regla", n: 1, x: "{J} no puede decir «sí» ni «no». Cada vez que se le escape, [b1].", fin: "{J} ya puede decir «sí» y «no»." },
+  { t: "regla", n: 1, x: "Nueva regla: nadie puede llamar a nadie por su nombre. Quien lo haga, [b1].", fin: "Fin de la regla: ya podéis llamaros por vuestro nombre." },
+  { t: "regla", n: 1, x: "Nueva regla: hay que hablar de uno mismo en tercera persona. Quien se equivoque, [b1].", fin: "Fin de la regla: ya podéis hablar normal." },
+  { t: "regla", n: 1, x: "Nueva regla: antes de cada castigo hay que gritar «¡Sweet Dreams!». Quien se olvide, otra vez.", fin: "Fin de la regla: ya no hace falta gritar «¡Sweet Dreams!»." },
+  { t: "regla", n: 2, x: "{J} es el espejo de {J2}: cada vez que a {J2} le toque castigo, a {J} también.", fin: "{J} ya no es el espejo de {J2}." },
+  { t: "regla", n: 2, x: "{J} es el maestro de las preguntas: quien conteste a una pregunta de {J}, [b1].", fin: "{J} deja de ser el maestro de las preguntas." },
+  { t: "regla", n: 2, x: "Nueva regla: nadie puede mirar el móvil. El primero que lo mire, [b2].", fin: "Fin de la regla: ya podéis mirar el móvil." }
+];
+const TITULOS = { todos: "🍻 Para todos", reto: "🎯 Reto", voto: "🗳️ Votación", duelo: "⚔️ Duelo", juego: "🎲 Juego", verdad: "❓ Pregunta", regla: "📜 Nueva regla", fin: "✅ Fin de la regla", agua: "💧 Pausa" };
+const COLORES = { todos: "linear-gradient(150deg,#ff6a3d,#ff2bd6)", reto: "linear-gradient(150deg,#ff2bd6,#8b5cff)", voto: "linear-gradient(150deg,#3d8bff,#19f2ff)", duelo: "linear-gradient(150deg,#8b5cff,#3d1d8f)", juego: "linear-gradient(150deg,#ffb02e,#ff6a3d)", verdad: "linear-gradient(150deg,#19c3ff,#3d5cff)", regla: "linear-gradient(150deg,#2bd88a,#0f9f6a)", fin: "linear-gradient(150deg,#5b6476,#2f3442)", agua: "linear-gradient(150deg,#4fc3f7,#1e88e5)" };
+// Qué se hace en vez de beber en el modo sin alcohol.
+const CASTIGOS = {
+  sentadilla: { u: "una sentadilla", s: "sentadilla", p: "sentadillas", v: "hace", vt: "haz", vp: "hacen" },
+  flexion: { u: "una flexión", s: "flexión", p: "flexiones", v: "hace", vt: "haz", vp: "hacen" },
+  punto: { u: "un punto de castigo", s: "punto de castigo", p: "puntos de castigo", v: "suma", vt: "suma", vp: "suman" },
+  agua: { u: "un trago de agua o refresco", s: "trago de agua o refresco", p: "tragos de agua o refresco", v: "bebe", vt: "bebe", vp: "beben" }
+};
+const TRAGO = { u: "un trago", s: "trago", p: "tragos", v: "bebe", vt: "bebe", vp: "beben" };
+function cantidad(c, n) { return n === 1 ? c.u : n + " " + c.p; }
+// Pone los nombres y cambia [b2], [bb2], [r2] por el castigo que toque.
+function rellenar(texto, j, j2, castigo) {
+  const c = castigo ? CASTIGOS[castigo] : TRAGO;
+  return texto
+    .replace(/\{J2\}/g, j2 || "").replace(/\{J\}/g, j || "")
+    .replace(/\[bb(\d)\]/g, (_, n) => c.vp + " " + cantidad(c, Number(n)))
+    .replace(/\[b(\d)\]/g, (_, n) => c.v + " " + cantidad(c, Number(n)))
+    .replace(/\[t(\d)\]/g, (_, n) => c.vt + " " + cantidad(c, Number(n)))
+    .replace(/\[r(\d)\]/g, (_, n) => "reparte " + cantidad(c, Number(n)));
+}
+function mezclar(a, rnd) { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor((rnd || Math.random)() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; }
+// Elige al jugador que menos veces ha salido (para que todos jueguen parecido).
+function elegir(jugadores, veces, salvo, rnd) {
+  const pos = jugadores.filter((x) => x !== salvo);
+  const min = Math.min(...pos.map((x) => veces[x] || 0));
+  const c = pos.filter((x) => (veces[x] || 0) === min);
+  return c[Math.floor((rnd || Math.random)() * c.length)];
+}
+// Prepara la partida entera: cartas del nivel, nombres puestos, fin de cada regla unas cartas después y pausas de agua.
+function prepararPartida(jugadores, nivel, total, castigo, rnd) {
+  rnd = rnd || Math.random;
+  const mazo = CARTAS.filter((c) => c.n <= nivel), veces = {}, out = [], pendientes = [];
+  let monton = [], proximaAgua = 20;
+  while (out.length < total) {
+    if (!monton.length) monton = mezclar(mazo, rnd);
+    const fin = pendientes.findIndex((p) => p.en <= out.length);
+    if (fin >= 0) { const p = pendientes.splice(fin, 1)[0]; out.push({ t: "fin", x: p.x }); continue; }
+    if (out.length >= proximaAgua) { proximaAgua += 20; out.push({ t: "agua", x: "Pausa de hidratación: todos un vaso de agua. Seguimos en cuanto volváis." }); continue; }
+    const c = monton.pop();
+    if (c.t === "regla" && out.length > total - 6) continue;
+    const j = c.x.includes("{J}") ? elegir(jugadores, veces, null, rnd) : null;
+    if (j) veces[j] = (veces[j] || 0) + 1;
+    const j2 = c.x.includes("{J2}") ? elegir(jugadores, veces, j, rnd) : null;
+    if (j2) veces[j2] = (veces[j2] || 0) + 1;
+    out.push({ t: c.t, x: rellenar(c.x, j, j2, castigo) });
+    if (c.t === "regla") pendientes.push({ en: out.length + 4 + Math.floor(rnd() * 5), x: rellenar(c.fin, j, j2, castigo) });
+  }
+  for (const p of pendientes) out.push({ t: "fin", x: p.x });
+  return out;
+}
+// </logica>
+
+let jugadores = [], nivel = 2, cartas = [], idx = 0;
+const ok18 = () => { try { return localStorage.getItem("sd_sweetshot_18") === "si"; } catch (e) { return false; } };
+function pintarJugadores() {
+  const c = $("jugadores");
+  c.innerHTML = "";
+  jugadores.forEach((n, i) => { const s = document.createElement("span"); s.textContent = n; const x = document.createElement("b"); x.textContent = "✕"; x.onclick = () => { jugadores.splice(i, 1); guardar(); pintarJugadores(); }; s.append(x); c.append(s); });
+}
+function guardar() { try { localStorage.setItem("sd_sweetshot_jug", JSON.stringify(jugadores)); } catch (e) {} }
+function anadir() {
+  const n = $("nuevo").value.trim();
+  if (!n) return;
+  if (jugadores.some((x) => x.toLowerCase() === n.toLowerCase())) { $("cfgInfo").textContent = "Ese nombre ya está."; return; }
+  jugadores.push(n); guardar(); $("nuevo").value = ""; $("cfgInfo").textContent = ""; pintarJugadores(); $("nuevo").focus();
+}
+function mostrar() {
+  const c = cartas[idx];
+  $("ss-carta").style.background = COLORES[c.t];
+  $("ss-tipo").textContent = TITULOS[c.t];
+  $("ss-texto").textContent = c.x;
+  $("progreso").textContent = (idx + 1) + " / " + cartas.length;
+  $("atras").disabled = idx === 0;
+  $("ss-toca").textContent = idx + 1 >= cartas.length ? "Toca para terminar" : "Toca la carta para seguir";
+}
+function empezar() {
+  if (jugadores.length < 2) { $("cfgInfo").textContent = "Añade al menos dos jugadores."; return; }
+  cartas = prepararPartida(jugadores, nivel, Number($("largo").value), $("sinAlcohol").checked ? $("castigo").value : null);
+  idx = 0;
+  pantalla("juego");
+  mostrar();
+}
+$("soyMayor").onclick = () => { try { localStorage.setItem("sd_sweetshot_18", "si"); } catch (e) {} pantalla("cfg"); };
+$("noMayor").onclick = () => { location.href = "juegos.html"; };
+$("anadir").onclick = anadir;
+$("nuevo").onkeydown = (e) => { if (e.key === "Enter") anadir(); };
+document.querySelectorAll("#niveles button").forEach((b) => (b.onclick = () => { nivel = Number(b.dataset.n); document.querySelectorAll("#niveles button").forEach((x) => x.classList.toggle("sel", x === b)); }));
+$("sinAlcohol").onchange = () => $("castigo").classList.toggle("oculto", !$("sinAlcohol").checked);
+$("empezar").onclick = empezar;
+$("ss-carta").onclick = () => { if (idx + 1 >= cartas.length) return pantalla("fin"); idx++; mostrar(); };
+$("atras").onclick = () => { if (idx > 0) { idx--; mostrar(); } };
+$("terminar").onclick = () => { if (confirm("¿Terminar la partida?")) pantalla("fin"); };
+$("otra").onclick = empezar;
+$("cambiar").onclick = () => pantalla("cfg");
+try { jugadores = JSON.parse(localStorage.getItem("sd_sweetshot_jug") || "[]"); } catch (e) { jugadores = []; }
+pintarJugadores();
+pantalla(ok18() ? "cfg" : "edad");
+</script>
+</main></body></html>
