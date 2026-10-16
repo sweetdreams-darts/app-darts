@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Trivial (administrador)</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:28px 0 6px;color:#ffd166}
+label{display:block;margin-top:12px;font-weight:700}
+input,select,textarea,button{width:100%;box-sizing:border-box;padding:11px;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+textarea{height:160px;font-size:.8rem}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+label.op{display:flex;gap:10px;align-items:center;font-weight:400}
+label.op input{width:20px;height:20px;margin:0}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.cifras{display:flex;gap:8px}
+.cifras div{flex:1;background:#1d2f52;border-radius:12px;padding:10px;text-align:center}
+.cifras b{display:block;font-size:1.4rem;color:#ffd166}
+.cifras span{font-size:.74rem;opacity:.85}
+#msg{min-height:1.4em;color:#ffd166}
+.peq{font-size:.85rem;opacity:.85}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Trivial competitivo</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <h2>Preguntas</h2>
+  <div class="cifras" id="cifras"></div>
+  <p id="quedan" class="peq"></p>
+  <p id="robot" class="peq"></p>
+
+  <h2>Premios y ajustes</h2>
+  <label class="op"><input type="checkbox" id="aPremios"> Hay premios</label>
+  <label>Premio de la semana (para el 1º)<input id="aSemana" maxlength="120" placeholder="Por ejemplo: un chupito gratis"></label>
+  <label>Premio del mes (para el 1º)<input id="aMes" maxlength="120" placeholder="Por ejemplo: una copa gratis"></label>
+  <label>Preguntas en cada reto diario<select id="aPorReto"></select></label>
+  <label>Segundos para contestar cada pregunta<select id="aSeg"></select></label>
+  <button id="guardar">Guardar premios y ajustes</button>
+
+  <h2>Ganadores</h2>
+  <div id="ganadores"></div>
+
+  <h2>Cargar preguntas nuevas</h2>
+  <p class="peq">Pega aquí el bloque de preguntas que te paso (empieza por <b>[</b> y acaba por <b>]</b>). Las que ya estén cargadas no se repiten.</p>
+  <textarea id="texto" placeholder='[{"cat":"Cine y series","p":"¿…?","ok":"Respuesta buena","mal":["otra","otra","otra"]}]'></textarea>
+  <label>¿Cuántas van a la partida libre? (el resto se guardan en secreto para los retos diarios)<select id="porcLibre"><option value="0.2">20 %</option><option value="0.3" selected>30 %</option><option value="0.5">50 %</option></select></label>
+  <button id="cargar">Cargar preguntas</button>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, writeBatch, query, where, orderBy, limit, arrayUnion, getCountFromServer } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const sinTildes = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+// El mismo texto de pregunta da siempre el mismo código, así no se cargan repetidas.
+function idPregunta(p) {
+  const t = sinTildes(p).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  let h1 = 5381, h2 = 52711;
+  for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); h1 = ((h1 * 33) ^ c) >>> 0; h2 = ((h2 * 31) + c) >>> 0; }
+  return "q" + h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0").slice(0, 4);
+}
+function barajar(a, rnd) { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; }
+// Comprueba el bloque pegado y prepara cada pregunta: opciones barajadas, cuál es la buena y si va a reto o a partida libre.
+function preparar(lista, porcLibre, rnd) {
+  const buenas = [], errores = [], vistos = new Set();
+  if (!Array.isArray(lista)) return { buenas, errores: ["El bloque no es una lista de preguntas."] };
+  lista.forEach((x, i) => {
+    const n = "Pregunta " + (i + 1);
+    if (!x || typeof x.p !== "string" || x.p.trim().length < 5) return errores.push(n + ": falta el texto.");
+    if (typeof x.cat !== "string" || !x.cat.trim() || /[\/]/.test(x.cat)) return errores.push(n + ": la categoría falta o lleva «/».");
+    if (typeof x.ok !== "string" || !x.ok.trim()) return errores.push(n + ": falta la respuesta buena.");
+    if (!Array.isArray(x.mal) || x.mal.length !== 3 || x.mal.some((m) => typeof m !== "string" || !m.trim())) return errores.push(n + ": tiene que tener 3 respuestas malas.");
+    const todas = [x.ok.trim(), ...x.mal.map((m) => m.trim())];
+    if (new Set(todas.map((t) => t.toLowerCase())).size !== 4) return errores.push(n + ": hay respuestas repetidas.");
+    const id = idPregunta(x.p);
+    if (vistos.has(id)) return errores.push(n + ": está repetida en el bloque.");
+    vistos.add(id);
+    const ops = barajar(todas, rnd);
+    buenas.push({ id: id, p: x.p.trim(), ops: ops, c: ops.indexOf(x.ok.trim()), cat: x.cat.trim(), estado: rnd() < porcLibre ? "libre" : "reserva" });
+  });
+  return { buenas, errores };
+}
+// </logica>
+
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const textoPeriodo = (tipo, k) => (tipo === "semana" ? "Semana " + Number(k.split("-S")[1]) + " de " + k.split("-S")[0] : MESES[Number(k.split("-")[1]) - 1] + " de " + k.split("-")[0]);
+let cfg = {};
+
+async function pintarCifras() {
+  const cuenta = async (estado) => (await getCountFromServer(query(collection(db, "trivial_banco"), where("estado", "==", estado)))).data().count;
+  const [res, ret, lib] = await Promise.all([cuenta("reserva"), cuenta("reto"), cuenta("libre")]);
+  const c = $("cifras");
+  c.innerHTML = "";
+  [[res, "guardadas para retos"], [ret, "en el reto de hoy"], [lib, "en partida libre"]].forEach(([n, t]) => { const d = el("div"); d.append(el("b", String(n)), el("span", t)); c.append(d); });
+  const dias = Math.floor(res / (cfg.porReto || 10));
+  $("quedan").textContent = res ? "Quedan preguntas para " + dias + " retos diarios" + (dias < 14 ? ". ⚠ Pronto harán falta más: pídeme otro bloque." : ".") : "⚠ No quedan preguntas guardadas para los retos: carga un bloque nuevo.";
+  const r = await getDoc(doc(db, "trivial_config", "robot"));
+  $("robot").textContent = r.exists() && r.data().actualizado ? "🤖 El robot revisó por última vez: " + r.data().actualizado.toDate().toLocaleString("es-ES") : "🤖 El robot todavía no ha corregido ninguna respuesta.";
+}
+function pintarAjustes() {
+  const s1 = $("aPorReto"), s2 = $("aSeg");
+  s1.innerHTML = ""; s2.innerHTML = "";
+  [5, 8, 10, 12, 15, 20].forEach((n) => s1.add(new Option(n + " preguntas", n)));
+  [10, 15, 20, 25, 30, 45].forEach((n) => s2.add(new Option(n + " segundos", n)));
+  s1.value = String(cfg.porReto || 10);
+  s2.value = String(cfg.seg || 20);
+  $("aPremios").checked = !!cfg.premiosActivos;
+  $("aSemana").value = cfg.premioSemana || "";
+  $("aMes").value = cfg.premioMes || "";
+}
+$("guardar").onclick = async () => {
+  try {
+    await setDoc(doc(db, "trivial_config", "ajustes"), { porReto: Number($("aPorReto").value), seg: Number($("aSeg").value), premiosActivos: $("aPremios").checked, premioSemana: $("aSemana").value.trim(), premioMes: $("aMes").value.trim() }, { merge: true });
+    $("msg").textContent = "✔ Guardado. Los cambios de preguntas y segundos se aplican desde el próximo reto diario.";
+    await cargarTodo();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+async function pintarGanadores() {
+  const c = $("ganadores");
+  c.innerHTML = "";
+  const s = await getDocs(query(collection(db, "trivial_ganadores"), orderBy("cerrado", "desc"), limit(20)));
+  if (s.empty) { c.append(el("p", "Todavía no hay ganadores: el primero sale cuando termine la primera semana.", "peq")); return; }
+  s.docs.forEach((d) => {
+    const g = d.data(), card = el("div", "", "card");
+    card.append(el("strong", (g.tipo === "semana" ? "🏆 " : "👑 ") + textoPeriodo(g.tipo, g.k) + ": " + g.n), el("small", g.a + " aciertos · " + g.f + " fallos" + (g.premio ? " · Premio: " + g.premio : " · sin premio")));
+    if (g.premio) {
+      const b = el("button", g.entregado ? "✔ Premio entregado (pulsa para deshacer)" : "Marcar premio como entregado", g.entregado ? "sec" : "");
+      b.onclick = async () => { try { await updateDoc(doc(db, "trivial_ganadores", d.id), { entregado: !g.entregado }); await pintarGanadores(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); } };
+      card.append(b);
+    }
+    c.append(card);
+  });
+}
+$("cargar").onclick = async () => {
+  let lista;
+  try { lista = JSON.parse($("texto").value.trim()); } catch (e) { $("msg").textContent = "El bloque no está bien copiado: asegúrate de pegarlo entero, desde [ hasta ]."; return; }
+  const { buenas, errores } = preparar(lista, Number($("porcLibre").value), Math.random);
+  if (!buenas.length) { $("msg").textContent = "No hay preguntas válidas. " + errores.slice(0, 3).join(" "); return; }
+  $("cargar").disabled = true;
+  $("msg").textContent = "Cargando…";
+  try {
+    let nuevas = 0, repetidas = 0;
+    for (let i = 0; i < buenas.length; i += 100) {
+      const trozo = buenas.slice(i, i + 100);
+      const ya = await Promise.all(trozo.map((q) => getDoc(doc(db, "trivial_banco", q.id))));
+      const frescas = trozo.filter((q, j) => !ya[j].exists());
+      repetidas += trozo.length - frescas.length;
+      if (!frescas.length) continue;
+      const b = writeBatch(db);
+      frescas.forEach((q) => {
+        b.set(doc(db, "trivial_banco", q.id), { p: q.p, ops: q.ops, c: q.c, cat: q.cat, estado: q.estado });
+        b.set(doc(db, "trivial_sol", q.id), { c: q.c });
+      });
+      await b.commit();
+      const porCat = {};
+      frescas.filter((q) => q.estado === "libre").forEach((q) => (porCat[q.cat] = porCat[q.cat] || []).push(q));
+      for (const cat in porCat) await setDoc(doc(db, "trivial_libre", cat), { cat: cat, ids: arrayUnion(...porCat[cat].map((q) => q.id)), preguntas: arrayUnion(...porCat[cat].map((q) => ({ id: q.id, p: q.p, ops: q.ops }))) }, { merge: true });
+      await setDoc(doc(db, "trivial_config", "ajustes"), { cats: arrayUnion(...[...new Set(frescas.map((q) => q.cat))]) }, { merge: true });
+      nuevas += frescas.length;
+    }
+    $("msg").textContent = "✔ Cargadas " + nuevas + " preguntas nuevas" + (repetidas ? " (" + repetidas + " ya estaban)" : "") + (errores.length ? ". No se cargaron " + errores.length + ": " + errores.slice(0, 3).join(" ") : ".");
+    $("texto").value = "";
+    await cargarTodo();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+  $("cargar").disabled = false;
+};
+async function cargarTodo() {
+  const c = await getDoc(doc(db, "trivial_config", "ajustes"));
+  cfg = c.exists() ? c.data() : {};
+  if (!c.exists()) await setDoc(doc(db, "trivial_config", "ajustes"), { porReto: 10, seg: 20, premiosActivos: false, premioSemana: "", premioMes: "", cats: [] });
+  pintarAjustes();
+  await pintarCifras();
+  await pintarGanadores();
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    await cargarTodo();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
