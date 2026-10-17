@@ -294,6 +294,7 @@ async function cargar() {
     const d = c.data();
     cfg = { facultades: d.facultades && d.facultades.length ? d.facultades : FACULTADES.slice(), dominios: d.dominios && d.dominios.length ? d.dominios : DOMINIOS.slice(), promos: Array.isArray(d.promos) ? d.promos : PROMOS.map((p) => Object.assign({}, p)) };
   }
+  if (!c.exists()) await guardarCfg({});
   $("tFac").value = cfg.facultades.join("\n");
   $("tDom").value = cfg.dominios.join("\n");
   perfiles = new Map((await getDocs(collection(db, "perfil_extra"))).docs.map((d) => [d.id, d.data()]));
