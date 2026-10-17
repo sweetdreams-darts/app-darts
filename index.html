@@ -129,6 +129,7 @@ import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWith
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, documentId, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { proximos, etiquetaNivel, cuando, fechaLarga, mapsDe, norm } from "./proximo.js";
 import { montar as montarHoy } from "./hoy-sd.js";
+import { montarUni } from "./universitarios.js";
   
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
@@ -279,6 +280,7 @@ function mostrar(user, ficha) {
   vista("vistaUsuario");
   cargarProximo(user, ficha);
   montarHoy(db, ficha);
+  montarUni(db, user, ficha);
 }
 
 async function cargarFicha(user) {
@@ -391,6 +393,7 @@ $("borrarOk").addEventListener("click", async () => {
       }
       await deleteDoc(d.ref);
     }
+    try { await deleteDoc(doc(db, "perfil_extra", u.uid)); } catch (e) {}
     await deleteDoc(doc(db, "users", u.uid));
     await deleteUser(u);
     $("passBorrar").value = "";
