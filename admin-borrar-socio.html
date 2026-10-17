@@ -113,6 +113,7 @@ function refsABorrar(uid, d, op) {
   if (d.equipos) r.push({ col: "mis_equipos", id: uid });
   if (d.vinculo) r.push({ col: "liga_vinculos", id: uid });
   if (d.solicitud) r.push({ col: "liga_vinculos_pedidos", id: uid });
+  r.push({ col: "perfil_extra", id: uid });
   if (op.tokens) d.tokens.forEach((t) => r.push({ col: "push_tokens", id: t.id }));
   return r;
 }
