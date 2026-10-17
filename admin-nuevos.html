@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Usuarios nuevos</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+button{width:100%;box-sizing:border-box;padding:12px;font-size:.95rem;border-radius:10px;border:0;background:#ffd166;color:#14213d;font-weight:700;margin-top:10px;font-family:inherit}
+.cifras{display:flex;gap:8px;margin-top:10px}
+.cifras div{flex:1;background:#1d2f52;border-radius:12px;padding:10px;text-align:center}
+.cifras b{display:block;font-size:1.4rem;color:#ffd166}
+.cifras span{font-size:.74rem;opacity:.85}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card.nuevo{border:1.5px solid #5dff9a}
+.card small{display:block;opacity:.85;margin-top:3px}
+.et{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:800;background:#5dff9a;color:#14213d}
+.rol{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;background:#3d5380}
+h2{font-size:1.05rem;margin:22px 0 4px;color:#ffd166}
+#msg{min-height:1.4em;color:#ffd166}
+.peq{font-size:.85rem;opacity:.85}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Usuarios nuevos</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="cifras" id="cifras"></div>
+  <button id="vistos">Marcar todos como vistos</button>
+  <p class="peq">Te llega un aviso al móvil cada vez que alguien se registra (si tienes los avisos activados en este móvil). Aquí ves los registrados en los últimos 60 días; los marcados como 🆕 son los que aún no habías visto.</p>
+  <div id="lista"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, updateDoc, query, where, orderBy, limit, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+
+// <logica>
+const ROLES = { user: "Cliente", player: "Jugador oficial", staff: "Personal", admin: "Administrador", robot: "Robot" };
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"], MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const pad = (n) => String(n).padStart(2, "0");
+function cuando(ms, ahora) {
+  const d = new Date(ms), h = pad(d.getHours()) + ":" + pad(d.getMinutes());
+  const a = new Date(ahora), hoy = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  if (ms >= hoy) return "hoy a las " + h;
+  if (ms >= hoy - 86400000) return "ayer a las " + h;
+  return DIAS[d.getDay()] + " " + d.getDate() + " " + MESES[d.getMonth()] + " a las " + h;
+}
+// Cuántos se han registrado hoy, en los últimos 7 días y en total en la lista.
+function resumen(lista, ahora) {
+  const a = new Date(ahora), hoy = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  return { hoy: lista.filter((u) => u.ms >= hoy).length, semana: lista.filter((u) => u.ms >= ahora - 7 * 86400000).length, total: lista.length };
+}
+// </logica>
+
+let yoUid = "";
+async function cargar() {
+  const ahora = Date.now();
+  const yo = await getDoc(doc(db, "users", yoUid));
+  const visto = yo.exists() && yo.data().vistoNuevosHasta ? yo.data().vistoNuevosHasta.toMillis() : 0;
+  const s = await getDocs(query(collection(db, "users"), where("creado", ">=", Timestamp.fromMillis(ahora - 60 * 86400000)), orderBy("creado", "desc"), limit(300)));
+  const lista = s.docs.map((d) => Object.assign({ id: d.id, ms: d.data().creado ? d.data().creado.toMillis() : 0 }, d.data())).filter((u) => u.role !== "robot");
+  const r = resumen(lista, ahora), c = $("cifras");
+  c.innerHTML = "";
+  [[r.hoy, "hoy"], [r.semana, "últimos 7 días"], [r.total, "últimos 60 días"]].forEach(([n, t]) => { const d = el("div"); d.append(el("b", String(n)), el("span", t)); c.append(d); });
+  const sinVer = lista.filter((u) => u.ms > visto).length;
+  $("vistos").textContent = sinVer ? "Marcar como vistos (" + sinVer + ")" : "No hay ninguno sin ver";
+  $("vistos").disabled = !sinVer;
+  const l = $("lista");
+  l.innerHTML = "";
+  if (!lista.length) l.append(el("p", "Nadie se ha registrado en los últimos 60 días.", "peq"));
+  lista.forEach((u) => {
+    const card = el("div", "", "card" + (u.ms > visto ? " nuevo" : ""));
+    const t = el("strong", (u.nombre || "").trim() || "Sin nombre");
+    if (u.ms > visto) t.append(el("span", "🆕 nuevo", "et"));
+    t.append(el("span", ROLES[u.role] || u.role || "Cliente", "rol"));
+    card.append(t, el("small", (u.email || "sin email") + " · se registró " + cuando(u.ms, ahora)));
+    l.append(card);
+  });
+}
+$("vistos").onclick = async () => {
+  try {
+    await updateDoc(doc(db, "users", yoUid), { vistoNuevosHasta: serverTimestamp() });
+    try { sessionStorage.removeItem("sd_hoy_v1"); } catch (e) {}
+    $("msg").textContent = "✔ Marcados como vistos.";
+    await cargar();
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+};
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    await cargar();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
