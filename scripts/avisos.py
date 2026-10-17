@@ -1,4 +1,4 @@
-# Avisos push: revisa reservas nuevas y recordatorios, y envía notificaciones con Firebase Cloud Messaging.
+# Avisos push: revisa reservas nuevas, usuarios nuevos y recordatorios, y envía notificaciones con Firebase Cloud Messaging.
 import json, os, re, time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -82,8 +82,8 @@ def admins():
     return [id_de(d) for d in consulta("users", [("role", "EQUAL", {"stringValue": "admin"})])]
 
 
-def enviar(token, titulo, cuerpo, tag):
-    msg = {"message": {"token": token, "data": {"title": titulo, "body": cuerpo, "url": APP, "tag": tag},
+def enviar(token, titulo, cuerpo, tag, url=APP):
+    msg = {"message": {"token": token, "data": {"title": titulo, "body": cuerpo, "url": url, "tag": tag},
                        "webpush": {"headers": {"Urgency": "high", "TTL": "3600"}}}}
     r = api("POST", f"https://fcm.googleapis.com/v1/projects/{PROYECTO}/messages:send", json=msg)
     if r.status_code != 200 and ("UNREGISTERED" in r.text or "not a valid FCM registration token" in r.text):
@@ -95,12 +95,18 @@ def enviar(token, titulo, cuerpo, tag):
 
 
 def leer_estado():
+    """Hasta dónde se han revisado las reservas y los usuarios nuevos (None si aún no se sabe)."""
     r = api("GET", f"{BASE}/avisos_estado/revision")
-    return int(r.json()["fields"]["ultimaMs"]["integerValue"]) if r.status_code == 200 else None
+    if r.status_code != 200:
+        return None, None
+    f = r.json().get("fields", {})
+    u = f.get("ultimaUsuariosMs", {}).get("integerValue")
+    return int(f["ultimaMs"]["integerValue"]), (int(u) if u else None)
 
 
-def guardar_estado(ms):
-    api("PATCH", f"{BASE}/avisos_estado/revision?updateMask.fieldPaths=ultimaMs", json={"fields": {"ultimaMs": {"integerValue": str(ms)}}})
+def guardar_estado(ms, usuarios_ms):
+    api("PATCH", f"{BASE}/avisos_estado/revision?updateMask.fieldPaths=ultimaMs&updateMask.fieldPaths=ultimaUsuariosMs",
+        json={"fields": {"ultimaMs": {"integerValue": str(ms)}, "ultimaUsuariosMs": {"integerValue": str(usuarios_ms)}}})
 
 
 def revisar_nuevas(ultima):
@@ -115,6 +121,23 @@ def revisar_nuevas(ultima):
                 for t in tokens_de(admin):
                     enviar(t, "Nueva reserva", cuerpo, "reserva-" + id_de(d))
         print("Reserva nueva:", cuerpo)
+    return mayor
+
+
+def revisar_usuarios(ultima):
+    """Avisa a los administradores de cada persona que se registra en la app."""
+    mayor = ultima
+    for d in consulta("users", [("creado", "GREATER_THAN", {"timestampValue": iso(ultima)})], "creado"):
+        alta = ms_de(campo(d, "creado", "timestampValue"))
+        mayor = max(mayor, alta + 1)
+        uid = id_de(d)
+        nombre = (campo(d, "nombre") or "").strip() or "Sin nombre"
+        cuerpo = f"{nombre} se ha registrado ({fecha_bonita(alta)}, {hora(alta)}). Toca para verlo."
+        for admin in admins():
+            if admin != uid:
+                for t in tokens_de(admin):
+                    enviar(t, "👤 Nuevo usuario", cuerpo, "usuario-" + uid, APP + "admin-nuevos.html")
+        print("Usuario nuevo:", nombre)
     return mayor
 
 
@@ -142,18 +165,22 @@ def recordatorios():
 
 def main():
     t0 = time.time()
-    ultima = leer_estado()
-    if ultima is None:
-        ultima = int(time.time() * 1000)
-        guardar_estado(ultima)
+    ultima, ultima_u = leer_estado()
+    if ultima is None or ultima_u is None:
+        # la primera vez se empieza desde ahora, para no mandar avisos de reservas o usuarios antiguos
+        ahora = int(time.time() * 1000)
+        ultima = ultima if ultima is not None else ahora
+        ultima_u = ultima_u if ultima_u is not None else ahora
+        guardar_estado(ultima, ultima_u)
         print("Estado inicial creado")
     while True:
-        print(local(int(time.time() * 1000)).strftime("%H:%M"), "revisando reservas…")
+        print(local(int(time.time() * 1000)).strftime("%H:%M"), "revisando reservas y usuarios nuevos…")
         try:
             nueva = revisar_nuevas(ultima)
-            if nueva != ultima:
-                ultima = nueva
-                guardar_estado(ultima)
+            nueva_u = revisar_usuarios(ultima_u)
+            if nueva != ultima or nueva_u != ultima_u:
+                ultima, ultima_u = nueva, nueva_u
+                guardar_estado(ultima, ultima_u)
             recordatorios()
         except Exception as e:
             print("Error en la revisión:", e)
