@@ -87,11 +87,18 @@ function estilos() {
     ".hoy .hoy-pie{display:flex;gap:8px;margin-top:8px;font-size:.78rem;align-items:center;justify-content:space-between}" +
     ".hoy .hoy-pie a{color:#19f2ff!important}" +
     ".hoy .hoy-vacio{font-size:.84rem;opacity:.85;margin:4px 0}" +
-    ".hoy .hoy-sol{display:block;margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#ffe14d;color:#0a0612!important;font-weight:800;font-size:.8rem;text-decoration:none}";
+    ".hoy .hoy-sol{display:block;margin:2px 0 8px;padding:8px 10px;border-radius:10px;background:#ffe14d;color:#0a0612!important;font-weight:800;font-size:.8rem;text-decoration:none}" +
+    ".hoy .hoy-usu{background:#5dff9a}";
   document.head.appendChild(s);
 }
 
-async function leer(db, hoy) {
+// Usuarios registrados desde la última vez que los marcaste como vistos (si nunca, los de los últimos 3 días).
+async function contarNuevos(db, ficha) {
+  const desde = ficha && ficha.vistoNuevosHasta && ficha.vistoNuevosHasta.toMillis ? ficha.vistoNuevosHasta.toMillis() : Date.now() - 3 * 86400000;
+  try { return (await getDocs(query(collection(db, "users"), where("creado", ">", Timestamp.fromMillis(desde))))).docs.filter((d) => d.data().role !== "robot").length; } catch (e) { return 0; }
+}
+
+async function leer(db, hoy, ficha) {
   const w = ventanaDelBar(hoy);
   const [bl, pa, cfg, di, re] = await Promise.all([
     getDocs(query(collection(db, "liga_bloqueos"), where("dia", "==", hoy))),
@@ -111,7 +118,8 @@ async function leer(db, hoy) {
   await Promise.all(sd.map(async (p) => { try { if ((await getDoc(doc(db, "liga_bloqueos", p.id))).exists()) bloqueosExtra.add(p.id); } catch (e) {} }));
   let solicitudes = 0;
   try { solicitudes = (await getDocs(query(collection(db, "cambios_pedidos"), where("estado", "==", "pendiente")))).docs.length; } catch (e) {}
-  return { items: construirLista({ bloqueos: bloqueos, partidos: partidos, bloqueosExtra: bloqueosExtra, nombresSD: nombresSD, dianas: dianas }), reservas: re.docs.length, solicitudes: solicitudes };
+  const nuevos = await contarNuevos(db, ficha);
+  return { items: construirLista({ bloqueos: bloqueos, partidos: partidos, bloqueosExtra: bloqueosExtra, nombresSD: nombresSD, dianas: dianas }), reservas: re.docs.length, solicitudes: solicitudes, nuevos: nuevos };
 }
 
 function pintar(caja, hoy, datos) {
@@ -133,6 +141,7 @@ function pintar(caja, hoy, datos) {
   r.onclick = () => montar(caja.__db, caja.__ficha, true);
   cab.append(t, r);
   caja.appendChild(cab);
+  if (datos.nuevos) { const nu = document.createElement("a"); nu.className = "hoy-sol hoy-usu"; nu.href = "admin-nuevos.html"; nu.textContent = "👤 " + datos.nuevos + (datos.nuevos === 1 ? " usuario nuevo ›" : " usuarios nuevos ›"); caja.appendChild(nu); }
   if (datos.solicitudes) { const sol = document.createElement("a"); sol.className = "hoy-sol"; sol.href = "admin-solicitudes.html"; sol.textContent = "📩 " + datos.solicitudes + (datos.solicitudes === 1 ? " solicitud de capitán pendiente ›" : " solicitudes de capitanes pendientes ›"); caja.appendChild(sol); }
   if (!datos.items.length) {
     const v = document.createElement("p");
@@ -193,7 +202,7 @@ export async function montar(db, ficha, forzar) {
   if (datos) { pintar(caja, hoy, datos); return; }
   caja.innerHTML = "<p class='hoy-vacio'>📍 HOY EN SWEET DREAMS · cargando…</p>";
   try {
-    datos = await leer(db, hoy);
+    datos = await leer(db, hoy, ficha);
     try { sessionStorage.setItem("sd_hoy_v1", JSON.stringify({ hoy: hoy, t: Date.now(), datos: datos })); } catch (e) {}
     pintar(caja, hoy, datos);
   } catch (e) { caja.innerHTML = "<p class='hoy-vacio'>📍 HOY EN SWEET DREAMS · no se ha podido cargar (" + (e.code || e.message) + ")</p>"; }
