@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Verdad o reto</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 16px 40px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+section{display:none}
+section.ver{display:block}
+input[type=text],select{width:100%;box-sizing:border-box;padding:12px;font-size:1rem;margin-top:8px}
+button{width:100%;padding:13px;font-size:1rem;margin-top:12px}
+.peq{font-size:.82rem;opacity:.8}
+.fila{display:flex;gap:8px}
+.fila button{margin-top:8px}
+.chk{display:flex;align-items:center;gap:10px;margin-top:14px;font-weight:700}
+.chk input{width:22px;height:22px;margin:0}
+.vr-niveles{display:flex;gap:8px;margin-top:8px}
+.vr-niveles button{flex:1;margin:0;padding:12px 4px;font-size:.9rem}
+.vr-niveles button.sel{background:#ffe14d!important;color:#0a0612!important;border-color:#ffe14d!important}
+.vr-jug{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.vr-jug span{padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.1);font-size:.85rem}
+.vr-jug span b{margin-left:6px;cursor:pointer;opacity:.7}
+.vr-aviso{padding:14px;border-radius:14px;border:1.5px solid #ffe14d;background:rgba(255,225,77,.08);margin-top:10px}
+.vr-nombre{font-family:"Bungee","Rubik",sans-serif;font-size:2rem;text-align:center;margin:10px 0 4px}
+.vr-elige{display:flex;gap:10px;margin-top:18px}
+.vr-elige button{flex:1;margin:0;padding:26px 8px;font-size:1.25rem!important;border:0!important;color:#fff!important}
+#bVerdad{background:linear-gradient(150deg,#19c3ff,#3d5cff)!important}
+#bReto{background:linear-gradient(150deg,#ff6a3d,#ff2bd6)!important}
+#vr-carta{min-height:46vh;border-radius:26px;padding:26px 22px;display:flex;flex-direction:column;justify-content:center;gap:14px;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+#vr-tipo{font-family:"Bungee","Rubik",sans-serif;font-size:.95rem;letter-spacing:.6px;opacity:.9}
+#vr-texto{font-size:1.4rem;font-weight:800;line-height:1.35}
+#bHecho{background:#16351f!important;border-color:#5dff9a!important;color:#5dff9a!important}
+#bRajo{background:#3a1a1f!important;border-color:#ff5c7a!important;color:#ff9aaa!important}
+.vr-marc{margin-top:18px}
+.vr-fila{display:flex;justify-content:space-between;gap:10px;padding:8px 12px;margin-top:6px;border-radius:12px;background:rgba(255,255,255,.06);font-size:.9rem}
+.vr-fila.turno{outline:2px solid #ffe14d}
+.vr-cab{display:flex;justify-content:flex-end;margin-bottom:6px}
+.vr-cab button{width:auto;margin:0;padding:6px 12px;font-size:.8rem}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="juegos.html">← Juegos</a></p>
+<header class="marca"><h1>Verdad o reto</h1></header>
+
+<section id="edad">
+  <div class="vr-aviso">
+    <p style="margin-top:0"><b>🔞 Juego para mayores de 18 años.</b></p>
+    <p>Bebe con cabeza: nadie está obligado a beber y siempre puedes jugar en <b>modo sin alcohol</b>. Y nadie tiene que hacer nada que no quiera: si no te apetece, te rajas y ya está.</p>
+  </div>
+  <button id="soyMayor" class="pri" type="button">Tengo 18 años o más</button>
+  <button id="noMayor" type="button">Volver a los juegos</button>
+</section>
+
+<section id="cfg">
+  <p class="peq">Por turnos, cada uno elige verdad o reto. Si lo cumples, sumas; si te rajas, te toca castigo. Al final se corona al más valiente.</p>
+  <p style="margin-bottom:0"><b>Jugadores</b> (mínimo 2)</p>
+  <div class="fila"><input id="nuevo" type="text" maxlength="16" placeholder="Nombre" autocomplete="off"><button id="anadir" type="button" style="width:auto;padding:12px 16px">Añadir</button></div>
+  <div id="jugadores" class="vr-jug"></div>
+  <p style="margin-bottom:0"><b>Nivel</b></p>
+  <div class="vr-niveles" id="niveles"><button data-n="1" type="button">😇 Suave</button><button data-n="2" type="button" class="sel">🎉 Fiesta</button><button data-n="3" type="button">🌶️ Atrevido</button></div>
+  <label class="chk"><input id="sinAlcohol" type="checkbox"> Modo sin alcohol</label>
+  <select id="castigo" class="oculto"><option value="sentadilla">Castigo: sentadillas</option><option value="flexion">Castigo: flexiones</option><option value="punto">Castigo: puntos de castigo</option><option value="agua">Castigo: tragos de agua o refresco</option></select>
+  <p id="cfgInfo" class="peq" style="color:#ff9aaa"></p>
+  <button id="empezar" class="pri" type="button">¡A jugar!</button>
+</section>
+
+<section id="turno">
+  <div class="vr-cab"><button id="terminar" type="button">Terminar</button></div>
+  <p class="peq" style="text-align:center;margin:0">Le toca a</p>
+  <div id="tNombre" class="vr-nombre"></div>
+  <div class="vr-elige"><button id="bVerdad" type="button">🤔 Verdad</button><button id="bReto" type="button">🔥 Reto</button></div>
+  <button id="bAzar" type="button">🎲 Que decida la suerte</button>
+  <div id="marcador" class="vr-marc"></div>
+</section>
+
+<section id="carta">
+  <div id="vr-carta"><div id="vr-tipo"></div><div id="vr-texto"></div></div>
+  <button id="bHecho" type="button">✔ ¡Hecho!</button>
+  <button id="bRajo" type="button"></button>
+</section>
+
+<section id="fin">
+  <p style="font-size:3rem;margin:16px 0 0;text-align:center">🏅</p>
+  <h2 id="valiente" style="text-align:center"></h2>
+  <div id="final"></div>
+  <button id="otra" class="pri" type="button">Otra partida</button>
+  <button id="cambiar" type="button">Cambiar jugadores o nivel</button>
+</section>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const PANTALLAS = ["edad", "cfg", "turno", "carta", "fin"];
+function pantalla(id) { for (const p of PANTALLAS) $(p).classList.toggle("ver", p === id); window.scrollTo(0, 0); }
+
+// <logica>
+// v = verdad, r = reto; n = nivel (1 suave, 2 fiesta, 3 atrevido). {J2} = otro jugador.
+const CARTAS = [
+  { t: "v", n: 1, x: "¿Cuál es la última mentira que has dicho?" },
+  { t: "v", n: 1, x: "¿Qué es lo más vergonzoso que te ha pasado en público?" },
+  { t: "v", n: 1, x: "¿Cuál es tu mayor miedo?" },
+  { t: "v", n: 1, x: "¿Qué canción cantas a escondidas?" },
+  { t: "v", n: 1, x: "¿Qué es lo más raro que has comido?" },
+  { t: "v", n: 1, x: "¿A qué famoso dice la gente que te pareces?" },
+  { t: "v", n: 1, x: "¿Cuál ha sido el peor regalo que te han hecho?" },
+  { t: "v", n: 1, x: "¿Qué harías si mañana te tocara la lotería?" },
+  { t: "v", n: 1, x: "¿Cuál es tu peor manía?" },
+  { t: "v", n: 1, x: "¿Qué es lo último que has buscado en internet?" },
+  { t: "v", n: 1, x: "¿Has fingido estar enfermo para no ir a algún sitio? ¿A dónde?" },
+  { t: "v", n: 1, x: "¿Cuál es el mote más raro que te han puesto?" },
+  { t: "v", n: 1, x: "Si pudieras cambiarte un día por alguien del grupo, ¿por quién sería?" },
+  { t: "v", n: 1, x: "¿Qué es lo que más te hace reír de {J2}?" },
+  { t: "v", n: 2, x: "¿Cuál ha sido tu peor resaca y qué pasó la noche anterior?" },
+  { t: "v", n: 2, x: "¿Qué es lo más loco que has hecho de fiesta?" },
+  { t: "v", n: 2, x: "¿A quién has cotilleado en redes esta semana?" },
+  { t: "v", n: 2, x: "¿Has mirado alguna vez el móvil de otra persona sin permiso?" },
+  { t: "v", n: 2, x: "¿Cuál es el mensaje más vergonzoso que has mandado al chat equivocado?" },
+  { t: "v", n: 2, x: "Cuenta algo pequeño que nunca le contarías a tus padres." },
+  { t: "v", n: 2, x: "¿A quién del grupo le contarías un secreto? ¿Y a quién nunca?" },
+  { t: "v", n: 2, x: "¿Cuál ha sido tu mayor metedura de pata en el trabajo o en clase?" },
+  { t: "v", n: 2, x: "¿Te has colado alguna vez en algún sitio? ¿Dónde?" },
+  { t: "v", n: 2, x: "¿Cuál es la peor excusa que has puesto y te han creído?" },
+  { t: "v", n: 2, x: "¿Qué opinas de verdad del último ligue de {J2}?" },
+  { t: "v", n: 3, x: "¿Cómo fue tu primer beso?" },
+  { t: "v", n: 3, x: "¿Qué es lo primero en lo que te fijas de alguien?" },
+  { t: "v", n: 3, x: "¿Te ha gustado alguna vez alguien de este grupo?" },
+  { t: "v", n: 3, x: "¿Cuál ha sido tu peor cita?" },
+  { t: "v", n: 3, x: "¿Qué es lo más atrevido que has hecho para ligar?" },
+  { t: "v", n: 3, x: "¿Has ligado alguna vez en un bar? ¿Cómo salió?" },
+  { t: "v", n: 3, x: "¿Con qué famoso tendrías una cita sin pensarlo?" },
+  { t: "v", n: 3, x: "¿Qué es lo más romántico que has hecho por alguien?" },
+  { t: "v", n: 3, x: "Del 1 al 10, ¿cuánto ligas en las fiestas? Sé sincero." },
+  { t: "v", n: 3, x: "¿Le has escrito alguna vez a tu ex estando de fiesta?" },
+  { t: "r", n: 1, x: "Imita a un famoso hasta que alguien lo adivine." },
+  { t: "r", n: 1, x: "Habla con acento extranjero hasta tu próximo turno." },
+  { t: "r", n: 1, x: "Haz tu mejor imitación de {J2}." },
+  { t: "r", n: 1, x: "Canta el estribillo de una canción que elija {J2}." },
+  { t: "r", n: 1, x: "Baila 15 segundos sin música." },
+  { t: "r", n: 1, x: "Di el abecedario al revés lo más rápido que puedas." },
+  { t: "r", n: 1, x: "Haz 10 sentadillas mientras cantas." },
+  { t: "r", n: 1, x: "Cuenta un chiste malo con toda la seriedad del mundo." },
+  { t: "r", n: 1, x: "Deja que {J2} te peine como quiera, solo con las manos." },
+  { t: "r", n: 1, x: "Habla durante 30 segundos con {J2} usando solo preguntas." },
+  { t: "r", n: 1, x: "Intenta tocarte la nariz con la lengua." },
+  { t: "r", n: 1, x: "Narra lo que pasa en la mesa como un presentador del telediario durante 30 segundos." },
+  { t: "r", n: 1, x: "Aguanta 20 segundos a la pata coja con los ojos cerrados." },
+  { t: "r", n: 1, x: "Haz una pose de estatua y no te muevas hasta que {J2} diga «ya»." },
+  { t: "r", n: 2, x: "Deja que el grupo elija un emoji y ponlo de estado en WhatsApp durante una hora." },
+  { t: "r", n: 2, x: "Manda un audio cantando a la última persona con la que has hablado por WhatsApp." },
+  { t: "r", n: 2, x: "Enseña las tres últimas fotos de tu galería." },
+  { t: "r", n: 2, x: "Llama a un amigo y dile que le quieres mucho, sin explicar por qué." },
+  { t: "r", n: 2, x: "Haz una declaración de amor exagerada a la diana más cercana." },
+  { t: "r", n: 2, x: "Imita a tu profesor o jefe más pesado durante 30 segundos." },
+  { t: "r", n: 2, x: "Haz un brindis de 30 segundos en honor a {J2}." },
+  { t: "r", n: 2, x: "Cambia una prenda (chaqueta, gorra, pañuelo…) con {J2} hasta el final de la partida." },
+  { t: "r", n: 2, x: "Deja que {J2} elija la foto de perfil de tu WhatsApp durante una hora." },
+  { t: "r", n: 2, x: "Pide en la barra una canción para el bar, si el camarero se deja." },
+  { t: "r", n: 3, x: "Dile a {J2} tu mejor frase para ligar, mirándole a los ojos." },
+  { t: "r", n: 3, x: "Da un masaje de hombros de 30 segundos a {J2}, si quiere." },
+  { t: "r", n: 3, x: "Susurra algo bonito al oído de {J2}, si quiere." },
+  { t: "r", n: 3, x: "Baila una canción lenta con {J2} durante 20 segundos, si quiere." },
+  { t: "r", n: 3, x: "Deja que {J2} te escriba una palabra en la mano con un boli." },
+  { t: "r", n: 3, x: "Guiña un ojo a la próxima persona que pase cerca de la mesa." },
+  { t: "r", n: 3, x: "Di a quién del grupo darías un beso en la mejilla y dáselo, si quiere." },
+  { t: "r", n: 3, x: "Lee en voz alta el último mensaje que te mandó alguien que te guste (puedes tapar el nombre)." }
+];
+const CASTIGOS = {
+  trago: { u: "un trago", p: "tragos", vt: "bebe" },
+  sentadilla: { u: "una sentadilla", p: "sentadillas", vt: "haz" },
+  flexion: { u: "una flexión", p: "flexiones", vt: "haz" },
+  punto: { u: "un punto de castigo", p: "puntos de castigo", vt: "suma" },
+  agua: { u: "un trago de agua o refresco", p: "tragos de agua o refresco", vt: "bebe" }
+};
+// Castigo por rajarse: más fuerte cuanto más alto el nivel.
+function castigoTexto(nivel, castigo) {
+  const c = CASTIGOS[castigo || "trago"], n = Math.min(3, Math.max(1, nivel));
+  return c.vt + " " + (n === 1 ? c.u : n + " " + c.p);
+}
+function mezclar(a, rnd) { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor((rnd || Math.random)() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; }
+function nuevaPartida(nombres, nivel, castigo, rnd) {
+  const mazo = CARTAS.filter((c) => c.n <= nivel);
+  return { jugadores: mezclar(nombres, rnd).map((n) => ({ nombre: n, hechos: 0, rajados: 0 })), turno: 0, nivel: nivel, castigo: castigo, montones: { v: mezclar(mazo.filter((c) => c.t === "v"), rnd), r: mezclar(mazo.filter((c) => c.t === "r"), rnd) }, vistas: { v: [], r: [] } };
+}
+// Saca una carta del tipo elegido (sin repetir hasta agotarlas) y pone el nombre del otro jugador.
+function sacar(p, tipo, rnd) {
+  if (!p.montones[tipo].length) { p.montones[tipo] = mezclar(p.vistas[tipo], rnd); p.vistas[tipo] = []; }
+  const c = p.montones[tipo].pop();
+  p.vistas[tipo].push(c);
+  const yo = p.jugadores[p.turno].nombre, otros = p.jugadores.filter((j) => j.nombre !== yo);
+  const j2 = otros[Math.floor((rnd || Math.random)() * otros.length)].nombre;
+  return { tipo: tipo, texto: c.x.replace(/\{J2\}/g, j2) };
+}
+function resolver(p, hecho) {
+  const j = p.jugadores[p.turno];
+  if (hecho) j.hechos++; else j.rajados++;
+  p.turno = (p.turno + 1) % p.jugadores.length;
+}
+const ranking = (p) => p.jugadores.slice().sort((a, b) => b.hechos - a.hechos || a.rajados - b.rajados);
+// </logica>
+
+let jugadores = [], nivel = 2, partida = null;
+const ok18 = () => { try { return localStorage.getItem("sd_sweetshot_18") === "si"; } catch (e) { return false; } };
+function guardar() { try { localStorage.setItem("sd_sweetshot_jug", JSON.stringify(jugadores)); } catch (e) {} }
+function pintarJugadores() {
+  const c = $("jugadores");
+  c.innerHTML = "";
+  jugadores.forEach((n, i) => { const s = document.createElement("span"); s.textContent = n; const x = document.createElement("b"); x.textContent = "✕"; x.onclick = () => { jugadores.splice(i, 1); guardar(); pintarJugadores(); }; s.append(x); c.append(s); });
+}
+function anadir() {
+  const n = $("nuevo").value.trim();
+  if (!n) return;
+  if (jugadores.some((x) => x.toLowerCase() === n.toLowerCase())) { $("cfgInfo").textContent = "Ese nombre ya está."; return; }
+  jugadores.push(n); guardar(); $("nuevo").value = ""; $("cfgInfo").textContent = ""; pintarJugadores(); $("nuevo").focus();
+}
+function filas(caja, conTurno) {
+  caja.innerHTML = "";
+  ranking(partida).forEach((j, i) => {
+    const f = document.createElement("div");
+    f.className = "vr-fila" + (conTurno && j === partida.jugadores[partida.turno] ? " turno" : "");
+    const a = document.createElement("span"); a.textContent = (conTurno ? "" : ["🥇 ", "🥈 ", "🥉 "][i] || i + 1 + "º ") + j.nombre;
+    const b = document.createElement("span"); b.textContent = "✔ " + j.hechos + " · 🙈 " + j.rajados;
+    f.append(a, b); caja.append(f);
+  });
+}
+function turno() {
+  $("tNombre").textContent = partida.jugadores[partida.turno].nombre;
+  filas($("marcador"), true);
+  pantalla("turno");
+}
+function elegir(tipo) {
+  const c = sacar(partida, tipo);
+  $("vr-carta").style.background = tipo === "v" ? "linear-gradient(150deg,#19c3ff,#3d5cff)" : "linear-gradient(150deg,#ff6a3d,#ff2bd6)";
+  $("vr-tipo").textContent = (tipo === "v" ? "🤔 Verdad · " : "🔥 Reto · ") + partida.jugadores[partida.turno].nombre;
+  $("vr-texto").textContent = c.texto;
+  $("bRajo").textContent = "🙈 Me rajo: " + castigoTexto(partida.nivel, partida.castigo);
+  pantalla("carta");
+}
+function empezar() {
+  if (jugadores.length < 2) { $("cfgInfo").textContent = "Añade al menos dos jugadores."; return; }
+  partida = nuevaPartida(jugadores, nivel, $("sinAlcohol").checked ? $("castigo").value : null);
+  turno();
+}
+function terminar() {
+  const r = ranking(partida);
+  $("valiente").textContent = r[0].hechos ? "El más valiente: " + r[0].nombre : "Nadie se ha atrevido… ¡otra ronda!";
+  filas($("final"), false);
+  pantalla("fin");
+}
+$("soyMayor").onclick = () => { try { localStorage.setItem("sd_sweetshot_18", "si"); } catch (e) {} pantalla("cfg"); };
+$("noMayor").onclick = () => { location.href = "juegos.html"; };
+$("anadir").onclick = anadir;
+$("nuevo").onkeydown = (e) => { if (e.key === "Enter") anadir(); };
+document.querySelectorAll("#niveles button").forEach((b) => (b.onclick = () => { nivel = Number(b.dataset.n); document.querySelectorAll("#niveles button").forEach((x) => x.classList.toggle("sel", x === b)); }));
+$("sinAlcohol").onchange = () => $("castigo").classList.toggle("oculto", !$("sinAlcohol").checked);
+$("empezar").onclick = empezar;
+$("bVerdad").onclick = () => elegir("v");
+$("bReto").onclick = () => elegir("r");
+$("bAzar").onclick = () => elegir(Math.random() < 0.5 ? "v" : "r");
+$("bHecho").onclick = () => { resolver(partida, true); turno(); };
+$("bRajo").onclick = () => { resolver(partida, false); turno(); };
+$("terminar").onclick = () => { if (confirm("¿Terminar la partida y ver quién ha sido el más valiente?")) terminar(); };
+$("otra").onclick = empezar;
+$("cambiar").onclick = () => pantalla("cfg");
+try { jugadores = JSON.parse(localStorage.getItem("sd_sweetshot_jug") || "[]"); } catch (e) { jugadores = []; }
+pintarJugadores();
+pantalla(ok18() ? "cfg" : "edad");
+</script>
+</main></body></html>
