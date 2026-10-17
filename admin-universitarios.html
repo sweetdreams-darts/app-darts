@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Universitarios y promociones</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:28px 0 4px;color:#ffd166}
+label{display:block;margin-top:12px;font-weight:700}
+label small,.peq{font-weight:400;opacity:.85;font-size:.85rem}
+input,select,textarea,button{width:100%;box-sizing:border-box;min-width:0;max-width:100%;padding:11px;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+input[type=time]{height:44px;padding:0 12px}
+textarea{height:150px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+.fila{display:flex;gap:8px}.fila>*{flex:1}
+.dias{display:flex;gap:6px;margin-top:6px}
+.dias label{margin:0;flex:1;font-weight:400;text-align:center}
+.dias input{display:none}
+.dias span{display:block;padding:10px 0;border-radius:10px;border:1px solid #3d5380;background:#0f1a30}
+.dias input:checked+span{background:#ffd166;color:#14213d;font-weight:700;border-color:#ffd166}
+label.op{display:flex;gap:10px;align-items:center;font-weight:400}
+label.op input{width:22px;height:22px;margin:0;flex:none}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.card button{margin-top:8px;padding:9px}
+.card .fila button{margin-top:8px}
+.cifras{display:flex;gap:8px;margin-top:10px}
+.cifras div{flex:1;background:#1d2f52;border-radius:12px;padding:10px;text-align:center}
+.cifras b{display:block;font-size:1.4rem;color:#ffd166}
+.cifras span{font-size:.74rem;opacity:.85}
+.et{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:800;background:#3d5380}
+.fila2{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Universitarios y promociones</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="cifras" id="cifras"></div>
+
+  <h2>1. Promociones para universitarios</h2>
+  <p class="peq">Las ven los usuarios con el sello 🎓, con la etiqueta AHORA cuando valen en ese momento. Cámbialas cuando quieras: se aplican al instante.</p>
+  <div id="promos"></div>
+  <div class="card" id="form">
+    <strong id="formTit">Nueva promoción</strong>
+    <label for="pTit">Título<small> (por ejemplo: Cachis a 4,50 €)</small></label>
+    <input id="pTit" maxlength="60">
+    <label for="pTxt">Explicación (opcional)</label>
+    <input id="pTxt" maxlength="120" placeholder="Por ejemplo: solo con el sello 🎓 en el móvil">
+    <label>Días</label>
+    <div class="dias" id="pDias"></div>
+    <label class="op"><input type="checkbox" id="pTodo" checked><span>Todo el día</span></label>
+    <div class="fila" id="pHoras"><div><label for="pDesde">Desde</label><input id="pDesde" type="time" step="900" value="17:30"></div><div><label for="pHasta">Hasta</label><input id="pHasta" type="time" step="900" value="21:00"></div></div>
+    <div class="fila"><div><label for="pOrden">Orden<small> (1 sale primero)</small></label><input id="pOrden" type="number" inputmode="numeric" value="10"></div></div>
+    <label class="op"><input type="checkbox" id="pAct" checked><span>Activa (la ven los universitarios)</span></label>
+    <button id="pGuardar">Guardar promoción</button>
+    <button id="pNuevo" class="sec">Limpiar / nueva</button>
+  </div>
+
+  <h2>2. Facultades</h2>
+  <p class="peq">Una por línea. Es lo que eligen al registrarse y lo que usaremos para la guerra de facultades.</p>
+  <textarea id="tFac"></textarea>
+  <button id="gFac">Guardar facultades</button>
+
+  <h2>3. Correos de la universidad</h2>
+  <p class="peq">Una parte del correo por línea, lo que va detrás de la @. Quien se registre con uno de estos correos y lo verifique activa solo su sello 🎓. Para saber el vuestro, mira el correo de un estudiante: la UVa suele ser <b>alumnos.uva.es</b>.</p>
+  <textarea id="tDom" style="height:90px"></textarea>
+  <button id="gDom">Guardar correos</button>
+
+  <h2>4. Activar el sello a mano</h2>
+  <p class="peq">Para quien se registró con otro correo (gmail, etc.) y te enseña su carné de estudiante.</p>
+  <input id="bUsu" type="search" placeholder="Nombre o email" autocomplete="off">
+  <div id="rUsu"></div>
+
+  <h2>5. De dónde vienen los registros</h2>
+  <p class="peq">Cada QR lleva su propia marca, y la app cuenta cuántas personas se registran desde cada uno. Copia el enlace y créate el QR con él.</p>
+  <div id="origenes"></div>
+  <label for="nOrigen">Un QR nuevo<small> (solo letras, números y guiones)</small></label>
+  <div class="fila"><input id="nOrigen" maxlength="30" placeholder="Por ejemplo: derecho-cartel"><button id="aOrigen" class="sec" style="flex:none;width:auto">Añadir</button></div>
+  <h2 style="margin-top:22px">Por facultad</h2>
+  <div id="porFac"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+const msg = (t) => { $("msg").textContent = t; };
+const APP = "https://sweetdreams-darts.github.io/app-darts/";
+
+// <logica>
+const FACULTADES = ["Ciencias", "Medicina", "Enfermería", "Derecho", "Filosofía y Letras", "Educación y Trabajo Social", "Económicas y Empresariales", "Comercio", "Ingenierías Industriales", "Telecomunicación", "Arquitectura", "Agrarias (Palencia)", "Otra universidad"];
+const DOMINIOS = ["alumnos.uva.es"];
+const PROMOS = [{ id: "jueves", titulo: "Jueves Universitario", texto: "Cachis a 4,50 € todo el jueves.", dias: [4], desde: "", hasta: "", activa: true, orden: 1 }];
+const DIAS = [[1, "L"], [2, "M"], [3, "X"], [4, "J"], [5, "V"], [6, "S"], [0, "D"]];
+const NOMBRES_DIA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"], ORDEN_SEMANA = [1, 2, 3, 4, 5, 6, 0];
+const ORIGENES_BASE = ["posavasos", "barra", "banos", "cartel", "copisteria", "instagram"];
+const textoCuando = (p) => (Array.isArray(p.dias) && p.dias.length && p.dias.length < 7 ? ORDEN_SEMANA.filter((x) => p.dias.includes(x)).map((x) => NOMBRES_DIA[x]).join(", ") : "Todos los días") + (p.desde && p.hasta ? " · " + p.desde + "–" + p.hasta : "");
+// Una línea por elemento, sin vacías ni repetidas.
+const lineas = (txt) => [...new Set(String(txt || "").split("\n").map((x) => x.trim()).filter(Boolean))];
+const limpiarDominio = (x) => String(x).toLowerCase().replace(/^@/, "").replace(/^.*@/, "").trim();
+function validarPromo(p) {
+  if (!p.titulo.trim()) return "Escribe el título.";
+  if (!p.dias.length) return "Marca al menos un día.";
+  if (!p.todoElDia) {
+    if (!p.desde || !p.hasta) return "Pon la hora de inicio y la de fin, o marca «Todo el día».";
+    if (p.desde === p.hasta) return "La hora de inicio y la de fin no pueden ser la misma.";
+  }
+  return "";
+}
+const nombreOrigen = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
+const ETIQUETA_ORIGEN = { anterior: "Ya estaban registrados", directo: "Entraron directamente", manual: "Sello puesto a mano" };
+// Cuentas por origen y por facultad a partir de los perfiles.
+function resumir(perfiles) {
+  const origen = {}, facultad = {};
+  let uni = 0, conFac = 0;
+  for (const p of perfiles) {
+    const o = p.origen || "directo";
+    origen[o] = (origen[o] || 0) + 1;
+    if (p.universitario === true) uni++;
+    if (p.facultad) { conFac++; facultad[p.facultad] = (facultad[p.facultad] || 0) + 1; }
+  }
+  return { origen: origen, facultad: facultad, uni: uni, conFac: conFac, total: perfiles.length };
+}
+// </logica>
+
+let cfg = { facultades: FACULTADES.slice(), dominios: DOMINIOS.slice(), promos: PROMOS.map((p) => Object.assign({}, p)) }, editando = "", perfiles = new Map(), usuarios = [], nuevosOrigenes = new Set();
+
+async function guardarCfg(parcial) {
+  Object.assign(cfg, parcial);
+  await setDoc(doc(db, "settings", "universitarios"), { facultades: cfg.facultades, dominios: cfg.dominios, promos: cfg.promos }, { merge: true });
+}
+
+// ---------- promociones ----------
+function pintarPromos() {
+  const c = $("promos");
+  c.innerHTML = "";
+  if (!cfg.promos.length) c.append(el("p", "No hay promociones. Crea la primera abajo.", "peq"));
+  cfg.promos.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).forEach((p) => {
+    const card = el("div", "", "card"), t = el("strong", p.titulo);
+    if (p.activa === false) t.append(el("span", "apagada", "et"));
+    card.append(t);
+    if (p.texto) card.append(el("small", p.texto));
+    card.append(el("small", textoCuando(p)));
+    const f = el("div", "", "fila");
+    const e = el("button", "Editar", "sec"), a = el("button", p.activa === false ? "Activar" : "Apagar", "sec"), b = el("button", "Borrar", "mal");
+    [e, a, b].forEach((x) => (x.type = "button"));
+    e.onclick = () => editar(p);
+    a.onclick = async () => { try { await guardarCfg({ promos: cfg.promos.map((x) => (x.id === p.id ? Object.assign({}, x, { activa: x.activa === false }) : x)) }); msg("✔ Hecho."); pintarPromos(); } catch (er) { msg("Error: " + (er.code || er.message)); } };
+    b.onclick = async () => { if (!confirm("¿Borrar «" + p.titulo + "»?")) return; try { await guardarCfg({ promos: cfg.promos.filter((x) => x.id !== p.id) }); msg("✔ Borrada."); limpiar(); pintarPromos(); } catch (er) { msg("Error: " + (er.code || er.message)); } };
+    f.append(e, a, b);
+    card.append(f);
+    c.append(card);
+  });
+}
+function pintarDias(sel) {
+  const c = $("pDias");
+  c.innerHTML = "";
+  DIAS.forEach(([n, letra]) => { const l = document.createElement("label"), i = document.createElement("input"); i.type = "checkbox"; i.value = String(n); i.checked = sel.includes(n); l.append(i, el("span", letra)); c.append(l); });
+}
+function limpiar() {
+  editando = "";
+  $("formTit").textContent = "Nueva promoción";
+  $("pTit").value = ""; $("pTxt").value = ""; pintarDias([1, 2, 3, 4, 5, 6, 0]);
+  $("pTodo").checked = true; $("pDesde").value = "17:30"; $("pHasta").value = "21:00"; $("pOrden").value = "10"; $("pAct").checked = true;
+  $("pHoras").classList.add("oculto");
+}
+function editar(p) {
+  editando = p.id;
+  $("formTit").textContent = "Editar: " + p.titulo;
+  $("pTit").value = p.titulo; $("pTxt").value = p.texto || ""; pintarDias(Array.isArray(p.dias) && p.dias.length ? p.dias : [0, 1, 2, 3, 4, 5, 6]);
+  $("pTodo").checked = !(p.desde && p.hasta); $("pDesde").value = p.desde || "17:30"; $("pHasta").value = p.hasta || "21:00";
+  $("pOrden").value = String(p.orden || 0); $("pAct").checked = p.activa !== false;
+  $("pHoras").classList.toggle("oculto", $("pTodo").checked);
+  $("form").scrollIntoView();
+}
+$("pTodo").onchange = () => $("pHoras").classList.toggle("oculto", $("pTodo").checked);
+$("pNuevo").onclick = limpiar;
+$("pGuardar").onclick = async () => {
+  const datos = { titulo: $("pTit").value, dias: [...document.querySelectorAll("#pDias input:checked")].map((i) => Number(i.value)), todoElDia: $("pTodo").checked, desde: $("pDesde").value, hasta: $("pHasta").value };
+  const error = validarPromo(datos);
+  if (error) { msg(error); return; }
+  const p = { id: editando || "p" + Date.now(), titulo: datos.titulo.trim(), texto: $("pTxt").value.trim(), dias: datos.dias, desde: datos.todoElDia ? "" : datos.desde, hasta: datos.todoElDia ? "" : datos.hasta, activa: $("pAct").checked, orden: Number($("pOrden").value) || 0 };
+  try {
+    await guardarCfg({ promos: editando ? cfg.promos.map((x) => (x.id === editando ? p : x)) : cfg.promos.concat([p]) });
+    msg("✔ Guardada. Ya la ven los universitarios.");
+    limpiar();
+    pintarPromos();
+  } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+
+// ---------- facultades y correos ----------
+$("gFac").onclick = async () => {
+  const l = lineas($("tFac").value);
+  if (!l.length) { msg("Pon al menos una facultad."); return; }
+  try { await guardarCfg({ facultades: l }); msg("✔ Guardadas " + l.length + " facultades."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+$("gDom").onclick = async () => {
+  const l = [...new Set(lineas($("tDom").value).map(limpiarDominio).filter(Boolean))];
+  if (!l.length) { msg("Pon al menos un correo, por ejemplo alumnos.uva.es."); return; }
+  try { await guardarCfg({ dominios: l }); $("tDom").value = l.join("\n"); msg("✔ Guardado."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+
+// ---------- activar a mano ----------
+function pintarUsuarios() {
+  const c = $("rUsu"), q = $("bUsu").value.trim().toLowerCase();
+  c.innerHTML = "";
+  if (q.length < 3) return;
+  const l = usuarios.filter((u) => (u.nombre || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q)).slice(0, 8);
+  if (!l.length) c.append(el("p", "No encuentro a nadie con eso.", "peq"));
+  l.forEach((u) => {
+    const p = perfiles.get(u.id) || {}, card = el("div", "", "card"), t = el("strong", u.nombre || "(sin nombre)");
+    if (p.universitario === true) t.append(el("span", "🎓 sello", "et"));
+    card.append(t, el("small", (u.email || "") + (p.facultad ? " · " + p.facultad : "")));
+    const b = el("button", p.universitario === true ? "Quitar el sello 🎓" : "Activar el sello 🎓", p.universitario === true ? "sec" : "");
+    b.type = "button";
+    b.onclick = async () => {
+      try {
+        const nuevo = p.universitario !== true;
+        await setDoc(doc(db, "perfil_extra", u.id), perfiles.has(u.id) ? { universitario: nuevo, actualizado: serverTimestamp() } : { universitario: nuevo, origen: "manual", creado: serverTimestamp(), actualizado: serverTimestamp() }, { merge: true });
+        perfiles.set(u.id, Object.assign({}, p, { universitario: nuevo }));
+        msg("✔ " + (u.nombre || "La cuenta") + (nuevo ? " ya tiene el sello 🎓." : " ya no tiene el sello."));
+        pintarUsuarios(); pintarResumen();
+      } catch (e) { msg("Error: " + (e.code || e.message)); }
+    };
+    card.append(b);
+    c.append(card);
+  });
+}
+$("bUsu").oninput = pintarUsuarios;
+
+// ---------- resumen y orígenes ----------
+function pintarResumen() {
+  const r = resumir([...perfiles.values()]);
+  const c = $("cifras");
+  c.innerHTML = "";
+  [[r.uni, "universitarios 🎓"], [r.conFac, "con facultad"], [r.total, "perfiles en total"]].forEach(([n, t]) => { const d = el("div"); d.append(el("b", String(n)), el("span", t)); c.append(d); });
+  const o = $("origenes");
+  o.innerHTML = "";
+  const nombres = [...new Set([...ORIGENES_BASE, ...nuevosOrigenes, ...Object.keys(r.origen).filter((x) => !ETIQUETA_ORIGEN[x])])];
+  nombres.forEach((n) => {
+    const card = el("div", "", "card"), t = el("strong", n);
+    t.append(el("span", (r.origen[n] || 0) + " registros", "et"));
+    card.append(t, el("small", APP + "?o=" + n));
+    const b = el("button", "Copiar enlace", "sec");
+    b.type = "button";
+    b.onclick = async () => { try { await navigator.clipboard.writeText(APP + "?o=" + n); msg("✔ Enlace copiado: " + APP + "?o=" + n); } catch (e) { msg(APP + "?o=" + n); } };
+    card.append(b);
+    o.append(card);
+  });
+  const otros = el("div", "", "card");
+  Object.keys(ETIQUETA_ORIGEN).forEach((k) => { if (r.origen[k]) { const f = el("div", "", "fila2"); f.append(el("span", ETIQUETA_ORIGEN[k]), el("b", String(r.origen[k]))); otros.append(f); } });
+  if (otros.children.length) o.append(otros);
+  const pf = $("porFac");
+  pf.innerHTML = "";
+  const fs = Object.entries(r.facultad).sort((a, b) => b[1] - a[1]);
+  if (!fs.length) pf.append(el("p", "Todavía nadie ha elegido facultad.", "peq"));
+  fs.forEach(([n, v]) => { const f = el("div", "", "fila2"); f.append(el("span", n), el("b", String(v))); pf.append(f); });
+}
+$("aOrigen").onclick = () => {
+  const n = nombreOrigen($("nOrigen").value);
+  if (!n) { msg("Escribe un nombre: solo letras, números y guiones."); return; }
+  nuevosOrigenes.add(n);
+  $("nOrigen").value = "";
+  pintarResumen();
+  msg("✔ Añadido. Copia su enlace y crea el QR.");
+};
+
+async function cargar() {
+  const c = await getDoc(doc(db, "settings", "universitarios"));
+  if (c.exists()) {
+    const d = c.data();
+    cfg = { facultades: d.facultades && d.facultades.length ? d.facultades : FACULTADES.slice(), dominios: d.dominios && d.dominios.length ? d.dominios : DOMINIOS.slice(), promos: Array.isArray(d.promos) ? d.promos : PROMOS.map((p) => Object.assign({}, p)) };
+  }
+  $("tFac").value = cfg.facultades.join("\n");
+  $("tDom").value = cfg.dominios.join("\n");
+  perfiles = new Map((await getDocs(collection(db, "perfil_extra"))).docs.map((d) => [d.id, d.data()]));
+  usuarios = (await getDocs(collection(db, "users"))).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  pintarPromos(); limpiar(); pintarResumen();
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    await cargar();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
