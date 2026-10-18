@@ -202,12 +202,13 @@ def mes_de(ms):
 
 # ---------------- trae a un amigo ----------------
 def ajustes_invitar():
-    cfg = {"activo": True, "puntos": 100, "maxMes": 0}
+    cfg = {"activo": True, "puntos": 100, "maxMes": 0, "minimo": 4.5}
     d = leer("settings/invitaciones")
     f = (d or {}).get("fields", {})
     if "activo" in f: cfg["activo"] = f["activo"].get("booleanValue", True)
     if "puntos" in f: cfg["puntos"] = int(f["puntos"].get("integerValue", 100))
     if "maxMes" in f: cfg["maxMes"] = int(f["maxMes"].get("integerValue", 0))
+    if "minimo" in f: cfg["minimo"] = float(f["minimo"].get("doubleValue", f["minimo"].get("integerValue", 4.5)))
     return cfg
 
 
