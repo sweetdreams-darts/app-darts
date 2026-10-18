@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tarjetas de camareros</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:580px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 6px;color:#ffd166}
+label{display:block;margin-top:12px;font-weight:700}
+.chk{display:flex;gap:10px;align-items:center;font-weight:400}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+input,button{width:100%;box-sizing:border-box;min-width:0;max-width:100%;padding:11px;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.tarj{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.1);font-size:.88rem}
+.tarj button{width:auto;margin:0;padding:6px 10px;font-size:.8rem}
+.et{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:800;background:#3d5380}
+.et.ok{background:#5dff9a;color:#14213d}.et.mal{background:#ff8787;color:#14213d}
+.alta{margin-top:10px;padding:10px;border-radius:10px;border:1px dashed #ffd166}
+.fila2{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:.88rem}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+.peq{font-size:.85rem;opacity:.85}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Tarjetas de camareros</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <p class="peq">Cada camarero lleva una tarjeta NFC (NTAG 424 DNA). El cliente pulsa «Validar mi consumición» en su móvil y el camarero acerca la tarjeta. Cada toque genera un código distinto que el robot comprueba, así que no sirve copiarlo.</p>
+  <label class="chk"><input id="cAct" type="checkbox"><span>Validación con tarjeta activa (sale el botón «Validar mi consumición» en el inicio de los socios)</span></label>
+  <label for="cHoras">Horas mínimas entre dos validaciones del mismo cliente</label>
+  <input id="cHoras" type="number" min="1" max="24" inputmode="numeric">
+  <button id="cGuardar">Guardar</button>
+
+  <h2>Camareros y sus tarjetas</h2>
+  <p class="peq">Para dar de alta una tarjeta: pulsa el botón del camarero y acerca la tarjeta a la parte de atrás de este móvil (Android con Chrome).</p>
+  <div id="camareros"></div>
+
+  <h2>Validaciones este mes</h2>
+  <div id="mes"></div>
+
+  <h2>Últimas validaciones</h2>
+  <div id="ultimas"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, addDoc, query, where, orderBy, limit, onSnapshot, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+const msg = (t) => { $("msg").textContent = t; };
+
+// <logica>
+const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+const cuando = (t) => { const d = new Date(ms(t)); return ms(t) ? d.toLocaleDateString("es-ES") + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : ""; };
+function pcDe(url) {
+  try {
+    const u = new URL(String(url).trim());
+    const p = u.searchParams.get("p"), c = u.searchParams.get("c");
+    if (/^[0-9a-f]{32}$/i.test(p || "") && /^[0-9a-f]{16}$/i.test(c || "")) return { p: p.toUpperCase(), c: c.toUpperCase() };
+  } catch (e) {}
+  return null;
+}
+const ESTADOS = { pendiente: "comprobando…", valida: "✔ válida", repetida_hoy: "repetida (ya validó hace poco)", repetida: "✖ toque ya usado", falsa: "✖ código falso", desconocida: "✖ tarjeta no dada de alta", baja: "✖ tarjeta dada de baja" };
+// </logica>
+
+let usuarios = new Map(), tarjetas = [];
+
+function leerTarjeta(caja, alLeer) {
+  caja.innerHTML = "";
+  if ("NDEFReader" in window) {
+    const ctrl = new AbortController(), lector = new NDEFReader();
+    caja.append(el("p", "📲 Acerca la tarjeta a la parte de atrás de este móvil…"));
+    const can = el("button", "Cancelar", "sec"); can.type = "button"; can.onclick = () => { ctrl.abort(); caja.innerHTML = ""; };
+    caja.append(can);
+    lector.scan({ signal: ctrl.signal }).then(() => {
+      lector.onreading = (ev) => {
+        let url = "";
+        for (const r of ev.message.records) if (r.recordType === "url" || r.recordType === "absolute-url") url = new TextDecoder().decode(r.data);
+        const pc = pcDe(url);
+        if (!pc) { msg("Esa tarjeta no está programada con el enlace de validación. Revisa la programación con TagWriter."); return; }
+        ctrl.abort(); alLeer(pc);
+      };
+    }).catch((e) => { msg("No se puede leer NFC aquí (" + (e.name || e.message) + "). Usa un Android con Chrome o pega el enlace."); });
+  } else {
+    caja.append(el("p", "Este móvil no puede leer NFC desde la app (iPhone o navegador sin NFC). Pega el enlace que da la tarjeta (por ejemplo, leyéndola con NXP TagInfo):", "peq"));
+  }
+  const inp = document.createElement("input"); inp.placeholder = "https://…/validar.html?p=…&c=…";
+  const ok = el("button", "Usar este enlace", "sec"); ok.type = "button";
+  ok.onclick = () => { const pc = pcDe(inp.value); if (!pc) { msg("Ese enlace no es de una tarjeta programada (le faltan p= y c=)."); return; } alLeer(pc); };
+  caja.append(inp, ok);
+}
+
+function pintarCamareros() {
+  const c = $("camareros"); c.innerHTML = "";
+  const lista = [...usuarios.values()].filter((u) => u.role === "staff" || u.role === "admin").sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+  if (!lista.length) c.append(el("p", "No hay camareros. Dale el rol de camarero a alguien desde «Usuarios y fichas».", "peq"));
+  lista.forEach((u) => {
+    const card = el("div", "", "card");
+    card.append(el("strong", u.nombre || "(sin nombre)"), el("small", u.role === "admin" ? "Administrador" : "Camarero"));
+    tarjetas.filter((t) => t.camarero === u.id).forEach((t) => {
+      const f = el("div", "", "tarj"), info = el("span", "Tarjeta ••" + t.id.slice(-4) + " · " + (t.usos || 0) + " usos" + (ms(t.ultimoUso) ? " · último: " + cuando(t.ultimoUso) : ""));
+      info.append(el("span", t.activa === true ? "activa" : "de baja", "et " + (t.activa === true ? "ok" : "mal")));
+      const b = el("button", t.activa === true ? "Dar de baja" : "Reactivar", "sec"); b.type = "button";
+      b.onclick = async () => {
+        if (t.activa === true && !confirm("¿Dar de baja esta tarjeta? (por ejemplo, si se ha perdido). Dejará de validar.")) return;
+        try { await updateDoc(doc(db, "tarjetas", t.id), { activa: t.activa !== true }); msg(t.activa === true ? "✔ Tarjeta dada de baja." : "✔ Tarjeta reactivada."); await cargar(); } catch (e) { msg("Error: " + (e.code || e.message)); }
+      };
+      f.append(info, b); card.append(f);
+    });
+    const alta = el("button", "➕ Dar de alta una tarjeta para " + (u.nombre || "este camarero").split(" ")[0]); alta.type = "button";
+    const caja = el("div", "", "alta oculto");
+    alta.onclick = () => {
+      caja.classList.remove("oculto");
+      leerTarjeta(caja, async (pc) => {
+        try {
+          const r = await addDoc(collection(db, "tarjetas_altas"), { camarero: u.id, camareroNombre: u.nombre || "", p: pc.p, c: pc.c, estado: "pendiente", creado: serverTimestamp() });
+          caja.innerHTML = ""; caja.append(el("p", "✔ Tarjeta leída. Comprobándola… (tarda uno o dos minutos; puedes salir de aquí)."));
+          onSnapshot(r, async (d) => {
+            const x = d.data() || {};
+            if (x.estado === "hecha") { caja.innerHTML = ""; caja.append(el("p", "✔ Tarjeta de " + (u.nombre || "") + " dada de alta.")); await cargar(); }
+            if (x.estado === "error") { caja.innerHTML = ""; caja.append(el("p", "✖ " + (x.motivo || "No se ha podido dar de alta."))); }
+          });
+        } catch (e) { msg("Error: " + (e.code || e.message)); }
+      });
+    };
+    card.append(alta, caja);
+    c.append(card);
+  });
+}
+
+async function pintarValidaciones() {
+  const u = $("ultimas"); u.innerHTML = "";
+  const ult = (await getDocs(query(collection(db, "validaciones"), orderBy("creado", "desc"), limit(30)))).docs.map((d) => d.data());
+  if (!ult.length) u.append(el("p", "Todavía no hay validaciones.", "peq"));
+  ult.forEach((v) => { const f = el("div", "", "fila2"); f.append(el("span", cuando(v.creado) + " · " + ((usuarios.get(v.uid) || {}).nombre || "Cliente") + (v.camareroNombre ? " · con " + v.camareroNombre : "")), el("b", ESTADOS[v.estado] || v.estado)); u.append(f); });
+  const ahora = new Date(), ini = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  const mes = (await getDocs(query(collection(db, "validaciones"), where("creado", ">=", Timestamp.fromDate(ini))))).docs.map((d) => d.data()).filter((v) => v.estado === "valida");
+  const por = {};
+  mes.forEach((v) => { const n = v.camareroNombre || "Sin nombre"; por[n] = (por[n] || 0) + 1; });
+  const m = $("mes"); m.innerHTML = "";
+  if (!mes.length) m.append(el("p", "Ninguna todavía este mes.", "peq"));
+  Object.entries(por).sort((a, b) => b[1] - a[1]).forEach(([n, k]) => { const f = el("div", "", "fila2"); f.append(el("span", n), el("b", String(k))); m.append(f); });
+}
+
+$("cGuardar").onclick = async () => {
+  const h = Number($("cHoras").value);
+  if (!Number.isInteger(h) || h < 1 || h > 24) { msg("Las horas deben ser un número entero entre 1 y 24."); return; }
+  try { await setDoc(doc(db, "settings", "nfc"), { activo: $("cAct").checked, horas: h }, { merge: true }); msg($("cAct").checked ? "✔ Guardado: los socios ya ven «Validar mi consumición»." : "✔ Guardado: la validación con tarjeta está desactivada."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+
+async function cargar() {
+  const lee = async (col) => (await getDocs(collection(db, col))).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const [us, tj] = await Promise.all([lee("users"), lee("tarjetas")]);
+  usuarios = new Map(us.map((u) => [u.id, u])); tarjetas = tj;
+  pintarCamareros();
+  try { await pintarValidaciones(); } catch (e) {}
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    const c = await getDoc(doc(db, "settings", "nfc"));
+    const cfg = c.exists() ? c.data() : {};
+    $("cAct").checked = cfg.activo === true;
+    $("cHoras").value = String(Number.isInteger(cfg.horas) ? cfg.horas : 3);
+    await cargar();
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
