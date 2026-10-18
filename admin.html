@@ -5,15 +5,19 @@
 body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:520px}
 a{color:#ffd166}
-.boton{display:block;margin-top:12px;padding:13px;border-radius:8px;background:#ffd166;color:#14213d;font-weight:700;text-align:center;text-decoration:none}
-input,select,button{width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0}
-input,select{background:#0f1a30;color:#f1faee;border:1px solid #3d5380}
-button{background:#ffd166;color:#14213d;font-weight:700}
-button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
-.card{background:#1d2f52;border-radius:12px;padding:14px;margin-top:12px}
-.card small{opacity:.75;display:block;margin-top:2px}
-.rol{display:inline-block;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.85rem}
-.rol.mal{background:#ff8787}
+.boton{display:block;margin-top:10px;padding:13px;border-radius:8px;background:#ffd166;color:#14213d;font-weight:700;text-align:center;text-decoration:none}
+.boton.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+details.grupo{background:#1d2f52;border-radius:14px;margin-top:12px;padding:4px 14px 14px}
+details.grupo:not([open]){padding-bottom:4px}
+summary{list-style:none;cursor:pointer;padding:12px 0 8px;font-weight:800;font-size:1.08rem;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"▾";margin-left:auto;opacity:.7;transition:transform .2s}
+details[open] summary::after{transform:rotate(180deg)}
+summary small{flex-basis:100%;font-weight:400;font-size:.8rem;opacity:.8}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;background:#5dff9a;color:#14213d;font-size:.75rem;font-weight:800}
+.badge.am{background:#ffd166}
+.badge:empty{display:none}
+#resumen{opacity:.85;font-size:.9rem;margin:6px 0 0}
 #copiaAviso{margin:6px 0 0}
 #copiaAviso.mal{color:#ff8787;font-weight:700}
 #msg{color:#ffd166}
@@ -24,40 +28,54 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 <p id="msg">Cargando…</p>
 <p id="copiaAviso"></p>
 <div id="panel" hidden>
-  <a class="boton" href="admin-reservas.html">Ver y gestionar reservas</a>
-  <a class="boton" href="admin-liga.html">Liga: equipos y bloqueos</a>
-  <a class="boton" href="admin-visperas.html">Vísperas de festivo</a>
-  <a class="boton" href="admin-ofertas.html">Ofertas</a>
-  <a class="boton" href="admin-ruleta.html">Ruleta de socios</a>
-  <a class="boton" href="admin-fotos.html">Subir fotos</a>
-  <a class="boton" href="admin-escaner.html">Escáner de carné</a>
-  <a class="boton" href="camarero.html">Panel de camarero (canjes)</a>
-  <a class="boton" href="admin-reglas.html">Reglas de reserva</a>
-  <a class="boton" href="admin-copia.html">Copia de seguridad</a>
-  <a class="boton" href="admin-premios.html">Puntos y premios de socios</a>
-  <a class="boton" href="admin-clasificaciones.html">Actualizar clasificaciones</a>
-  <a class="boton" href="admin-jugadores.html">Jugadores de la liga</a>
-  <a class="boton" href="admin-borrar-socio.html">Eliminar datos de un socio</a>
-  <a class="boton" href="admin-capitanes.html">Capitanes de equipo</a>
-  <a class="boton" href="admin-solicitudes.html">Solicitudes de capitanes</a>
-  <a class="boton" href="admin-trivial.html">Trivial competitivo</a>
-  <a class="boton" href="admin-nuevos.html">Usuarios nuevos</a>
-  <a class="boton" href="admin-universitarios.html">Universitarios y promociones</a>
   <p id="resumen"></p>
-  <input id="buscar" type="search" placeholder="Buscar por nombre o email">
-  <select id="filtro">
-    <option value="todos">Todos</option>
-    <option value="user">Solo usuarios (sin acceso a la Zona Liga)</option>
-    <option value="player">Solo jugadores oficiales</option>
-    <option value="staff">Solo camareros</option>
-    <option value="socio">Solo socios</option>
-  </select>
-  <div id="lista"></div>
+
+  <details class="grupo" data-g="usuarios"><summary>👥 Usuarios y socios <span class="badge" id="bNuevos"></span><small>Fichas, accesos, socios, usuarios nuevos y jugadores</small></summary>
+    <a class="boton" href="admin-usuarios.html">Usuarios y fichas</a>
+    <a class="boton" href="admin-nuevos.html">Usuarios nuevos</a>
+    <a class="boton" href="admin-jugadores.html">Jugadores de la liga</a>
+    <a class="boton sec" href="admin-borrar-socio.html">Eliminar datos de un socio</a>
+  </details>
+
+  <details class="grupo" data-g="dianas"><summary>🎯 Dianas y reservas<small>Reservas, reglas y vísperas de festivo</small></summary>
+    <a class="boton" href="admin-reservas.html">Ver y gestionar reservas</a>
+    <a class="boton" href="admin-reglas.html">Reglas de reserva</a>
+    <a class="boton" href="admin-visperas.html">Vísperas de festivo</a>
+  </details>
+
+  <details class="grupo" data-g="liga"><summary>🏆 Liga <span class="badge am" id="bSolic"></span><small>Bloqueos, clasificaciones, capitanes y solicitudes</small></summary>
+    <a class="boton" href="admin-liga.html">Equipos y bloqueos de liga</a>
+    <a class="boton" href="admin-solicitudes.html">Solicitudes de capitanes</a>
+    <a class="boton" href="admin-capitanes.html">Capitanes de equipo</a>
+    <a class="boton" href="admin-clasificaciones.html">Actualizar clasificaciones</a>
+  </details>
+
+  <details class="grupo" data-g="puntos"><summary>🎁 Puntos, premios y caja<small>Premios de socios, ruleta, canjes y escáner</small></summary>
+    <a class="boton" href="admin-premios.html">Puntos y premios de socios</a>
+    <a class="boton" href="admin-ruleta.html">Ruleta de socios</a>
+    <a class="boton" href="camarero.html">Panel de camarero (canjes)</a>
+    <a class="boton" href="admin-escaner.html">Escáner de carné</a>
+  </details>
+
+  <details class="grupo" data-g="promos"><summary>📣 Promociones y contenido<small>Universitarios, ofertas y fotos</small></summary>
+    <a class="boton" href="admin-universitarios.html">Universitarios y promociones</a>
+    <a class="boton" href="admin-ofertas.html">Ofertas</a>
+    <a class="boton" href="admin-fotos.html">Subir fotos</a>
+  </details>
+
+  <details class="grupo" data-g="juegos"><summary>🎮 Juegos<small>Competición de trivial</small></summary>
+    <a class="boton" href="admin-trivial.html">Competición de trivial</a>
+  </details>
+
+  <details class="grupo" data-g="sistema"><summary>⚙️ Sistema<small>Copia de seguridad</small></summary>
+    <a class="boton" href="admin-copia.html">Copia de seguridad</a>
+  </details>
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, updateDoc, collection, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, collection, query, where, Timestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { asegurarContador } from "./socios.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -69,14 +87,16 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
-const ROLES = { user: "Usuario", player: "Jugador oficial", staff: "Camarero", admin: "Administrador" };
-const el = (tag, txt, cls) => {
-  const e = document.createElement(tag);
-  if (txt) e.textContent = txt;
-  if (cls) e.className = cls;
-  return e;
-};
-let usuarios = [];
+
+// Recuerda qué grupos dejaste abiertos.
+const abiertos = (() => { try { return JSON.parse(localStorage.getItem("sd_admin_abiertos") || "[]"); } catch (e) { return []; } })();
+document.querySelectorAll("details.grupo").forEach((d) => {
+  if (abiertos.includes(d.dataset.g)) d.open = true;
+  d.addEventListener("toggle", () => {
+    const l = [...document.querySelectorAll("details.grupo[open]")].map((x) => x.dataset.g);
+    try { localStorage.setItem("sd_admin_abiertos", JSON.stringify(l)); } catch (e) {}
+  });
+});
 
 onAuthStateChanged(auth, async (u) => {
   $("panel").hidden = true;
@@ -84,11 +104,19 @@ onAuthStateChanged(auth, async (u) => {
   try {
     const yo = await getDoc(doc(db, "users", u.uid));
     if (!yo.exists() || yo.data().role !== "admin") { $("msg").textContent = "No tienes permiso para ver esta página."; return; }
-    const snap = await getDocs(query(collection(db, "users"), orderBy("creado", "desc")));
-    usuarios = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     $("msg").textContent = "";
     $("panel").hidden = false;
-    pintar();
+    const usuarios = (await getDocs(collection(db, "users"))).docs.map((d) => d.data());
+    const n = (r) => usuarios.filter((x) => x.role === r).length;
+    $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " clientes, " + n("player") + " jugadores oficiales, " + n("staff") + " camareros y " + usuarios.filter((x) => x.socio).length + " socios.";
+    try { await asegurarContador(db, usuarios); } catch (e) {}
+    const visto = yo.data().vistoNuevosHasta && yo.data().vistoNuevosHasta.toMillis ? yo.data().vistoNuevosHasta.toMillis() : Date.now() - 3 * 86400000;
+    const nuevos = usuarios.filter((x) => x.role !== "robot" && x.creado && x.creado.toMillis && x.creado.toMillis() > visto).length;
+    $("bNuevos").textContent = nuevos ? nuevos + (nuevos === 1 ? " nuevo" : " nuevos") : "";
+    try {
+      const s = (await getDocs(query(collection(db, "cambios_pedidos"), where("estado", "==", "pendiente")))).docs.length;
+      $("bSolic").textContent = s ? s + (s === 1 ? " solicitud" : " solicitudes") : "";
+    } catch (e) {}
     try {
       const cp = await getDoc(doc(db, "settings", "copia"));
       const ms = cp.exists() && cp.data().ultima && cp.data().ultima.toMillis ? cp.data().ultima.toMillis() : 0;
@@ -98,88 +126,5 @@ onAuthStateChanged(auth, async (u) => {
     } catch (e) {}
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
 });
-
-function pintar() {
-  const t = $("buscar").value.trim().toLowerCase();
-  const f = $("filtro").value;
-  const n = (r) => usuarios.filter((x) => x.role === r).length;
-  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " usuarios, " + n("player") + " jugadores oficiales, " + n("staff") + " camareros, " + n("admin") + " administradores, " + usuarios.filter((x) => x.socio).length + " socios.";
-  const lista = $("lista");
-  lista.innerHTML = "";
-  for (const x of usuarios) {
-    if (f === "socio") { if (!x.socio) continue; } else if (f !== "todos" && x.role !== f) continue;
-    if (t && !((x.nombre || "") + " " + (x.email || "")).toLowerCase().includes(t)) continue;
-    const fecha = x.creado && x.creado.toDate ? x.creado.toDate().toLocaleDateString("es-ES") : "";
-    const c = el("div", "", "card");
-    c.append(el("strong", x.nombre), el("small", x.email), el("small", "Registrado: " + fecha));
-    const p = el("p");
-    p.append(el("span", ROLES[x.role] || x.role, "rol"));
-    if (x.socio) p.append(" ", el("span", "Socio nº " + String(x.socioNum || 0).padStart(4, "0"), "rol"));
-    if (x.bloqueado) p.append(" ", el("span", "Reservas bloqueadas", "rol mal"));
-    c.append(p);
-    if (x.role === "user" || x.role === "player") {
-      const dar = x.role === "user";
-      const b = el("button", dar ? "Dar acceso a la Zona Liga" : "Quitar acceso a la Zona Liga", dar ? "" : "sec");
-      b.onclick = () => cambiar(x, dar ? "player" : "user");
-      c.append(b);
-      const cam = el("button", "Hacer camarero", "sec");
-      cam.onclick = () => cambiar(x, "staff");
-      c.append(cam);
-    }
-    if (x.role === "staff") {
-      const q = el("button", "Quitar rol de camarero", "sec");
-      q.onclick = () => cambiar(x, "user");
-      c.append(q);
-    }
-    if (x.role !== "robot" && x.role !== "admin") {
-      const bq = el("button", x.bloqueado ? "Permitir reservas de nuevo" : "Bloquear reservas", "sec");
-      bq.onclick = () => cambiarBloqueo(x);
-      c.append(bq);
-    }
-    if (x.role !== "robot") {
-      const s = el("button", x.socio ? "Quitar socio" : "Hacer socio", "sec");
-      s.onclick = () => cambiarSocio(x);
-      c.append(s);
-    }
-    lista.append(c);
-  }
-}
-
-async function cambiar(x, nuevo) {
-  const txt = nuevo === "staff" ? "¿Hacer camarero a " + x.nombre + "? Podrá comprobar carnés de socio y canjear premios de la ruleta." :
-    x.role === "staff" ? "¿Quitar el rol de camarero a " + x.nombre + "?" :
-    (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + x.nombre + "?";
-  if (!confirm(txt)) return;
-  try {
-    await updateDoc(doc(db, "users", x.id), { role: nuevo });
-    x.role = nuevo;
-    pintar();
-  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
-}
-
-async function cambiarBloqueo(x) {
-  const bloquear = !x.bloqueado;
-  if (!confirm(bloquear ? "¿Bloquear las reservas de " + x.nombre + "? No podrá reservar hasta que se lo permitas." : "¿Permitir de nuevo las reservas de " + x.nombre + "?")) return;
-  try {
-    await updateDoc(doc(db, "users", x.id), { bloqueado: bloquear });
-    x.bloqueado = bloquear;
-    pintar();
-  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
-}
-
-async function cambiarSocio(x) {
-  const hacer = !x.socio;
-  if (!confirm((hacer ? "¿Hacer socio a " : "¿Quitar la condición de socio a ") + x.nombre + "?")) return;
-  try {
-    const num = x.socioNum || (Math.max(0, ...usuarios.map((u) => u.socioNum || 0)) + 1);
-    await updateDoc(doc(db, "users", x.id), hacer ? { socio: true, socioNum: num, socioDesde: serverTimestamp() } : { socio: false });
-    x.socio = hacer;
-    if (hacer) x.socioNum = num;
-    pintar();
-  } catch (e) { alert("No se pudo cambiar: " + (e.code || e.message)); }
-}
-
-$("buscar").oninput = pintar;
-$("filtro").onchange = pintar;
 </script>
 </main></body></html>
