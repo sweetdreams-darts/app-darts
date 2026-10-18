@@ -129,6 +129,7 @@ import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWith
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, documentId, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { proximos, etiquetaNivel, cuando, fechaLarga, mapsDe, norm } from "./proximo.js";
 import { montar as montarHoy } from "./hoy-sd.js";
+import { autoSocio } from "./socios.js";
 import { montarUni } from "./universitarios.js";
   
 const app = initializeApp({
@@ -280,6 +281,7 @@ function mostrar(user, ficha) {
   vista("vistaUsuario");
   cargarProximo(user, ficha);
   montarHoy(db, ficha);
+  autoSocio(db, user, ficha);
   montarUni(db, user, ficha);
 }
 
