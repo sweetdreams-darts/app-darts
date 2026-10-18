@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+a<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tarjetas de camareros</title>
 <meta name="theme-color" content="#14213d">
 <style>
@@ -162,7 +162,7 @@ async function pintarValidaciones() {
 }
 
 $("cGuardar").onclick = async () => {
-  try { await setDoc(doc(db, "settings", "nfc"), { activo: $("cAct").checked }, { merge: true });
+  try { await setDoc(doc(db, "settings", "nfc"), { activo: $("cAct").checked }, { merge: true }); msg($("cAct").checked ? "✔ Guardado: los socios ya ven «Validar mi consumición»." : "✔ Guardado: la validación con tarjeta está desactivada."); } catch (e) { msg("Error: " + (e.code || e.message)); }
 };
 
 async function cargar() {
