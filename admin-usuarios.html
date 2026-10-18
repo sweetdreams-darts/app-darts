@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Usuarios y fichas</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+a{color:#ffd166}
+h2{font-size:1.05rem;margin:0 0 6px;color:#ffd166}
+input,select,button{width:100%;box-sizing:border-box;min-width:0;max-width:100%;padding:12px;margin-top:10px;font-size:1rem;border-radius:8px;border:0;font-family:inherit}
+input,select{background:#0f1a30;color:#f1faee;border:1px solid #3d5380}
+button{background:#ffd166;color:#14213d;font-weight:700}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+button:disabled{opacity:.5}
+.card{background:#1d2f52;border-radius:12px;padding:14px;margin-top:12px}
+.card small{opacity:.8;display:block;margin-top:2px}
+.persona{cursor:pointer;display:block;color:inherit;text-decoration:none}
+.persona strong::after{content:" ›";opacity:.6}
+.tag{display:inline-block;margin:6px 6px 0 0;padding:2px 10px;border-radius:999px;background:#ffd166;color:#14213d;font-weight:700;font-size:.8rem}
+.tag.mal{background:#ff8787}.tag.uni{background:#5dff9a}.tag.gris{background:#3d5380;color:#f1faee}
+.roles{display:flex;gap:6px}
+.roles button{margin-top:8px;padding:10px 4px;font-size:.88rem}
+.roles button.on{background:#ffd166;color:#14213d;border-color:#ffd166}
+.dato{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.92rem}
+.dato b{text-align:right}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+#resumen{opacity:.85;font-size:.9rem}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p id="volver"><a href="admin.html">← Panel de administrador</a></p>
+<h1 id="titulo">Usuarios y fichas</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+
+<div id="vLista" class="oculto">
+  <p id="resumen"></p>
+  <input id="buscar" type="search" placeholder="Buscar por nombre o email" autocomplete="off">
+  <select id="filtro">
+    <option value="todos">Todos</option>
+    <option value="nuevos">Nuevos (últimos 7 días)</option>
+    <option value="user">Clientes (sin Zona Liga)</option>
+    <option value="player">Jugadores oficiales</option>
+    <option value="staff">Camareros</option>
+    <option value="socio">Socios</option>
+    <option value="uni">Universitarios 🎓</option>
+    <option value="bloqueado">Con reservas bloqueadas</option>
+  </select>
+  <div id="lista"></div>
+</div>
+
+<div id="vFicha" class="oculto">
+  <div class="card">
+    <h2 id="fNombre"></h2>
+    <small id="fEmail"></small>
+    <small id="fAlta"></small>
+    <div id="fTags"></div>
+  </div>
+  <div class="card">
+    <h2>Accesos</h2>
+    <small id="fRolTxt"></small>
+    <div class="roles" id="fRoles"></div>
+  </div>
+  <div class="card">
+    <h2>Socio</h2>
+    <div id="fSocio"></div>
+    <button id="fSocioBtn" class="sec"></button>
+  </div>
+  <div class="card">
+    <h2>Reservas</h2>
+    <div id="fReservas"></div>
+    <button id="fBloqueo" class="sec"></button>
+    <a class="persona" href="admin-reservas.html"><small>Ver y gestionar reservas ›</small></a>
+  </div>
+  <div class="card">
+    <h2>Universitario</h2>
+    <div id="fUni"></div>
+    <button id="fSello" class="sec"></button>
+    <select id="fFac"></select>
+    <button id="fFacBtn" class="sec">Guardar facultad</button>
+  </div>
+  <div class="card">
+    <h2>Más</h2>
+    <a class="persona" href="admin-jugadores.html"><small>Jugadores de la liga (vincular a la clasificación) ›</small></a>
+    <a class="persona" href="admin-borrar-socio.html"><small>Eliminar sus datos de socio (RGPD) ›</small></a>
+  </div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, query, where, orderBy, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { asegurarContador, hacerSocio } from "./socios.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+const msg = (t) => { $("msg").textContent = t; };
+
+// <logica>
+const ROLES = { user: "Cliente", player: "Jugador oficial", staff: "Camarero", admin: "Administrador", robot: "Robot" };
+const FACULTADES = ["Ciencias", "Medicina", "Enfermería", "Derecho", "Filosofía y Letras", "Educación y Trabajo Social", "Económicas y Empresariales", "Comercio", "Ingenierías Industriales", "Telecomunicación", "Arquitectura", "Agrarias (Palencia)", "Otra universidad"];
+const numSocio = (n) => String(n || 0).padStart(4, "0");
+const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+const fecha = (t) => (ms(t) ? new Date(ms(t)).toLocaleDateString("es-ES") : "");
+function textoOrigen(o) {
+  if (!o) return "";
+  return { anterior: "ya estaba registrado antes", directo: "entró directamente", manual: "datos puestos a mano" }[o] || "QR «" + o + "»";
+}
+// ¿Pasa el filtro y la búsqueda?
+function pasa(u, perfil, filtro, texto, ahora) {
+  if (filtro === "nuevos" && !(ms(u.creado) > ahora - 7 * 864e5)) return false;
+  if (["user", "player", "staff"].includes(filtro) && u.role !== filtro) return false;
+  if (filtro === "socio" && u.socio !== true) return false;
+  if (filtro === "uni" && !(perfil && perfil.universitario === true)) return false;
+  if (filtro === "bloqueado" && u.bloqueado !== true) return false;
+  const t = String(texto || "").trim().toLowerCase();
+  return !t || ((u.nombre || "") + " " + (u.email || "")).toLowerCase().includes(t);
+}
+function confirmarRol(u, nuevo) {
+  if (nuevo === "staff") return "¿Hacer camarero a " + u.nombre + "? Podrá comprobar carnés de socio, sumar puntos y canjear premios.";
+  if (u.role === "staff") return "¿Quitar el rol de camarero a " + u.nombre + (nuevo === "player" ? " y darle acceso a la Zona Liga?" : "?");
+  return (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + u.nombre + "?";
+}
+// </logica>
+
+let usuarios = [], perfiles = new Map(), facultades = FACULTADES;
+
+function etiquetas(caja, u, p) {
+  caja.append(el("span", ROLES[u.role] || u.role || "Cliente", "tag gris"));
+  if (u.socio) caja.append(el("span", "Socio nº " + numSocio(u.socioNum), "tag"));
+  if (p && p.universitario === true) caja.append(el("span", "🎓 " + (p.facultad || "Universitario"), "tag uni"));
+  if (u.bloqueado) caja.append(el("span", "Reservas bloqueadas", "tag mal"));
+}
+
+// ---------- lista ----------
+function pintarLista() {
+  const n = (r) => usuarios.filter((x) => x.role === r).length;
+  $("resumen").textContent = usuarios.length + " cuentas: " + n("user") + " clientes, " + n("player") + " jugadores oficiales, " + n("staff") + " camareros, " + usuarios.filter((x) => x.socio).length + " socios.";
+  const lista = $("lista"), ahora = Date.now();
+  lista.innerHTML = "";
+  const l = usuarios.filter((u) => u.role !== "robot" && pasa(u, perfiles.get(u.id), $("filtro").value, $("buscar").value, ahora));
+  if (!l.length) lista.append(el("p", "No hay nadie con ese filtro.", "peq"));
+  l.slice(0, 200).forEach((u) => {
+    const c = el("a", "", "card persona");
+    c.href = "?uid=" + encodeURIComponent(u.id);
+    c.onclick = (e) => { e.preventDefault(); abrir(u.id, true); };
+    c.append(el("strong", u.nombre || "(sin nombre)"), el("small", u.email || ""), el("small", "Registrado el " + fecha(u.creado)));
+    const t = el("div"); etiquetas(t, u, perfiles.get(u.id)); c.append(t);
+    lista.append(c);
+  });
+}
+$("buscar").oninput = pintarLista;
+$("filtro").onchange = pintarLista;
+
+// ---------- ficha ----------
+let actual = null;
+async function pintarFicha() {
+  const u = actual, p = perfiles.get(u.id) || {};
+  $("titulo").textContent = "Ficha";
+  $("fNombre").textContent = u.nombre || "(sin nombre)";
+  $("fEmail").textContent = u.email || "";
+  $("fAlta").textContent = "Registrado el " + fecha(u.creado) + (p.origen ? " · " + textoOrigen(p.origen) : "");
+  const t = $("fTags"); t.innerHTML = ""; etiquetas(t, u, p);
+  // accesos
+  const r = $("fRoles"); r.innerHTML = "";
+  if (u.role === "admin" || u.role === "robot") {
+    $("fRolTxt").textContent = ROLES[u.role] + ": este rol no se cambia desde aquí.";
+  } else {
+    $("fRolTxt").textContent = "Cliente: reserva y juega. Jugador oficial: además ve la Zona Liga. Camarero: además usa la caja y canjea premios.";
+    [["user", "Cliente"], ["player", "Jugador oficial"], ["staff", "Camarero"]].forEach(([k, txt]) => {
+      const b = el("button", txt, "sec" + (u.role === k ? " on" : ""));
+      b.type = "button";
+      b.onclick = async () => {
+        if (u.role === k || !confirm(confirmarRol(u, k))) return;
+        try { await updateDoc(doc(db, "users", u.id), { role: k }); u.role = k; msg("✔ Ahora es " + ROLES[k].toLowerCase() + "."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+      };
+      r.append(b);
+    });
+  }
+  // socio
+  const s = $("fSocio"); s.innerHTML = "";
+  if (u.socio) {
+    s.append(el("div", "", "dato"));
+    s.lastChild.append(el("span", "Socio"), el("b", "nº " + numSocio(u.socioNum) + (fecha(u.socioDesde) ? " · desde " + fecha(u.socioDesde) : "")));
+    const d = el("div", "", "dato"); d.append(el("span", "Saldo"), el("b", "…")); s.append(d);
+    getDoc(doc(db, "socios_puntos", u.id)).then((x) => { d.lastChild.textContent = (x.exists() ? x.data().puntos || 0 : 0) + " puntos"; }).catch(() => { d.lastChild.textContent = "—"; });
+    $("fSocioBtn").textContent = "Quitar socio";
+  } else {
+    s.append(el("small", u.socioNum ? "Fue socio nº " + numSocio(u.socioNum) + ". Si lo vuelves a hacer socio, recupera su número." : "No es socio. Al verificar su correo se hace socio solo; también puedes hacerlo tú ahora."));
+    $("fSocioBtn").textContent = "Hacer socio";
+  }
+  $("fSocioBtn").className = u.socio ? "sec" : "";
+  $("fSocioBtn").classList.toggle("oculto", u.role === "robot");
+  // reservas
+  const rv = $("fReservas"); rv.innerHTML = "";
+  const dr = el("div", "", "dato"); dr.append(el("span", "Próximas reservas"), el("b", "…")); rv.append(dr);
+  getDocs(query(collection(db, "reservations"), where("uid", "==", u.id))).then((x) => { const ahora = Date.now(); dr.lastChild.textContent = String(x.docs.filter((d) => ms(d.data().inicio) >= ahora).length); }).catch(() => { dr.lastChild.textContent = "—"; });
+  $("fBloqueo").textContent = u.bloqueado ? "Permitir reservas de nuevo" : "Bloquear reservas";
+  $("fBloqueo").classList.toggle("oculto", u.role === "robot" || u.role === "admin");
+  // universitario
+  const un = $("fUni"); un.innerHTML = "";
+  un.append(el("small", p.universitario === true ? "Tiene el sello 🎓 de estudiante." : "No tiene el sello 🎓. Se activa solo con el correo de la universidad; aquí puedes ponérselo si te enseña su carné."));
+  $("fSello").textContent = p.universitario === true ? "Quitar el sello 🎓" : "Poner el sello 🎓";
+  const sf = $("fFac"); sf.innerHTML = "";
+  sf.add(new Option("— Sin facultad —", ""));
+  [...new Set(facultades.concat(p.facultad ? [p.facultad] : []))].forEach((f) => sf.add(new Option(f, f)));
+  sf.value = p.facultad || "";
+  $("vLista").classList.add("oculto");
+  $("vFicha").classList.remove("oculto");
+  $("volver").innerHTML = "";
+  const a = el("a", "← Todos los usuarios"); a.href = "admin-usuarios.html";
+  a.onclick = (e) => { e.preventDefault(); history.pushState({}, "", "admin-usuarios.html"); verLista(); };
+  $("volver").append(a);
+  window.scrollTo(0, 0);
+}
+// remoto: lo que se escribe en Firebase; local: cómo queda en pantalla (undefined = se quita).
+async function guardarPerfil(remoto, local) {
+  const id = actual.id, existe = perfiles.has(id);
+  await setDoc(doc(db, "perfil_extra", id), Object.assign({}, remoto, { actualizado: serverTimestamp() }, existe ? {} : { origen: "manual", creado: serverTimestamp() }), { merge: true });
+  const nuevo = Object.assign({}, perfiles.get(id) || { origen: "manual" });
+  const l = local || remoto;
+  for (const k in l) { if (l[k] === undefined) delete nuevo[k]; else nuevo[k] = l[k]; }
+  perfiles.set(id, nuevo);
+}
+$("fSocioBtn").onclick = async () => {
+  const u = actual, hacer = !u.socio;
+  if (!confirm((hacer ? "¿Hacer socio a " : "¿Quitar la condición de socio a ") + u.nombre + "?")) return;
+  $("fSocioBtn").disabled = true;
+  try {
+    if (hacer) { const n = await hacerSocio(db, u.id, usuarios); u.socio = true; u.socioNum = n; u.socioDesde = { toMillis: () => Date.now() }; msg("✔ Ya es socio nº " + numSocio(n) + "."); }
+    else { await updateDoc(doc(db, "users", u.id), { socio: false }); u.socio = false; msg("✔ Ya no es socio."); }
+    pintarFicha();
+  } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+  $("fSocioBtn").disabled = false;
+};
+$("fBloqueo").onclick = async () => {
+  const u = actual, bloquear = !u.bloqueado;
+  if (!confirm(bloquear ? "¿Bloquear las reservas de " + u.nombre + "? No podrá reservar hasta que se lo permitas." : "¿Permitir de nuevo las reservas de " + u.nombre + "?")) return;
+  try { await updateDoc(doc(db, "users", u.id), { bloqueado: bloquear }); u.bloqueado = bloquear; msg(bloquear ? "✔ Reservas bloqueadas." : "✔ Ya puede reservar."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+};
+$("fSello").onclick = async () => {
+  const p = perfiles.get(actual.id) || {}, poner = p.universitario !== true;
+  try { await guardarPerfil({ universitario: poner }); msg(poner ? "✔ Sello 🎓 puesto." : "✔ Sello quitado."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+};
+$("fFacBtn").onclick = async () => {
+  const v = $("fFac").value;
+  try { await guardarPerfil({ facultad: v ? v : deleteField() }, { facultad: v || undefined }); msg(v ? "✔ Facultad guardada." : "✔ Facultad quitada."); pintarFicha(); } catch (e) { msg("No se pudo guardar: " + (e.code || e.message)); }
+};
+
+// ---------- navegación ----------
+function verLista() {
+  actual = null;
+  $("titulo").textContent = "Usuarios y fichas";
+  $("vFicha").classList.add("oculto");
+  $("vLista").classList.remove("oculto");
+  $("volver").innerHTML = '<a href="admin.html">← Panel de administrador</a>';
+  msg("");
+  pintarLista();
+}
+function abrir(uid, apilar) {
+  const u = usuarios.find((x) => x.id === uid);
+  if (!u) { msg("No encuentro a esa persona."); verLista(); return; }
+  if (apilar) history.pushState({}, "", "admin-usuarios.html?uid=" + encodeURIComponent(uid));
+  actual = u; msg("");
+  pintarFicha();
+}
+const desdeURL = () => { const uid = new URLSearchParams(location.search).get("uid"); if (uid) abrir(uid, false); else verLista(); };
+window.addEventListener("popstate", desdeURL);
+
+onAuthStateChanged(auth, async (u) => {
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    usuarios = (await getDocs(query(collection(db, "users"), orderBy("creado", "desc")))).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    try { perfiles = new Map((await getDocs(collection(db, "perfil_extra"))).docs.map((d) => [d.id, d.data()])); } catch (e) {}
+    try { const c = await getDoc(doc(db, "settings", "universitarios")); if (c.exists() && c.data().facultades && c.data().facultades.length) facultades = c.data().facultades; } catch (e) {}
+    try { await asegurarContador(db, usuarios); } catch (e) {}
+    $("estado").textContent = "";
+    desdeURL();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
