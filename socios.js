@@ -15,7 +15,7 @@ function premioBienvenida(premios) {
   return (premios || []).filter((p) => p.activo !== false && Number(p.coste) === 0 && p.limite === "una").sort((a, b) => (a.orden || 0) - (b.orden || 0))[0] || null;
 }
 // Embajadores: ajustes por defecto, el enlace de cada embajador y el número que trae un enlace.
-const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0 };
+const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0, minimo: 4.5 };
 const APP = "https://sweetdreams-darts.github.io/app-darts/";
 function ajustesInvitar(d) {
   const c = Object.assign({}, INVITAR);
@@ -23,8 +23,10 @@ function ajustesInvitar(d) {
   if (d && typeof d.abierto === "boolean") c.abierto = d.abierto;
   if (d && Number.isInteger(d.puntos) && d.puntos >= 0) c.puntos = d.puntos;
   if (d && Number.isInteger(d.maxMes) && d.maxMes >= 0) c.maxMes = d.maxMes;
+  if (d && typeof d.minimo === "number" && d.minimo >= 0 && d.minimo <= 100) c.minimo = d.minimo;
   return c;
 }
+const euros = (n) => Number(n).toFixed(2).replace(".", ",") + " €";
 const enlaceInvitar = (n) => APP + "?ref=" + numSocio(n) + "&o=embajador";
 const FACULTADES_SOCIOS = ["Ciencias", "Medicina", "Enfermería", "Derecho", "Filosofía y Letras", "Educación y Trabajo Social", "Económicas y Empresariales", "Comercio", "Ingenierías Industriales", "Telecomunicación", "Arquitectura", "Agrarias (Palencia)", "Otra universidad"];
 function refDeURL(search) {
@@ -119,10 +121,51 @@ async function pintarBienvenida(db, n) {
   tiles.parentNode.insertBefore(caja, tiles);
 }
 
+// Tarjeta para quien entró con el enlace de un embajador: qué tiene que hacer para que su embajador gane los puntos.
+async function pintarInvitado(db, user, ficha) {
+  try {
+    const tiles = document.querySelector(".tiles");
+    if (!tiles || !user || !user.uid) return;
+    const inv = await getDoc(ref(db, "invitaciones", user.uid));
+    let caja = document.getElementById("invitadoCaja");
+    if (!inv.exists() || inv.data().premiado === true) { if (caja) caja.remove(); return; }
+    const [c, n] = await Promise.all([getDoc(ref(db, "settings", "invitaciones")), getDoc(ref(db, "settings", "nfc")).catch(() => null)]);
+    const cfg = ajustesInvitar(c.exists() ? c.data() : null);
+    if (!cfg.activo) { if (caja) caja.remove(); return; }
+    const nfc = !!(n && n.exists() && n.data().activo === true), socio = !!(ficha && ficha.socio === true);
+    if (!document.getElementById("estiloInvitado")) {
+      const st = document.createElement("style");
+      st.id = "estiloInvitado";
+      st.textContent = ".invitado{margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,225,77,.75);background:linear-gradient(150deg,rgba(255,225,77,.12),rgba(255,43,214,.10));box-shadow:0 0 16px rgba(255,225,77,.18)}" +
+        ".invitado .i-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.9rem;color:#ffe14d;margin:0 0 4px}.invitado p{margin:5px 0;font-size:.88rem}" +
+        ".invitado ol{margin:6px 0 0;padding-left:0;list-style:none}.invitado li{margin:7px 0;font-size:.88rem;display:flex;gap:8px}.invitado li b{flex:none}" +
+        ".invitado .i-btn{display:block;margin-top:10px;padding:12px;border-radius:12px;text-align:center;font-weight:800;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)}";
+      document.head.appendChild(st);
+    }
+    if (!caja) { caja = document.createElement("div"); caja.id = "invitadoCaja"; tiles.parentNode.insertBefore(caja, tiles); }
+    caja.className = "invitado";
+    caja.innerHTML = "";
+    const p = (t, cl) => { const e = document.createElement("p"); e.textContent = t; if (cl) e.className = cl; return e; };
+    caja.append(p("👑 TE HA INVITADO UN EMBAJADOR", "i-tit"), p("Para que tu embajador gane sus puntos, solo tienes que venir:"));
+    const ol = document.createElement("ol");
+    const paso = (hecho, txt) => { const li = document.createElement("li"), b = document.createElement("b"), t = document.createElement("span"); b.textContent = hecho ? "✔" : "○"; t.textContent = txt; li.append(b, t); ol.append(li); };
+    paso(socio, socio ? "Ya eres socio nº " + numSocio(ficha.socioNum) + "." : "Verifica tu correo (te hemos mandado un enlace): así te haces socio y tienes tu carné.");
+    paso(false, "Pide en la barra algo de " + euros(cfg.minimo) + " o más (un cachi, por ejemplo).");
+    paso(false, nfc ? "Al pagar, pulsa «Validar mi visita» y el camarero acercará su tarjeta. También vale enseñar tu carné de socio." : "Al pagar, enseña tu carné de socio (o di tu número de socio) para que el camarero te sume los puntos.");
+    caja.append(ol);
+    if (socio) {
+      const a = document.createElement("a");
+      a.className = "i-btn"; a.href = nfc ? "validar.html" : "carne.html"; a.textContent = nfc ? "📲 Validar mi visita" : "Ver mi carné de socio";
+      caja.append(a);
+      if (nfc) { const b = document.getElementById("btnValidar"); if (b) b.remove(); }
+    }
+  } catch (e) {}
+}
+
 // Botón «Validar mi consumición» en el inicio (solo socios y solo si lo has activado en «Tarjetas de camareros»).
 async function pintarBotonValidar(db) {
   try {
-    if (document.getElementById("btnValidar")) return;
+    if (document.getElementById("btnValidar") || document.querySelector("#invitadoCaja .i-btn[href='validar.html']")) return;
     const c = await getDoc(ref(db, "settings", "nfc"));
     const tiles = document.querySelector(".tiles");
     if (!c.exists() || c.data().activo !== true || !tiles || document.getElementById("btnValidar")) return;
@@ -145,7 +188,7 @@ async function pintarBotonValidar(db) {
 // Inicio: si la persona ya verificó su correo y nunca fue socia, se hace socia sola.
 export async function autoSocio(db, user, ficha) {
   try {
-    if (user && user.uid) await registrarInvitacion(db, user, ficha);
+    if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); }
     if (ficha && ficha.socio === true) pintarBotonValidar(db);
     if (!puedeAutoSocio(user, ficha)) return 0;
     if (typeof user.getIdToken === "function") await user.getIdToken(true);
@@ -162,6 +205,7 @@ export async function autoSocio(db, user, ficha) {
     if (!n) return 0;
     Object.assign(ficha, { socio: true, socioNum: n });
     await pintarBienvenida(db, n);
+    await pintarInvitado(db, user, ficha);
     pintarBotonValidar(db);
     return n;
   } catch (e) { return 0; }   // sin reglas publicadas, sin conexión o sin contador: no pasa nada
@@ -181,7 +225,7 @@ export async function montarInvitar(db, uid, caja) {
     if (emb.exists() && emb.data().activo === true && num) {
       const link = enlaceInvitar(num);
       caja.className = "zona";
-      caja.append(el("h2", "👑 Eres embajador de Sweet Dreams"), el("p", "Pasa tu enlace a tu gente. Por cada amigo que se registre con él y venga al bar, te llevas " + cfg.puntos + " puntos" + (cfg.maxMes ? " (hasta " + cfg.maxMes + " al mes)." : ".")));
+      caja.append(el("h2", "👑 Eres embajador de Sweet Dreams"), el("p", "Pasa tu enlace a tu gente. Por cada amigo que se registre con él y venga al bar (consumiendo " + euros(cfg.minimo) + " o más), te llevas " + cfg.puntos + " puntos" + (cfg.maxMes ? " (hasta " + cfg.maxMes + " al mes)." : ".")));
       const texto = "Te invito a la app de Sweet Dreams: reserva diana, juega al trivial y gana premios. Regístrate con mi enlace: " + link;
       const compartir = el("button", "Compartir mi enlace", "pri");
       compartir.type = "button";
@@ -245,7 +289,7 @@ export async function montarAjustesInvitar(db, caja) {
   const c = await getDoc(ref(db, "settings", "invitaciones"));
   const cfg = ajustesInvitar(c.exists() ? c.data() : null);
   caja.innerHTML = "";
-  caja.append(el("h2", "Ajustes del programa"), el("p", "Cada embajador tiene un enlace en «Mis puntos». Cuando un amigo se registra con él y viene al bar (el camarero le suma puntos o le canjea un cupón), el embajador recibe estos puntos y un aviso en el móvil."));
+  caja.append(el("h2", "Ajustes del programa"), el("p", "Cada embajador tiene un enlace en «Mis puntos». Cuando un amigo se registra con él y viene al bar (una compra de la consumición mínima o más en la caja, o una validación con la tarjeta del camarero), el embajador recibe estos puntos y un aviso en el móvil. Canjear un cupón gratis no cuenta."));
   const chk = el("label", "", "chk"), act = document.createElement("input");
   act.type = "checkbox"; act.checked = cfg.activo; chk.append(act, el("span", "Programa activo (los embajadores ganan puntos)"));
   const chk2 = el("label", "", "chk"), abi = document.createElement("input");
@@ -254,12 +298,15 @@ export async function montarAjustesInvitar(db, caja) {
   p.type = "number"; p.min = "0"; p.inputMode = "numeric"; p.value = String(cfg.puntos);
   const l2 = el("label", "Máximo de amigos premiados por embajador y mes (0 = sin límite)"), m = document.createElement("input");
   m.type = "number"; m.min = "0"; m.inputMode = "numeric"; m.value = String(cfg.maxMes);
+  const l3 = el("label", "Consumición mínima del amigo para que cuente (€)"), mi = document.createElement("input");
+  mi.type = "number"; mi.min = "0"; mi.step = "0.5"; mi.inputMode = "decimal"; mi.value = String(cfg.minimo);
   const b = el("button", "Guardar"), r = el("small", "");
   b.type = "button";
   b.onclick = async () => {
-    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value) };
+    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value), minimo: Math.round(Number(String(mi.value).replace(",", ".")) * 100) / 100 };
     if (!Number.isInteger(d.puntos) || d.puntos < 0 || d.puntos > 5000 || !Number.isInteger(d.maxMes) || d.maxMes < 0 || d.maxMes > 100) { r.textContent = "Revisa los números: enteros, 0 o más (puntos hasta 5000, amigos hasta 100)."; return; }
+    if (!(d.minimo >= 0 && d.minimo <= 100)) { r.textContent = "La consumición mínima debe estar entre 0 y 100 €."; return; }
     try { await setDoc(ref(db, "settings", "invitaciones"), d); r.textContent = "✔ Guardado."; } catch (e) { r.textContent = "Error: " + (e.code || e.message); }
   };
-  caja.append(chk, chk2, l1, p, l2, m, b, r);
+  caja.append(chk, chk2, l1, p, l2, m, l3, mi, b, r);
 }
