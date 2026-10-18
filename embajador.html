@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ser embajador</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 16px 40px;display:flex;justify-content:center}
+main{width:100%;max-width:480px}
+select,input,textarea,button{width:100%;box-sizing:border-box;padding:12px;font-size:1rem;margin-top:10px;font-family:inherit}
+textarea{height:110px}
+#caja h2{margin-top:6px}
+#caja small{display:block;margin-top:8px;color:#ff9aaa}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Embajadores</h1></header>
+<div id="caja" class="zona"><p>Cargando…</p></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { montarSolicitud } from "./socios.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+onAuthStateChanged(auth, (u) => {
+  if (!u) { document.getElementById("caja").innerHTML = '<p>Primero inicia sesión en la <a href="./">app</a>.</p>'; return; }
+  montarSolicitud(db, u.uid, document.getElementById("caja"));
+});
+</script>
+</main></body></html>
