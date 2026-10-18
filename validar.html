@@ -184,7 +184,7 @@ async function empezar(u) {
   } catch (e) {}
   try {
     const vals = (await getDocs(query(collection(db, "validaciones"), where("uid", "==", u.uid)))).docs.map((d) => d.data());
-    const b = bloqueo(vals, horas, Date.now());
+    const b = bloqueo(vals, Date.now());
     if (b) {
       if (b.pendiente) { $("yaTit").textContent = "Estamos comprobando tu última validación"; $("yaTxt").textContent = "Espera un par de minutos."; }
       else { const h = new Date(b.hasta); $("yaTxt").textContent = "Podrás volver a validar a partir de las " + String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") + "."; }
