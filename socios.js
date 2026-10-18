@@ -37,6 +37,19 @@ function refGuardado(txt, ahoraMs) {
   try { const g = JSON.parse(txt || "null"); if (g && g.r > 0 && ahoraMs - g.t < 30 * 864e5) return g.r; } catch (e) {}
   return 0;
 }
+// Ofertas «Solo socios» vigentes hoy (las fechas van como AAAA-MM-DD).
+function ofertasSocio(ofertas, hoy) {
+  return (ofertas || []).filter((o) => o.activa === true && o.soloSocios === true && (!o.desde || o.desde <= hoy) && (!o.hasta || o.hasta >= hoy));
+}
+// Premio que tocó en la ruleta (el mismo cálculo que ruleta.html).
+function premioRuleta(ms, premios) {
+  const total = premios.reduce((s, p) => s + p.peso, 0);
+  if (!total) return null;
+  const x = ((ms % 1000) / 1000) * total;
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
+  return premios[idx];
+}
 // </logica>
 
 (function capturarInvitacion() {
@@ -109,7 +122,7 @@ async function pintarBienvenida(db, n) {
   caja.id = "socioBienv";
   caja.className = "bienv";
   const p = (t, c) => { const e = document.createElement("p"); e.textContent = t; if (c) e.className = c; return e; };
-  caja.append(p("🎉 ¡YA ERES SOCIO Nº " + numSocio(n) + "!", "b-tit"), p("Ya tienes tu carné de socio de Sweet Dreams."));
+  caja.append(p("🎉 ¡YA ERES SOCIO Nº " + numSocio(n) + "!", "b-tit"), p("Ya tienes tu carné de socio de Sweet Dreams y sus ventajas exclusivas."));
   try {
     const pr = premioBienvenida((await getDocs(collection(db, "premios"))).docs.map((d) => d.data()));
     if (pr) caja.append(p("🎁 Tienes un regalo de bienvenida: " + pr.nombre + ". Pídelo en la barra.", "b-reg"));
@@ -119,6 +132,52 @@ async function pintarBienvenida(db, n) {
   [["carne.html", "Ver mi carné"]].forEach(([h, t]) => { const a = document.createElement("a"); a.href = h; a.textContent = t; fila.append(a); });
   caja.append(fila);
   tiles.parentNode.insertBefore(caja, tiles);
+}
+
+// Inicio: «Tus ventajas de socio» (ruleta y ofertas solo para socios). Solo sale si hay algo que ofrecerle.
+async function pintarVentajas(db, user, ficha) {
+  try {
+    const tiles = document.querySelector(".tiles");
+    let caja = document.getElementById("ventajasCaja");
+    if (!tiles || !user || !user.uid || !ficha || ficha.socio !== true) { if (caja) caja.remove(); return; }
+    const hoyD = new Date(), hoy = hoyD.getFullYear() + "-" + String(hoyD.getMonth() + 1).padStart(2, "0") + "-" + String(hoyD.getDate()).padStart(2, "0");
+    const [rc, rg, of] = await Promise.all([
+      getDoc(ref(db, "ruleta_config", "actual")).catch(() => null),
+      getDoc(ref(db, "ruleta_giros", user.uid)).catch(() => null),
+      getDocs(query(collection(db, "ofertas"), where("activa", "==", true))).catch(() => null)]);
+    const items = [];
+    if (rg && rg.exists()) {
+      const g = rg.data();
+      if (g.canjeado !== true && g.giro && g.giro.toMillis) {
+        let nombre = "";
+        try { const v = await getDoc(ref(db, "ruleta_versiones", String(g.version))); const pr = v.exists() ? premioRuleta(g.giro.toMillis(), v.data().premios || []) : null; nombre = pr ? pr.nombre : ""; } catch (e) {}
+        items.push({ t: "🎁 Tienes un premio de la ruleta por canjear" + (nombre ? ": " + nombre : "") + ".", b: "Ver mi premio", h: "ruleta.html" });
+      }
+    } else if (rc && rc.exists() && rc.data().activa === true) {
+      items.push({ t: "🎡 Tienes un giro en la ruleta de premios. ¡Prueba suerte!", b: "¡Girar la ruleta!", h: "ruleta.html" });
+    }
+    const ofs = of ? ofertasSocio(of.docs.map((d) => d.data()), hoy) : [];
+    if (ofs.length) items.push({ t: "🎁 " + (ofs.length === 1 ? "1 oferta solo para socios: " : ofs.length + " ofertas solo para socios: ") + ofs.slice(0, 2).map((o) => o.titulo).join(" · ") + (ofs.length > 2 ? "…" : ""), b: "Ver ofertas", h: "ofertas.html" });
+    if (!items.length) { if (caja) caja.remove(); return; }
+    if (!document.getElementById("estiloVentajas")) {
+      const st = document.createElement("style");
+      st.id = "estiloVentajas";
+      st.textContent = ".ventajas{margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(139,92,255,.8);background:linear-gradient(150deg,rgba(139,92,255,.16),rgba(25,242,255,.08));box-shadow:0 0 16px rgba(139,92,255,.22)}" +
+        ".ventajas .v-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.9rem;color:#c4a6ff;margin:0 0 6px}.ventajas .v-it{padding:8px 0;border-top:1px solid rgba(255,255,255,.12)}" +
+        ".ventajas .v-it p{margin:0 0 6px;font-size:.88rem}.ventajas .v-it a{display:inline-block;padding:7px 14px;border-radius:10px;font-weight:800;font-size:.85rem;text-decoration:none;background:linear-gradient(135deg,#ff2bd6,#8b5cff);color:#fff!important}";
+      document.head.appendChild(st);
+    }
+    if (!caja) { caja = document.createElement("div"); caja.id = "ventajasCaja"; tiles.parentNode.insertBefore(caja, tiles); }
+    caja.className = "ventajas";
+    caja.innerHTML = "";
+    const tit = document.createElement("p"); tit.className = "v-tit"; tit.textContent = "⭐ TUS VENTAJAS DE SOCIO";
+    caja.append(tit);
+    items.forEach((it) => {
+      const d = document.createElement("div"), p = document.createElement("p"), a = document.createElement("a");
+      d.className = "v-it"; p.textContent = it.t; a.href = it.h; a.textContent = it.b;
+      d.append(p, a); caja.append(d);
+    });
+  } catch (e) {}
 }
 
 // Tarjeta para quien entró con el enlace de un embajador: qué tiene que hacer para que cuente su invitación.
@@ -214,7 +273,7 @@ async function pintarBotonValidar(db) {
 // Inicio: si la persona ya verificó su correo y nunca fue socia, se hace socia sola.
 export async function autoSocio(db, user, ficha) {
   try {
-    if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); await pintarEmbajador(db, user, ficha); }
+    if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); await pintarEmbajador(db, user, ficha); await pintarVentajas(db, user, ficha); }
     if (ficha && ficha.socio === true) pintarBotonValidar(db);
     if (!puedeAutoSocio(user, ficha)) return 0;
     if (typeof user.getIdToken === "function") await user.getIdToken(true);
@@ -233,6 +292,7 @@ export async function autoSocio(db, user, ficha) {
     await pintarBienvenida(db, n);
     await pintarInvitado(db, user, ficha);
     await pintarEmbajador(db, user, ficha);
+    await pintarVentajas(db, user, ficha);
     pintarBotonValidar(db);
     return n;
   } catch (e) { return 0; }   // sin reglas publicadas, sin conexión o sin contador: no pasa nada
@@ -291,7 +351,7 @@ export async function montarSolicitud(db, uid, caja) {
     if (estado === "pendiente") { caja.append(el("h2", "👑 Solicitud en revisión"), el("p", "Hemos recibido tu solicitud para ser embajador. Te escribiremos pronto para contarte cómo funciona.")); return; }
     if (estado === "rechazado") { caja.append(el("h2", "👑 Embajadores"), el("p", "Gracias por tu interés. Ahora mismo no podemos sumar más embajadores; si cambia, te avisaremos.")); return; }
     if (!cfg.activo || !cfg.abierto) { caja.append(el("h2", "👑 Embajadores"), el("p", "Ahora mismo no estamos buscando embajadores. ¡Vuelve a mirar más adelante!")); return; }
-  caja.append(el("h2", "👑 ¿Quieres ser embajador de Sweet Dreams?"), el("p", "Invita a gente de tu facultad o de tu grupo y llévate recompensas por cada persona que venga. Cuéntanos un poco y te escribimos para contarte cómo funciona."));
+    caja.append(el("h2", "👑 ¿Quieres ser embajador de Sweet Dreams?"), el("p", "Invita a gente de tu facultad o de tu grupo y llévate recompensas por cada persona que venga. Cuéntanos un poco y te escribimos para contarte cómo funciona."));
     const facs = uni && uni.exists() && uni.data().facultades && uni.data().facultades.length ? uni.data().facultades : FACULTADES_SOCIOS;
     const f = document.createElement("select");
     f.add(new Option("Tu facultad o grupo…", ""));
