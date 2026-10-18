@@ -52,6 +52,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/fireba
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { configDe, idCupon, codigoCupon, estadoCupon, textoMovimiento, faltan, mesDe, fechaUTC } from "./puntos.js";
+import { montarInvitar } from "./socios.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -172,6 +173,7 @@ onAuthStateChanged(auth, async (u) => {
     pintar();
     $("panel").classList.remove("oculto");
     historial();
+    montarInvitar(db, uid, $("invitar"));
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
 });
 </script>
