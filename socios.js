@@ -99,7 +99,7 @@ function estilos() {
 }
 async function pintarBienvenida(db, n) {
   const quitar = (id) => { const e = document.getElementById(id); if (e) e.classList.remove("oculto"); };
-  quitar("tileCarne"); quitar("tilePuntos"); quitar("uSocio");
+  quitar("tileCarne"); quitar("uSocio");
   const us = document.getElementById("uSocio");
   if (us) us.textContent = "Socio nº " + numSocio(n);
   const tiles = document.querySelector(".tiles");
@@ -109,19 +109,19 @@ async function pintarBienvenida(db, n) {
   caja.id = "socioBienv";
   caja.className = "bienv";
   const p = (t, c) => { const e = document.createElement("p"); e.textContent = t; if (c) e.className = c; return e; };
-  caja.append(p("🎉 ¡YA ERES SOCIO Nº " + numSocio(n) + "!", "b-tit"), p("Tienes tu carné de socio: enséñalo al pagar y sumarás puntos con cada consumición."));
+  caja.append(p("🎉 ¡YA ERES SOCIO Nº " + numSocio(n) + "!", "b-tit"), p("Ya tienes tu carné de socio de Sweet Dreams."));
   try {
     const pr = premioBienvenida((await getDocs(collection(db, "premios"))).docs.map((d) => d.data()));
-    if (pr) caja.append(p("🎁 Tienes un regalo de bienvenida: " + pr.nombre + ". Actívalo en «Mis puntos» y enséñalo al pagar.", "b-reg"));
+    if (pr) caja.append(p("🎁 Tienes un regalo de bienvenida: " + pr.nombre + ". Pídelo en la barra.", "b-reg"));
   } catch (e) {}
   const fila = document.createElement("div");
   fila.className = "b-fila";
-  [["carne.html", "Ver mi carné"], ["mis-puntos.html", "Mis puntos"]].forEach(([h, t]) => { const a = document.createElement("a"); a.href = h; a.textContent = t; fila.append(a); });
+  [["carne.html", "Ver mi carné"]].forEach(([h, t]) => { const a = document.createElement("a"); a.href = h; a.textContent = t; fila.append(a); });
   caja.append(fila);
   tiles.parentNode.insertBefore(caja, tiles);
 }
 
-// Tarjeta para quien entró con el enlace de un embajador: qué tiene que hacer para que su embajador gane los puntos.
+// Tarjeta para quien entró con el enlace de un embajador: qué tiene que hacer para que cuente su invitación.
 async function pintarInvitado(db, user, ficha) {
   try {
     const tiles = document.querySelector(".tiles");
@@ -146,12 +146,12 @@ async function pintarInvitado(db, user, ficha) {
     caja.className = "invitado";
     caja.innerHTML = "";
     const p = (t, cl) => { const e = document.createElement("p"); e.textContent = t; if (cl) e.className = cl; return e; };
-    caja.append(p("👑 TE HA INVITADO UN EMBAJADOR", "i-tit"), p("Para que tu embajador gane sus puntos, solo tienes que venir:"));
+    caja.append(p("👑 TE HA INVITADO UN EMBAJADOR", "i-tit"), p("Para que cuente tu invitación, solo tienes que venir:"));
     const ol = document.createElement("ol");
     const paso = (hecho, txt) => { const li = document.createElement("li"), b = document.createElement("b"), t = document.createElement("span"); b.textContent = hecho ? "✔" : "○"; t.textContent = txt; li.append(b, t); ol.append(li); };
     paso(socio, socio ? "Ya eres socio nº " + numSocio(ficha.socioNum) + "." : "Verifica tu correo (te hemos mandado un enlace): así te haces socio y tienes tu carné.");
     paso(false, "Pide en la barra algo de " + euros(cfg.minimo) + " o más (un cachi, por ejemplo).");
-    paso(false, nfc ? "Al pagar, pulsa «Validar mi visita» y el camarero acercará su tarjeta. También vale enseñar tu carné de socio." : "Al pagar, enseña tu carné de socio (o di tu número de socio) para que el camarero te sume los puntos.");
+    paso(false, nfc ? "Al pagar, pulsa «Validar mi visita» y el camarero acercará su tarjeta. También vale enseñar tu carné de socio." : "Al pagar, enseña tu carné de socio (o di tu número de socio) al camarero.");
     caja.append(ol);
     if (socio) {
       const a = document.createElement("a");
@@ -159,6 +159,32 @@ async function pintarInvitado(db, user, ficha) {
       caja.append(a);
       if (nfc) { const b = document.getElementById("btnValidar"); if (b) b.remove(); }
     }
+  } catch (e) {}
+}
+
+// Inicio: «Mis puntos y premios» solo para embajadores activos. A los demás socios, en su lugar, «¿Quieres ser embajador?».
+async function pintarEmbajador(db, user, ficha) {
+  try {
+    const puntos = document.getElementById("tilePuntos");
+    if (!puntos || !user || !user.uid) return;
+    let tile = document.getElementById("tileEmbajador");
+    const quitar = () => { if (tile) tile.remove(); };
+    if (!ficha || ficha.socio !== true) { puntos.classList.add("oculto"); quitar(); return; }
+    const [emb, sol, c] = await Promise.all([getDoc(ref(db, "embajadores", user.uid)), getDoc(ref(db, "embajadores_solicitudes", user.uid)), getDoc(ref(db, "settings", "invitaciones"))]);
+    if (emb.exists() && emb.data().activo === true) { puntos.classList.remove("oculto"); quitar(); return; }
+    puntos.classList.add("oculto");
+    const cfg = ajustesInvitar(c.exists() ? c.data() : null), estado = sol.exists() ? sol.data().estado : "";
+    if (estado === "rechazado" || (!estado && (!cfg.activo || !cfg.abierto))) { quitar(); return; }
+    if (!tile) {
+      tile = document.createElement("a");
+      tile.id = "tileEmbajador"; tile.className = "tile t-amarillo grande"; tile.href = "embajador.html";
+      puntos.parentNode.insertBefore(tile, puntos);
+    }
+    tile.innerHTML = "";
+    const e = document.createElement("span"), st = document.createElement("strong"), sm = document.createElement("small");
+    e.className = "emoji"; e.textContent = "👑"; st.textContent = "¿Quieres ser embajador?";
+    sm.textContent = estado === "pendiente" ? "Tu solicitud está en revisión" : "Invita a tu gente y llévate recompensas";
+    tile.append(e, st, sm);
   } catch (e) {}
 }
 
@@ -188,7 +214,7 @@ async function pintarBotonValidar(db) {
 // Inicio: si la persona ya verificó su correo y nunca fue socia, se hace socia sola.
 export async function autoSocio(db, user, ficha) {
   try {
-    if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); }
+    if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); await pintarEmbajador(db, user, ficha); }
     if (ficha && ficha.socio === true) pintarBotonValidar(db);
     if (!puedeAutoSocio(user, ficha)) return 0;
     if (typeof user.getIdToken === "function") await user.getIdToken(true);
@@ -206,13 +232,14 @@ export async function autoSocio(db, user, ficha) {
     Object.assign(ficha, { socio: true, socioNum: n });
     await pintarBienvenida(db, n);
     await pintarInvitado(db, user, ficha);
+    await pintarEmbajador(db, user, ficha);
     pintarBotonValidar(db);
     return n;
   } catch (e) { return 0; }   // sin reglas publicadas, sin conexión o sin contador: no pasa nada
 }
 
 // ---------- Embajadores: tarjeta en «Mis puntos» ----------
-// Embajador activo: su enlace y sus cifras. Si no lo es: el estado de su solicitud o el botón para pedirlo.
+// Solo para embajadores activos: su enlace y sus cifras (a los demás no se les enseña nada).
 export async function montarInvitar(db, uid, caja) {
   if (!caja) return;
   const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
@@ -246,40 +273,44 @@ export async function montarInvitar(db, uid, caja) {
       } catch (e) {}
       return;
     }
-    if (sol.exists()) {
-      const e = sol.data().estado;
-      if (e === "pendiente") { caja.className = "zona"; caja.append(el("h2", "👑 Embajadores"), el("p", "Tu solicitud para ser embajador está en revisión. Te escribiremos pronto.")); }
-      return;
-    }
-    if (!cfg.abierto) return;
-    // ofrecer ser embajador
-    caja.className = "zona";
-    caja.append(el("h2", "👑 ¿Quieres ser embajador?"), el("p", "Invita a gente de tu facultad o de tu grupo y gana " + cfg.puntos + " puntos por cada amigo que venga al bar. Cuéntanos un poco y te escribimos."));
-    const abrir = el("button", "Quiero ser embajador", "pri");
-    abrir.type = "button";
-    abrir.onclick = () => {
-      abrir.remove();
-      const facs = uni && uni.exists() && uni.data().facultades && uni.data().facultades.length ? uni.data().facultades : FACULTADES_SOCIOS;
-      const f = document.createElement("select");
-      f.add(new Option("Tu facultad o grupo…", ""));
-      facs.concat(["No estudio"]).forEach((x) => f.add(new Option(x, x)));
-      const ig = document.createElement("input"); ig.type = "text"; ig.maxLength = 40; ig.placeholder = "Tu Instagram (opcional)";
-      const mo = document.createElement("textarea"); mo.maxLength = 400; mo.placeholder = "¿Por qué quieres ser embajador? ¿A cuánta gente puedes traer?";
-      const env = el("button", "Enviar solicitud", "pri"), err = el("small", "");
-      env.type = "button";
-      env.onclick = async () => {
-        if (!f.value) { err.textContent = "Elige tu facultad o grupo."; return; }
-        if (mo.value.trim().length < 10) { err.textContent = "Cuéntanos un poco más (al menos una frase)."; return; }
-        env.disabled = true;
-        try {
-          await setDoc(ref(db, "embajadores_solicitudes", uid), { nombre: String((yo.exists() && yo.data().nombre) || "").slice(0, 80), facultad: f.value, instagram: ig.value.trim().replace(/^@/, "").slice(0, 40), motivo: mo.value.trim().slice(0, 400), estado: "pendiente", creado: serverTimestamp() });
-          caja.innerHTML = ""; caja.append(el("h2", "👑 Embajadores"), el("p", "✔ ¡Solicitud enviada! Te escribiremos pronto."));
-        } catch (e) { env.disabled = false; err.textContent = "No se ha podido enviar. ¿Has verificado tu correo?"; }
-      };
-      caja.append(f, ig, mo, env, err);
-    };
-    caja.append(abrir);
   } catch (e) { caja.innerHTML = ""; caja.className = ""; }
+}
+
+// ---------- Embajadores: pantalla «¿Quieres ser embajador?» (para socios que no lo son) ----------
+// No habla de puntos: los acuerdos con los embajadores se cuentan en persona.
+export async function montarSolicitud(db, uid, caja) {
+  if (!caja) return;
+  const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+  try {
+    const [yo, c, emb, sol, uni] = await Promise.all([getDoc(ref(db, "users", uid)), getDoc(ref(db, "settings", "invitaciones")), getDoc(ref(db, "embajadores", uid)), getDoc(ref(db, "embajadores_solicitudes", uid)), getDoc(ref(db, "settings", "universitarios")).catch(() => null)]);
+    const cfg = ajustesInvitar(c.exists() ? c.data() : null);
+    caja.innerHTML = "";
+    if (emb.exists() && emb.data().activo === true) { location.replace("mis-puntos.html"); return; }
+    if (!yo.exists() || yo.data().socio !== true) { caja.append(el("p", "Primero verifica tu correo: así te haces socio y podrás pedirlo.")); return; }
+    const estado = sol.exists() ? sol.data().estado : "";
+    if (estado === "pendiente") { caja.append(el("h2", "👑 Solicitud en revisión"), el("p", "Hemos recibido tu solicitud para ser embajador. Te escribiremos pronto para contarte cómo funciona.")); return; }
+    if (estado === "rechazado") { caja.append(el("h2", "👑 Embajadores"), el("p", "Gracias por tu interés. Ahora mismo no podemos sumar más embajadores; si cambia, te avisaremos.")); return; }
+    if (!cfg.activo || !cfg.abierto) { caja.append(el("h2", "👑 Embajadores"), el("p", "Ahora mismo no estamos buscando embajadores. ¡Vuelve a mirar más adelante!")); return; }
+  caja.append(el("h2", "👑 ¿Quieres ser embajador de Sweet Dreams?"), el("p", "Invita a gente de tu facultad o de tu grupo y llévate recompensas por cada persona que venga. Cuéntanos un poco y te escribimos para contarte cómo funciona."));
+    const facs = uni && uni.exists() && uni.data().facultades && uni.data().facultades.length ? uni.data().facultades : FACULTADES_SOCIOS;
+    const f = document.createElement("select");
+    f.add(new Option("Tu facultad o grupo…", ""));
+    facs.concat(["No estudio"]).forEach((x) => f.add(new Option(x, x)));
+    const ig = document.createElement("input"); ig.type = "text"; ig.maxLength = 40; ig.placeholder = "Tu Instagram (opcional)";
+    const mo = document.createElement("textarea"); mo.maxLength = 400; mo.placeholder = "¿Por qué quieres ser embajador? ¿A cuánta gente puedes traer?";
+    const env = el("button", "Enviar solicitud", "pri"), err = el("small", "");
+    env.type = "button";
+    env.onclick = async () => {
+      if (!f.value) { err.textContent = "Elige tu facultad o grupo."; return; }
+      if (mo.value.trim().length < 10) { err.textContent = "Cuéntanos un poco más (al menos una frase)."; return; }
+      env.disabled = true;
+      try {
+        await setDoc(ref(db, "embajadores_solicitudes", uid), { nombre: String(yo.data().nombre || "").slice(0, 80), facultad: f.value, instagram: ig.value.trim().replace(/^@/, "").slice(0, 40), motivo: mo.value.trim().slice(0, 400), estado: "pendiente", creado: serverTimestamp() });
+        caja.innerHTML = ""; caja.append(el("h2", "👑 ¡Solicitud enviada!"), el("p", "Te escribiremos pronto para contarte cómo funciona."));
+      } catch (e) { env.disabled = false; err.textContent = "No se ha podido enviar. ¿Has verificado tu correo?"; }
+    };
+    caja.append(f, ig, mo, env, err);
+  } catch (e) { caja.innerHTML = ""; caja.append(el("p", "No se ha podido cargar. Inténtalo en un rato.")); }
 }
 
 // ---------- Embajadores: ajustes (solo administrador) ----------
@@ -293,7 +324,7 @@ export async function montarAjustesInvitar(db, caja) {
   const chk = el("label", "", "chk"), act = document.createElement("input");
   act.type = "checkbox"; act.checked = cfg.activo; chk.append(act, el("span", "Programa activo (los embajadores ganan puntos)"));
   const chk2 = el("label", "", "chk"), abi = document.createElement("input");
-  abi.type = "checkbox"; abi.checked = cfg.abierto; chk2.append(abi, el("span", "Aceptar solicitudes nuevas (sale «¿Quieres ser embajador?» en «Mis puntos»)"));
+  abi.type = "checkbox"; abi.checked = cfg.abierto; chk2.append(abi, el("span", "Aceptar solicitudes nuevas (a los socios que no son embajadores les sale «¿Quieres ser embajador?» en el inicio)"));
   const l1 = el("label", "Puntos para quien invita"), p = document.createElement("input");
   p.type = "number"; p.min = "0"; p.inputMode = "numeric"; p.value = String(cfg.puntos);
   const l2 = el("label", "Máximo de amigos premiados por embajador y mes (0 = sin límite)"), m = document.createElement("input");
