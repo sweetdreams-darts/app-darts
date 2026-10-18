@@ -17,6 +17,8 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
 #estadoVal{margin-top:14px;font-weight:700}
 .ok{color:#5dff9a}.mal{color:#ff9aaa}
 #msg{min-height:1.4em;color:#ffe14d}
+.minimo{margin:16px 0 0;padding:10px;border-radius:12px;border:1.5px solid #ffe14d;color:#ffe14d;font-weight:800}
+.oculto{display:none!important}
 </style></head>
 <body><main>
 <p style="margin:0 0 4px"><a href="./">← Inicio</a></p>
@@ -45,6 +47,7 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
   <p class="grande">Espera a que el camarero acerque su tarjeta</p>
   <p class="peq">a la parte de atrás de tu móvil</p>
   <p id="cuenta"></p>
+  <p class="minimo oculto" id="minimo"></p>
   <button id="bCancelar" type="button">Cancelar</button>
 </section>
 
@@ -52,6 +55,7 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
   <div class="icono">📲</div>
   <p class="grande">Pide al camarero que acerque su tarjeta a tu móvil</p>
   <p class="peq" id="sinNfcTxt"></p>
+  <p class="minimo oculto" id="minimo2"></p>
   <p class="peq">Si tu móvil no tiene NFC, el camarero lo valida con tu carné de socio, como siempre.</p>
 </section>
 
@@ -187,8 +191,20 @@ async function empezar(u) {
     const b = bloqueo(vals, Date.now());
     if (b) {
       if (b.pendiente) { $("yaTit").textContent = "Estamos comprobando tu última validación"; $("yaTxt").textContent = "Espera un par de minutos."; }
-        else { $("yaTxt").textContent = "Solo se puede validar una vez al día. Podrás volver a validar mañana."; }
+      else { $("yaTxt").textContent = "Solo se puede validar una vez al día. Podrás volver a validar mañana."; }
       ver("vYa"); return;
+    }
+  } catch (e) {}
+  // si le invitó un embajador y aún no ha venido, aviso para el camarero con la consumición mínima
+  try {
+    const inv = await getDoc(doc(db, "invitaciones", u.uid));
+    if (inv.exists() && inv.data().premiado !== true) {
+      const ci = await getDoc(doc(db, "settings", "invitaciones"));
+      const d = ci.exists() ? ci.data() : {};
+      if (d.activo !== false) {
+        const min = typeof d.minimo === "number" ? d.minimo : 4.5;
+        for (const id of ["minimo", "minimo2"]) { $(id).textContent = "🍹 Camarero: valida solo si ha consumido " + min.toFixed(2).replace(".", ",") + " € o más"; $(id).classList.remove("oculto"); }
+      }
     }
   } catch (e) {}
   if (enlace) { history.replaceState(null, "", location.pathname); return guardar(enlace, "enlace"); }
