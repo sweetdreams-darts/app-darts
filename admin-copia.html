@@ -117,7 +117,7 @@ function mostrarUltima(ms, docs) {
 
 $("descargar").onclick = async () => {
   const grupos = [];
-  if ($("cUsers").checked) grupos.push("users");
+  if ($("cUsers").checked) grupos.push("users", "perfil_extra", "contadores");
   if ($("cReservas").checked) grupos.push("reservations", "dartboards", "settings");
   if ($("cLiga").checked) grupos.push("liga_equipos", "liga_partidos", "liga_locales", "liga_config", "liga_bloqueos", "liga_importaciones");
   if ($("cOfertas").checked) grupos.push("ofertas", "ruleta_config", "ruleta_versiones", "ruleta_giros");
