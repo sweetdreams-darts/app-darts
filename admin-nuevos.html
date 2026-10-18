@@ -12,6 +12,7 @@ button{width:100%;box-sizing:border-box;padding:12px;font-size:.95rem;border-rad
 .cifras span{font-size:.74rem;opacity:.85}
 .card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
 .card.nuevo{border:1.5px solid #5dff9a}
+.card a.nom{color:inherit;text-decoration:none;display:block}
 .card small{display:block;opacity:.85;margin-top:3px}
 .et{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:800;background:#5dff9a;color:#14213d}
 .rol{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:700;background:#3d5380}
@@ -90,10 +91,13 @@ async function cargar() {
   if (!lista.length) l.append(el("p", "Nadie se ha registrado en los últimos 60 días.", "peq"));
   lista.forEach((u) => {
     const card = el("div", "", "card" + (u.ms > visto ? " nuevo" : ""));
-    const t = el("strong", (u.nombre || "").trim() || "Sin nombre");
+    const t = el("strong", (u.nombre || "").trim() || "Sin nombre"), enlace = el("a", "", "nom");
+    enlace.href = "admin-usuarios.html?uid=" + encodeURIComponent(u.id);
     if (u.ms > visto) t.append(el("span", "🆕 nuevo", "et"));
     t.append(el("span", ROLES[u.role] || u.role || "Cliente", "rol"));
-    card.append(t, el("small", (u.email || "sin email") + " · se registró " + cuando(u.ms, ahora)));
+    t.append(" ›");
+    enlace.append(t, el("small", (u.email || "sin email") + " · se registró " + cuando(u.ms, ahora) + " · toca para ver su ficha"));
+    card.append(enlace);
     l.append(card);
   });
 }
