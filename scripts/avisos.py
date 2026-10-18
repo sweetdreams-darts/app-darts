@@ -320,7 +320,6 @@ def revisar_tarjetas():
     pend = consulta("validaciones", [("estado", "EQUAL", {"stringValue": "pendiente"})])
     if not pend:
         return 0
-    horas = ajustes_nfc()["horas"]
     leidas = []
     for d in pend:
         r = sun_leer(campo(d, "p") or "", campo(d, "c") or "")
@@ -345,9 +344,10 @@ def revisar_tarjetas():
         t["fields"]["ultimoCtr"] = {"integerValue": str(ctr)}
         cambios_t = {"ultimoCtr": ctr, "usos": int(campo(t, "usos", "integerValue") or 0) + 1, "ultimoUso": {"ms": ahora}}
         t["fields"]["usos"] = {"integerValue": str(cambios_t["usos"])}
-        # el mismo cliente solo valida una vez cada X horas
+            # el mismo cliente solo valida una vez por jornada (la jornada del bar acaba a las 6:00)
+        jornada = lambda doc: local(ms_de(campo(doc, "creado", "timestampValue")) - 6 * 3600000).date()
         recientes = [x for x in consulta("validaciones", [("uid", "EQUAL", {"stringValue": cli}), ("estado", "EQUAL", {"stringValue": "valida"})])
-                     if ahora - ms_de(campo(x, "creado", "timestampValue")) < horas * 3600000]
+                     if jornada(x) == jornada(d)]
         estado = "repetida_hoy" if recientes else "valida"
         escribir([cambiar(f"tarjetas/{uid_t}", cambios_t),
                   cambiar(f"validaciones/{vid}", {"estado": estado, "tarjeta": uid_t, "ctr": ctr, "camarero": campo(t, "camarero") or "", "camareroNombre": campo(t, "nombre") or ""})])
