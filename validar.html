@@ -64,7 +64,7 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
 
 <section id="vYa">
   <div class="icono">⏳</div>
-  <p class="grande" id="yaTit">Ya has validado hace poco</p>
+  <p class="grande" id="yaTit">Ya has validado hoy</p>
   <p class="peq" id="yaTxt"></p>
   <button class="pri" type="button" onclick="location.href='./'">Volver al inicio</button>
 </section>
@@ -115,7 +115,7 @@ function bloqueo(vals, ahora) {
 const TEXTOS = {
   pendiente: ["Comprobando la tarjeta… Tarda un minuto: puedes guardar el móvil.", ""],
   valida: ["✔ Validado", "ok"],
-  repetida_hoy: ["Ya habías validado hace poco: esta no cuenta.", "mal"],
+  repetida_hoy: ["Ya habías validado hoy: esta no cuenta.", "mal"],
   repetida: ["⚠ No se ha podido validar. Pide al camarero que acerque su tarjeta otra vez.", "mal"],
   falsa: ["⚠ No se ha podido validar. Pide al camarero que acerque su tarjeta otra vez.", "mal"],
   desconocida: ["⚠ Esa tarjeta no está dada de alta en el bar. Avisa al camarero.", "mal"],
@@ -187,7 +187,7 @@ async function empezar(u) {
     const b = bloqueo(vals, Date.now());
     if (b) {
       if (b.pendiente) { $("yaTit").textContent = "Estamos comprobando tu última validación"; $("yaTxt").textContent = "Espera un par de minutos."; }
-      else { const h = new Date(b.hasta); $("yaTxt").textContent = "Podrás volver a validar a partir de las " + String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") + "."; }
+        else { $("yaTxt").textContent = "Solo se puede validar una vez al día. Podrás volver a validar mañana."; }
       ver("vYa"); return;
     }
   } catch (e) {}
