@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Embajadores</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:580px}
+a{color:#ffd166}
+h2{font-size:1.1rem;margin:26px 0 6px;color:#ffd166}
+label{display:block;margin-top:12px;font-weight:700}
+.chk{display:flex;gap:10px;align-items:center;font-weight:400}
+.chk input{width:22px;height:22px;margin:0;flex:none}
+input,select,textarea,button{width:100%;box-sizing:border-box;min-width:0;max-width:100%;padding:11px;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;background:#0f1a30;color:#f1faee;margin-top:6px;font-family:inherit}
+.chk input{width:22px}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+button.mal{background:#ff8787;color:#14213d}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:8px}
+.card small{display:block;opacity:.85;margin-top:3px}
+.card p{margin:6px 0;font-size:.9rem}
+.fila{display:flex;gap:8px}.fila>*{flex:1}
+.et{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-size:.72rem;font-weight:800;background:#3d5380}
+.et.ok{background:#5dff9a;color:#14213d}.et.pausa{background:#ff8787;color:#14213d}
+.cifras{display:flex;gap:8px;margin-top:8px}
+.cifras div{flex:1;background:#0f1a30;border-radius:10px;padding:8px;text-align:center}
+.cifras b{display:block;font-size:1.2rem;color:#ffd166}
+.cifras span{font-size:.72rem;opacity:.85}
+.fila2{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+.peq{font-size:.85rem;opacity:.85}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Embajadores</h1>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="cifras" id="cifras"></div>
+  <h2>Solicitudes pendientes</h2>
+  <div id="solicitudes"></div>
+  <h2>Embajadores</h2>
+  <div id="lista"></div>
+  <h2>Por facultad</h2>
+  <p class="peq">Amigos que han venido gracias a los embajadores de cada facultad.</p>
+  <div id="porFac"></div>
+  <h2>Nombrar embajador a mano</h2>
+  <p class="peq">Para alguien con quien ya has hablado, aunque no lo haya pedido en la app.</p>
+  <input id="bUsu" type="search" placeholder="Nombre o email" autocomplete="off">
+  <div id="rUsu"></div>
+  <div id="ajustes"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { hacerSocio, montarAjustesInvitar } from "./socios.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+const msg = (t) => { $("msg").textContent = t; };
+
+// <logica>
+const numSocio = (n) => String(n || 0).padStart(4, "0");
+const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+const fecha = (t) => (ms(t) ? new Date(ms(t)).toLocaleDateString("es-ES") : "");
+// Cifras de cada embajador a partir de las invitaciones (que guardan su número de socio).
+function cifrasDe(num, invitaciones) {
+  const l = invitaciones.filter((x) => x.ref === num);
+  const vinieron = l.filter((x) => x.premiado === true && (x.puntos || 0) > 0);
+  return { registrados: l.length, vinieron: vinieron.length, esperando: l.filter((x) => x.premiado !== true).length, puntos: vinieron.reduce((t, x) => t + (x.puntos || 0), 0) };
+}
+function porFacultad(embajadores, usuarios, invitaciones) {
+  const t = {};
+  for (const e of embajadores) {
+    const u = usuarios.get(e.id);
+    if (!u || !u.socioNum) continue;
+    const f = e.facultad || "Sin facultad";
+    t[f] = (t[f] || 0) + cifrasDe(u.socioNum, invitaciones).vinieron;
+  }
+  return Object.entries(t).sort((a, b) => b[1] - a[1]);
+}
+// </logica>
+
+let usuarios = new Map(), embajadores = [], solicitudes = [], invitaciones = [], perfiles = new Map();
+
+async function nombrar(uid, facultad, solicitud) {
+  const u = usuarios.get(uid);
+  if (!u) return;
+  if (!u.socio) { const n = await hacerSocio(db, uid, [...usuarios.values()]); u.socio = true; u.socioNum = n; }
+  await setDoc(doc(db, "embajadores", uid), { activo: true, nombre: u.nombre || "", facultad: facultad || "", desde: serverTimestamp() }, { merge: true });
+  if (solicitud) await updateDoc(doc(db, "embajadores_solicitudes", uid), { estado: "aprobado" });
+  msg("✔ " + (u.nombre || "Ya") + " es embajador (socio nº " + numSocio(u.socioNum) + "). Ya ve su enlace en «Mis puntos».");
+  await cargar();
+}
+
+function pintar() {
+  const activos = embajadores.filter((e) => e.activo === true);
+  const pend = solicitudes.filter((s) => s.estado === "pendiente");
+  const total = activos.reduce((t, e) => { const u = usuarios.get(e.id); return t + (u && u.socioNum ? cifrasDe(u.socioNum, invitaciones).vinieron : 0); }, 0);
+  const c = $("cifras"); c.innerHTML = "";
+  [[activos.length, "embajadores activos"], [pend.length, "solicitudes"], [total, "amigos que han venido"]].forEach(([n, t]) => { const d = el("div"); d.append(el("b", String(n)), el("span", t)); c.append(d); });
+  // solicitudes
+  const s = $("solicitudes"); s.innerHTML = "";
+  if (!pend.length) s.append(el("p", "No hay solicitudes pendientes.", "peq"));
+  pend.sort((a, b) => ms(a.creado) - ms(b.creado)).forEach((x) => {
+    const u = usuarios.get(x.id) || {};
+    const card = el("div", "", "card");
+    card.append(el("strong", x.nombre || u.nombre || "(sin nombre)"), el("small", (u.email || "") + " · " + (x.facultad || "") + (x.instagram ? " · Instagram: @" + x.instagram : "") + " · " + fecha(x.creado)), el("p", "«" + (x.motivo || "") + "»"));
+    const f = el("div", "", "fila"), a = el("button", "Aprobar"), r = el("button", "Rechazar", "mal"), v = el("button", "Ver ficha", "sec");
+    [a, r, v].forEach((b) => (b.type = "button"));
+    a.onclick = async () => { if (!confirm("¿Hacer embajador a " + (x.nombre || u.nombre) + "?")) return; try { await nombrar(x.id, x.facultad, true); } catch (e) { msg("Error: " + (e.code || e.message)); } };
+    r.onclick = async () => { if (!confirm("¿Rechazar la solicitud de " + (x.nombre || u.nombre) + "?")) return; try { await updateDoc(doc(db, "embajadores_solicitudes", x.id), { estado: "rechazado" }); msg("✔ Solicitud rechazada."); await cargar(); } catch (e) { msg("Error: " + (e.code || e.message)); } };
+    v.onclick = () => { location.href = "admin-usuarios.html?uid=" + encodeURIComponent(x.id); };
+    f.append(a, r, v); card.append(f); s.append(card);
+  });
+  // embajadores
+  const l = $("lista"); l.innerHTML = "";
+  if (!embajadores.length) l.append(el("p", "Todavía no hay embajadores.", "peq"));
+  embajadores.map((e) => ({ e: e, u: usuarios.get(e.id) || {} })).map((x) => Object.assign(x, { k: x.u.socioNum ? cifrasDe(x.u.socioNum, invitaciones) : { registrados: 0, vinieron: 0, esperando: 0, puntos: 0 } }))
+    .sort((a, b) => (b.e.activo === true) - (a.e.activo === true) || b.k.vinieron - a.k.vinieron).forEach(({ e, u, k }) => {
+      const card = el("div", "", "card"), t = el("strong", u.nombre || e.nombre || "(sin nombre)");
+      t.append(el("span", e.activo === true ? "activo" : "en pausa", "et " + (e.activo === true ? "ok" : "pausa")));
+      card.append(t, el("small", (e.facultad || "Sin facultad") + " · socio nº " + numSocio(u.socioNum) + (fecha(e.desde) ? " · desde " + fecha(e.desde) : "")),
+        el("small", "Registrados con su enlace: " + k.registrados + " · han venido: " + k.vinieron + (k.esperando ? " · aún no: " + k.esperando : "") + " · puntos ganados: " + k.puntos));
+      const f = el("div", "", "fila"), p = el("button", e.activo === true ? "Pausar" : "Reactivar", "sec"), v = el("button", "Ver ficha", "sec");
+      [p, v].forEach((b) => (b.type = "button"));
+      p.onclick = async () => { try { await updateDoc(doc(db, "embajadores", e.id), { activo: e.activo !== true }); msg(e.activo === true ? "✔ En pausa: deja de ganar puntos y no ve su enlace." : "✔ Reactivado."); await cargar(); } catch (er) { msg("Error: " + (er.code || er.message)); } };
+      v.onclick = () => { location.href = "admin-usuarios.html?uid=" + encodeURIComponent(e.id); };
+      f.append(p, v); card.append(f); l.append(card);
+    });
+  // por facultad
+  const pf = $("porFac"); pf.innerHTML = "";
+  const fs = porFacultad(activos, usuarios, invitaciones);
+  if (!fs.length) pf.append(el("p", "Sin datos todavía.", "peq"));
+  fs.forEach(([n, v]) => { const f = el("div", "", "fila2"); f.append(el("span", n), el("b", String(v))); pf.append(f); });
+  pintarBusqueda();
+}
+function pintarBusqueda() {
+  const c = $("rUsu"), q = $("bUsu").value.trim().toLowerCase();
+  c.innerHTML = "";
+  if (q.length < 3) return;
+  const ids = new Set(embajadores.filter((e) => e.activo === true).map((e) => e.id));
+  [...usuarios.values()].filter((u) => u.role !== "robot" && !ids.has(u.id) && ((u.nombre || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q))).slice(0, 8).forEach((u) => {
+    const card = el("div", "", "card"), fac = (perfiles.get(u.id) || {}).facultad || "";
+    card.append(el("strong", u.nombre || "(sin nombre)"), el("small", (u.email || "") + (fac ? " · " + fac : "")));
+    const b = el("button", "Nombrar embajador");
+    b.type = "button";
+    b.onclick = async () => { if (!confirm("¿Hacer embajador a " + u.nombre + "?")) return; try { await nombrar(u.id, fac, solicitudes.some((s) => s.id === u.id && s.estado === "pendiente")); $("bUsu").value = ""; pintarBusqueda(); } catch (e) { msg("Error: " + (e.code || e.message)); } };
+    card.append(b); c.append(card);
+  });
+}
+$("bUsu").oninput = pintarBusqueda;
+
+async function cargar() {
+  const lee = async (col) => (await getDocs(collection(db, col))).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const [us, em, so, inv] = await Promise.all([lee("users"), lee("embajadores"), lee("embajadores_solicitudes"), lee("invitaciones")]);
+  usuarios = new Map(us.map((u) => [u.id, u])); embajadores = em; solicitudes = so; invitaciones = inv;
+  try { perfiles = new Map((await lee("perfil_extra")).map((p) => [p.id, p])); } catch (e) {}
+  pintar();
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    await cargar();
+    await montarAjustesInvitar(db, $("ajustes"));
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
