@@ -218,11 +218,16 @@ def revisar_invitaciones(ultima):
     hasta = int(time.time() * 1000) - 120000
     if hasta <= ultima:
         return ultima
-    mayor, uids = ultima, []
+    mayor, uids, minimo = ultima, [], None
     for d in consulta("socios_mov", [("creado", "GREATER_THAN", {"timestampValue": iso(ultima)}), ("creado", "LESS_THAN_OR_EQUAL", {"timestampValue": iso(hasta)})], "creado"):
         mayor = max(mayor, ms_de(campo(d, "creado", "timestampValue")) + 1)
         u = campo(d, "uid")
-        if campo(d, "tipo") in ("compra", "canje") and u and u not in uids:
+        if campo(d, "tipo") != "compra" or not u or u in uids:
+            continue   # canjear un cupón (aunque sea el regalo gratis) no cuenta
+        if minimo is None:
+            minimo = ajustes_invitar()["minimo"]
+        importe = float(campo(d, "importe", "doubleValue") or campo(d, "importe", "integerValue") or 0)
+        if importe + 1e-9 >= minimo:
             uids.append(u)
     premiar_invitados(uids)
     return mayor
