@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Validar mi consumición</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 16px 40px;display:flex;justify-content:center}
+main{width:100%;max-width:460px}
+section{display:none;text-align:center}
+section.ver{display:block}
+input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin-top:10px}
+.icono{font-size:5rem;margin:24px 0 6px}
+.latido{animation:latido 1.2s ease-in-out infinite}
+@keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.grande{font-family:"Bungee","Rubik",sans-serif;font-size:1.35rem;line-height:1.3;margin:8px 0}
+.peq{font-size:.88rem;opacity:.85}
+#cuenta{font-size:1rem;margin-top:14px;color:#19f2ff}
+#estadoVal{margin-top:14px;font-weight:700}
+.ok{color:#5dff9a}.mal{color:#ff9aaa}
+#msg{min-height:1.4em;color:#ffe14d}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="./">← Inicio</a></p>
+<header class="marca"><h1>Validar</h1></header>
+<p id="msg" role="status"></p>
+
+<section id="vCargando" class="ver"><p class="peq">Cargando…</p></section>
+
+<section id="vLogin">
+  <p class="grande">Inicia sesión para validar</p>
+  <p class="peq">Es la primera vez que validas desde este navegador.</p>
+  <input id="lEmail" type="email" placeholder="Tu email" autocomplete="email">
+  <input id="lClave" type="password" placeholder="Tu contraseña" autocomplete="current-password">
+  <button id="lEntrar" class="pri" type="button">Entrar y validar</button>
+  <p class="peq"><a href="./">¿No tienes cuenta? Regístrate en la app</a></p>
+</section>
+
+<section id="vEmpezar">
+  <div class="icono">📲</div>
+  <p class="grande">Pulsa y acerca tu móvil a la tarjeta del camarero</p>
+  <button id="bEmpezar" class="pri" type="button">Empezar</button>
+</section>
+
+<section id="vEsperando">
+  <div class="icono latido">📲</div>
+  <p class="grande">Espera a que el camarero acerque su tarjeta</p>
+  <p class="peq">a la parte de atrás de tu móvil</p>
+  <p id="cuenta"></p>
+  <button id="bCancelar" type="button">Cancelar</button>
+</section>
+
+<section id="vSinNfc">
+  <div class="icono">📲</div>
+  <p class="grande">Pide al camarero que acerque su tarjeta a tu móvil</p>
+  <p class="peq" id="sinNfcTxt"></p>
+  <p class="peq">Si tu móvil no tiene NFC, el camarero lo valida con tu carné de socio, como siempre.</p>
+</section>
+
+<section id="vHecho">
+  <div class="icono">✅</div>
+  <p class="grande">¡Listo, gracias!</p>
+  <p id="estadoVal" class="peq"></p>
+  <button id="bVolver" class="pri" type="button">Volver al inicio</button>
+</section>
+
+<section id="vYa">
+  <div class="icono">⏳</div>
+  <p class="grande" id="yaTit">Ya has validado hace poco</p>
+  <p class="peq" id="yaTxt"></p>
+  <button class="pri" type="button" onclick="location.href='./'">Volver al inicio</button>
+</section>
+
+<section id="vOff">
+  <div class="icono">📲</div>
+  <p class="grande">La validación con tarjeta aún no está activa</p>
+  <p class="peq">Muy pronto. De momento, enseña tu carné de socio al pagar.</p>
+</section>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, addDoc, collection, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const VISTAS = ["vCargando", "vLogin", "vEmpezar", "vEsperando", "vSinNfc", "vHecho", "vYa", "vOff"];
+const ver = (id) => { for (const v of VISTAS) $(v).classList.toggle("ver", v === id); };
+const msg = (t) => { $("msg").textContent = t || ""; };
+
+// <logica>
+// Saca p y c del enlace que da la tarjeta (…/validar.html?p=32 cifras&c=16 cifras).
+function pcDe(url) {
+  try {
+    const u = new URL(url);
+    const p = u.searchParams.get("p"), c = u.searchParams.get("c");
+    if (/^[0-9a-f]{32}$/i.test(p || "") && /^[0-9a-f]{16}$/i.test(c || "")) return { p: p.toUpperCase(), c: c.toUpperCase() };
+  } catch (e) {}
+  return null;
+}
+// ¿Puede validar ya? Una vez cada X horas (y no si tiene una pendiente de hace menos de 10 minutos).
+function bloqueo(vals, horas, ahora) {
+  const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
+  const v = vals.filter((x) => (x.estado === "valida" && ahora - ms(x.creado) < horas * 3600000) || (x.estado === "pendiente" && ahora - ms(x.creado) < 600000))
+    .sort((a, b) => ms(b.creado) - ms(a.creado))[0];
+  if (!v) return null;
+  return v.estado === "pendiente" ? { pendiente: true } : { hasta: ms(v.creado) + horas * 3600000 };
+}
+const TEXTOS = {
+  pendiente: ["Comprobando la tarjeta… Tarda un minuto: puedes guardar el móvil.", ""],
+  valida: ["✔ Validado", "ok"],
+  repetida_hoy: ["Ya habías validado hace poco: esta no cuenta.", "mal"],
+  repetida: ["⚠ No se ha podido validar. Pide al camarero que acerque su tarjeta otra vez.", "mal"],
+  falsa: ["⚠ No se ha podido validar. Pide al camarero que acerque su tarjeta otra vez.", "mal"],
+  desconocida: ["⚠ Esa tarjeta no está dada de alta en el bar. Avisa al camarero.", "mal"],
+  baja: ["⚠ Esa tarjeta está dada de baja. Avisa al camarero.", "mal"]
+};
+// </logica>
+
+const enlace = pcDe(location.href);
+let usuario = null, ctrl = null, reloj = null;
+
+async function guardar(pc, via) {
+  msg("");
+  if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+  clearInterval(reloj);
+  try {
+    const r = await addDoc(collection(db, "validaciones"), { uid: usuario.uid, p: pc.p, c: pc.c, via: via, estado: "pendiente", creado: serverTimestamp() });
+    if (navigator.vibrate) navigator.vibrate(80);
+    ver("vHecho");
+    onSnapshot(r, (d) => {
+      if (!d.exists()) return;
+      const x = d.data(), t = TEXTOS[x.estado] || TEXTOS.pendiente;
+      $("estadoVal").textContent = x.estado === "valida" ? "✔ Validado por " + (x.camareroNombre || "el camarero") : t[0];
+      $("estadoVal").className = "peq " + t[1];
+    });
+  } catch (e) { msg("No se ha podido guardar. Revisa tu conexión e inténtalo otra vez."); ver("vEmpezar"); }
+}
+
+async function escanear() {
+  msg("");
+  try {
+    ctrl = new AbortController();
+    const lector = new NDEFReader();
+    await lector.scan({ signal: ctrl.signal });
+    lector.onreading = (ev) => {
+      let url = "";
+      for (const rec of ev.message.records) if (rec.recordType === "url" || rec.recordType === "absolute-url") url = new TextDecoder().decode(rec.data);
+      const pc = pcDe(url);
+      if (!pc) { msg("Esa tarjeta no es la del camarero de Sweet Dreams."); return; }
+      guardar(pc, "nfc");
+    };
+    lector.onreadingerror = () => msg("No se ha podido leer. Que el camarero la acerque otra vez, despacio.");
+    ver("vEsperando");
+    let quedan = 60;
+    $("cuenta").textContent = "Quedan " + quedan + " s";
+    clearInterval(reloj);
+    reloj = setInterval(() => {
+      quedan--;
+      $("cuenta").textContent = "Quedan " + quedan + " s";
+      if (quedan <= 0) { clearInterval(reloj); try { ctrl.abort(); } catch (e) {} msg("No se ha detectado la tarjeta. Pulsa «Empezar» para intentarlo otra vez."); ver("vEmpezar"); }
+    }, 1000);
+  } catch (e) {
+    if (e && e.name === "NotAllowedError") { msg("Activa el permiso de NFC para la app y pulsa «Empezar»."); ver("vEmpezar"); return; }
+    if (e && e.name === "NotReadableError") { msg("Activa el NFC en los ajustes del móvil y pulsa «Empezar»."); ver("vEmpezar"); return; }
+    ver("vEmpezar");
+  }
+}
+
+async function empezar(u) {
+  usuario = u;
+  let horas = 3;
+  try {
+    const c = await getDoc(doc(db, "settings", "nfc"));
+    const cfg = c.exists() ? c.data() : {};
+    if (cfg.activo !== true) { ver("vOff"); return; }
+    if (Number.isInteger(cfg.horas) && cfg.horas > 0) horas = cfg.horas;
+  } catch (e) {}
+  try {
+    const vals = (await getDocs(query(collection(db, "validaciones"), where("uid", "==", u.uid)))).docs.map((d) => d.data());
+    const b = bloqueo(vals, horas, Date.now());
+    if (b) {
+      if (b.pendiente) { $("yaTit").textContent = "Estamos comprobando tu última validación"; $("yaTxt").textContent = "Espera un par de minutos."; }
+      else { const h = new Date(b.hasta); $("yaTxt").textContent = "Podrás volver a validar a partir de las " + String(h.getHours()).padStart(2, "0") + ":" + String(h.getMinutes()).padStart(2, "0") + "."; }
+      ver("vYa"); return;
+    }
+  } catch (e) {}
+  if (enlace) { history.replaceState(null, "", location.pathname); return guardar(enlace, "enlace"); }
+  if ("NDEFReader" in window) return escanear();
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  $("sinNfcTxt").textContent = ios ? "En iPhone: el camarero acerca su tarjeta a la parte de arriba de tu iPhone. Te saldrá un aviso arriba: tócalo y se validará solo." : "Acerca la parte de atrás de tu móvil a la tarjeta y toca el aviso que aparezca. Funciona mejor abriendo la app con Chrome.";
+  ver("vSinNfc");
+}
+
+$("bEmpezar").onclick = () => escanear();
+$("bCancelar").onclick = () => { clearInterval(reloj); try { ctrl.abort(); } catch (e) {} location.href = "./"; };
+$("bVolver").onclick = () => { location.href = "./"; };
+$("lEntrar").onclick = async () => {
+  msg("");
+  try { await signInWithEmailAndPassword(auth, $("lEmail").value.trim(), $("lClave").value); } catch (e) { msg("Email o contraseña incorrectos."); }
+};
+onAuthStateChanged(auth, (u) => { if (!u) { ver("vLogin"); return; } empezar(u); });
+</script>
+</main></body></html>
