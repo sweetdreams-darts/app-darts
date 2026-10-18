@@ -32,8 +32,6 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 <div id="panel" class="oculto">
   <p class="peq">Cada camarero lleva una tarjeta NFC (NTAG 424 DNA). El cliente pulsa «Validar mi consumición» en su móvil y el camarero acerca la tarjeta. Cada toque genera un código distinto que el robot comprueba, así que no sirve copiarlo.</p>
   <label class="chk"><input id="cAct" type="checkbox"><span>Validación con tarjeta activa (sale el botón «Validar mi consumición» en el inicio de los socios)</span></label>
-  <label for="cHoras">Horas mínimas entre dos validaciones del mismo cliente</label>
-  <input id="cHoras" type="number" min="1" max="24" inputmode="numeric">
   <button id="cGuardar">Guardar</button>
 
   <h2>Camareros y sus tarjetas</h2>
@@ -164,9 +162,7 @@ async function pintarValidaciones() {
 }
 
 $("cGuardar").onclick = async () => {
-  const h = Number($("cHoras").value);
-  if (!Number.isInteger(h) || h < 1 || h > 24) { msg("Las horas deben ser un número entero entre 1 y 24."); return; }
-  try { await setDoc(doc(db, "settings", "nfc"), { activo: $("cAct").checked, horas: h }, { merge: true }); msg($("cAct").checked ? "✔ Guardado: los socios ya ven «Validar mi consumición»." : "✔ Guardado: la validación con tarjeta está desactivada."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+  try { await setDoc(doc(db, "settings", "nfc"), { activo: $("cAct").checked }, { merge: true });
 };
 
 async function cargar() {
