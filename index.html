@@ -273,7 +273,7 @@ function mostrar(user, ficha) {
   $("uEmail").textContent = user.email;
   $("uRol").textContent = ROLES[ficha.role] || ficha.role;
   $("tileCarne").classList.toggle("oculto", !ficha.socio);
-  $("tilePuntos").classList.toggle("oculto", !ficha.socio);
+  $("tilePuntos").classList.add("oculto");
   $("tileCaja").classList.toggle("oculto", ficha.role !== "staff" && ficha.role !== "admin");
   $("uSocio").classList.toggle("oculto", !ficha.socio);
   $("uSocio").textContent = "Socio nº " + String(ficha.socioNum || 0).padStart(4, "0");
