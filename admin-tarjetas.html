@@ -31,7 +31,7 @@ button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
 <p id="msg" role="status"></p>
 <div id="panel" class="oculto">
   <p class="peq">Cada camarero lleva una tarjeta NFC (NTAG 424 DNA). El cliente pulsa «Validar mi consumición» en su móvil y el camarero acerca la tarjeta. Cada toque genera un código distinto que el robot comprueba, así que no sirve copiarlo.</p>
-  <label class="chk"><input id="cAct" type="checkbox"><span>Validación con tarjeta activa (sale el botón «Validar mi consumición» en el inicio de los socios)</span></label>
+  <label class="chk"><input id="cAct" type="checkbox"><span>Validación con tarjeta activa (sale el botón «Validar mi consumición» en el inicio de los socios). Cada cliente puede validar una vez al día.</span></label>
   <button id="cGuardar">Guardar</button>
 
   <h2>Camareros y sus tarjetas</h2>
@@ -79,7 +79,7 @@ function pcDe(url) {
   } catch (e) {}
   return null;
 }
-const ESTADOS = { pendiente: "comprobando…", valida: "✔ válida", repetida_hoy: "repetida (ya validó hace poco)", repetida: "✖ toque ya usado", falsa: "✖ código falso", desconocida: "✖ tarjeta no dada de alta", baja: "✖ tarjeta dada de baja" };
+const ESTADOS = { pendiente: "comprobando…", valida: "✔ válida", repetida_hoy: repetida_hoy: "repetida (ya validó hoy)", repetida: "✖ toque ya usado", falsa: "✖ código falso", desconocida: "✖ tarjeta no dada de alta", baja: "✖ tarjeta dada de baja" };
 // </logica>
 
 let usuarios = new Map(), tarjetas = [];
@@ -181,7 +181,6 @@ onAuthStateChanged(auth, async (u) => {
     const c = await getDoc(doc(db, "settings", "nfc"));
     const cfg = c.exists() ? c.data() : {};
     $("cAct").checked = cfg.activo === true;
-    $("cHoras").value = String(Number.isInteger(cfg.horas) ? cfg.horas : 3);
     await cargar();
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
