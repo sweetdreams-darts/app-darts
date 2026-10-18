@@ -104,13 +104,13 @@ function pcDe(url) {
   } catch (e) {}
   return null;
 }
-// ¿Puede validar ya? Una vez cada X horas (y no si tiene una pendiente de hace menos de 10 minutos).
-function bloqueo(vals, horas, ahora) {
+// ¿Puede validar ya? Una vez por jornada (la jornada del bar acaba a las 6:00), y no si tiene una pendiente de hace menos de 10 minutos.
+function bloqueo(vals, ahora) {
   const ms = (t) => (t && t.toMillis ? t.toMillis() : 0);
-  const v = vals.filter((x) => (x.estado === "valida" && ahora - ms(x.creado) < horas * 3600000) || (x.estado === "pendiente" && ahora - ms(x.creado) < 600000))
-    .sort((a, b) => ms(b.creado) - ms(a.creado))[0];
-  if (!v) return null;
-  return v.estado === "pendiente" ? { pendiente: true } : { hasta: ms(v.creado) + horas * 3600000 };
+  const jornada = (m) => { const d = new Date(m - 6 * 3600000); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate(); };
+  if (vals.some((x) => x.estado === "pendiente" && ahora - ms(x.creado) < 600000)) return { pendiente: true };
+  if (vals.some((x) => x.estado === "valida" && jornada(ms(x.creado)) === jornada(ahora))) return { hoy: true };
+  return null;
 }
 const TEXTOS = {
   pendiente: ["Comprobando la tarjeta… Tarda un minuto: puedes guardar el móvil.", ""],
