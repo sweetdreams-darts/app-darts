@@ -153,6 +153,7 @@ async function cargarPendientes() {
     if (!pend.length) { cont.append(el("p", "No hay premios pendientes.")); return; }
     for (const d of pend) {
       const g = d.data(), nombre = await datosGiro(g);
+      if (/^\s*(otra vez|sin premio|nada\b|sigue intent|vuelve a intent|suerte la pr)/i.test(nombre)) continue;
       let u = null;
       try { const s = await getDoc(doc(db, "users", d.id)); u = s.exists() ? s.data() : null; } catch (e) { u = null; }
       const c = el("div", "", "card");
