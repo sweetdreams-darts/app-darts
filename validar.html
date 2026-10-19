@@ -73,6 +73,14 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
   <button class="pri" type="button" onclick="location.href='./'">Volver al inicio</button>
 </section>
 
+<section id="vCanje">
+  <div class="icono">🎁</div>
+  <p class="grande" id="canjeTit">PREMIO CANJEADO</p>
+  <p class="grande" id="canjeNombre" style="color:#ffe14d"></p>
+  <p class="peq">Ya está: el camarero te lo da ahora.</p>
+  <button class="pri" type="button" onclick="location.href='./'">Volver al inicio</button>
+</section>
+
 <section id="vOff">
   <div class="icono">📲</div>
   <p class="grande">La validación con tarjeta aún no está activa</p>
@@ -82,7 +90,7 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, addDoc, collection, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, addDoc, updateDoc, collection, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -94,7 +102,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
-const VISTAS = ["vCargando", "vLogin", "vEmpezar", "vEsperando", "vSinNfc", "vHecho", "vYa", "vOff"];
+const VISTAS = ["vCargando", "vLogin", "vEmpezar", "vEsperando", "vSinNfc", "vHecho", "vYa", "vCanje", "vOff"];
 const ver = (id) => { for (const v of VISTAS) $(v).classList.toggle("ver", v === id); };
 const msg = (t) => { $("msg").textContent = t || ""; };
 
@@ -115,6 +123,15 @@ function bloqueo(vals, ahora) {
   if (vals.some((x) => x.estado === "pendiente" && ahora - ms(x.creado) < 600000)) return { pendiente: true };
   if (vals.some((x) => x.estado === "valida" && jornada(ms(x.creado)) === jornada(ahora))) return { hoy: true };
   return null;
+}
+// Premio que tocó en la ruleta (el mismo cálculo que ruleta.html).
+function premioRuleta(ms, premios) {
+  const total = premios.reduce((s, p) => s + p.peso, 0);
+  if (!total) return null;
+  const x = ((ms % 1000) / 1000) * total;
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
+  return premios[idx];
 }
 const TEXTOS = {
   pendiente: ["Comprobando la tarjeta… Tarda un minuto: puedes guardar el móvil.", ""],
@@ -145,6 +162,20 @@ async function guardar(pc, via) {
       $("estadoVal").className = "peq " + t[1];
     });
   } catch (e) { msg("No se ha podido guardar. Revisa tu conexión e inténtalo otra vez."); ver("vEmpezar"); }
+}
+
+// iPhone: si acaba de pulsar «Canjear con el camarero» en la ruleta, la tarjeta canjea el premio (no valida consumición).
+async function canjearRuleta(u, pc) {
+  try {
+    const g = await getDoc(doc(db, "ruleta_giros", u.uid));
+    if (!g.exists() || g.data().canjeado === true) { $("canjeTit").textContent = g.exists() ? "Ese premio ya estaba canjeado" : "No tienes ningún premio de la ruleta"; $("canjeNombre").textContent = ""; ver("vCanje"); return; }
+    await updateDoc(doc(db, "ruleta_giros", u.uid), { canjeado: true, canjeadoEn: serverTimestamp(), canjeP: pc.p, canjeC: pc.c, canjeEstado: "pendiente" });
+    if (navigator.vibrate) navigator.vibrate(120);
+    let nombre = "";
+    try { const v = await getDoc(doc(db, "ruleta_versiones", String(g.data().version))); const pr = v.exists() ? premioRuleta(g.data().giro.toMillis(), v.data().premios || []) : null; nombre = pr ? pr.nombre : ""; } catch (e) {}
+    $("canjeTit").textContent = "✔ PREMIO CANJEADO"; $("canjeNombre").textContent = nombre;
+    ver("vCanje");
+  } catch (e) { msg("No se ha podido canjear: " + (e.code || e.message) + ". Enséñale el premio al camarero."); ver("vEmpezar"); }
 }
 
 async function escanear() {
@@ -186,6 +217,15 @@ async function empezar(u) {
     if (cfg.activo !== true) { ver("vOff"); return; }
     if (Number.isInteger(cfg.horas) && cfg.horas > 0) horas = cfg.horas;
   } catch (e) {}
+  if (enlace) {
+    let canje = 0;
+    try { canje = Number(localStorage.getItem("sd_canje_ruleta") || 0); } catch (e) {}
+    if (canje && Date.now() - canje < 5 * 60000) {
+      try { localStorage.removeItem("sd_canje_ruleta"); } catch (e) {}
+      history.replaceState(null, "", location.pathname);
+      return canjearRuleta(u, enlace);
+    }
+  }
   try {
     const vals = (await getDocs(query(collection(db, "validaciones"), where("uid", "==", u.uid)))).docs.map((d) => d.data());
     const b = bloqueo(vals, Date.now());
