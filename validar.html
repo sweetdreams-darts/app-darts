@@ -220,7 +220,7 @@ async function empezar(u) {
   if (enlace) {
     let canje = 0;
     try { canje = Number(localStorage.getItem("sd_canje_ruleta") || 0); } catch (e) {}
-    if (canje && Date.now() - canje < 5 * 60000) {
+    if (canje && Date.now() - canje < 12 * 3600000) {
       try { localStorage.removeItem("sd_canje_ruleta"); } catch (e) {}
       history.replaceState(null, "", location.pathname);
       return canjearRuleta(u, enlace);
