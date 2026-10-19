@@ -14,6 +14,14 @@ button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
 .premio .canjear{margin-top:12px}
 .premio .hecho{margin-top:12px;padding:14px;border-radius:14px;border:2px solid #5dff9a;background:rgba(93,255,154,.14);color:#5dff9a;font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem}
 .premio .peq{font-size:.85rem;opacity:.85;margin-top:8px}
+.espera .icono{font-size:4rem;margin:6px 0}
+.latido{animation:latido 1.2s ease-in-out infinite}
+@keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.espera .tit{font-family:"Bungee","Rubik",sans-serif;font-size:1.15rem;color:#19f2ff;margin:4px 0 10px}
+.espera ol{text-align:left;margin:0 0 6px;padding-left:22px;font-size:.92rem}
+.espera li{margin:7px 0}
+.espera .alerta{margin:10px 0 0;padding:10px;border-radius:12px;border:1.5px solid #ffe14d;color:#ffe14d;font-weight:700;font-size:.92rem}
+.espera button{margin-top:10px}
 .oculto{display:none!important}
 </style></head>
 <body><main>
@@ -23,7 +31,7 @@ button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
 <div id="panel" class="oculto">
   <div class="caja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
   <button id="girar" class="pri grande" type="button">¡Girar la ruleta!</button>
-  <p id="aviso" style="text-align:center;opacity:.85">Solo puedes girar una vez. Si te toca premio, enséñaselo al camarero para canjearlo.</p>
+  <p id="aviso" style="text-align:center;opacity:.85">Solo puedes girar una vez. Si te toca premio, lo canjeas en la barra cuando quieras.</p>
   <div id="premio" class="zona premio oculto"></div>
   <p id="msg" role="status"></p>
 </div>
@@ -36,7 +44,7 @@ window.addEventListener("error", function (e) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -49,7 +57,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#8b5cff", "#5dff9a", "#ff5c7a"];
-let usuario = null, config = null, premios = [], nfcActivo = false;
+let usuario = null, config = null, premios = [], espera = null;
 
 // <logica>
 // Qué premio toca lo decide el «peso» (probabilidad); los quesitos se dibujan todos iguales
@@ -139,46 +147,93 @@ function mostrarPremio(nombre, canjeado, cuando, recien) {
     p.append(h, t);
   } else if (canjeado) {
     const c = document.createElement("div"); c.textContent = "Canjeado" + (cuando ? " el " + cuando : "") + "."; p.append(c);
-  } else if (nfcActivo) {
-    const bt = document.createElement("button"); bt.type = "button"; bt.className = "pri canjear"; bt.textContent = "📲 Canjear con el camarero";
-    bt.onclick = () => canjearConTarjeta(nombre);
-    const t = document.createElement("div"); t.className = "peq"; t.textContent = "Pídelo en la barra, pulsa el botón y el camarero acercará su tarjeta a tu móvil.";
-    p.append(bt, t);
   } else {
-    const c = document.createElement("div"); c.textContent = "Enséñaselo al camarero para canjearlo. Pendiente de canjear."; p.append(c);
+    const bt = document.createElement("button"); bt.type = "button"; bt.className = "pri canjear"; bt.textContent = "🎁 Canjear premio";
+    bt.onclick = () => canjearConTarjeta(nombre);
+    const t = document.createElement("div"); t.className = "peq"; t.textContent = "Púlsalo cuando estés en la barra: el camarero pasará su tarjeta por tu móvil. Puedes canjearlo otro día.";
+    p.append(bt, t);
   }
   p.classList.remove("oculto");
 }
 
-// Canje con la tarjeta del camarero: en Android lo lee la propia app; en iPhone la tarjeta abre la pantalla de validar.
+// Canje con la tarjeta del camarero. Espera sin límite de tiempo hasta que el camarero pasa su tarjeta
+// (o lo marca él desde su panel). En Android lo lee la propia app; en iPhone la tarjeta abre la pantalla de validar.
+function pararEspera() {
+  if (!espera) return;
+  try { espera.ctrl && espera.ctrl.abort(); } catch (e) {}
+  try { espera.lock && espera.lock.release(); } catch (e) {}
+  try { espera.quitar && espera.quitar(); } catch (e) {}
+  espera = null;
+}
 async function canjearConTarjeta(nombre) {
+  pararEspera();
   $("msg").textContent = "";
-  if (!("NDEFReader" in window)) {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), nfcWeb = "NDEFReader" in window;
+  const p = $("premio");
+  p.innerHTML = "";
+  const caja = document.createElement("div"); caja.className = "espera";
+  const ic = document.createElement("div"); ic.className = "icono latido"; ic.textContent = "📲";
+  const ti = document.createElement("div"); ti.className = "tit"; ti.textContent = "Esperando la tarjeta del camarero…";
+  const pr = document.createElement("div"); pr.className = "nombre"; pr.textContent = nombre;
+  const ol = document.createElement("ol");
+  const paso = (t) => { const li = document.createElement("li"); li.textContent = t; ol.append(li); };
+  if (ios) {
+    paso("Enséñale esta pantalla al camarero: acercará su tarjeta a la parte de arriba de tu iPhone.");
+    paso("Te saldrá un aviso arriba: tócalo y el premio se canjeará solo.");
+  } else {
+    paso("Ten el NFC activado (Ajustes › Conexiones › NFC).");
+    paso("Enséñale esta pantalla al camarero: acercará su tarjeta a la parte de atrás de tu móvil.");
+    paso("No cierres esta pantalla hasta que salga ✔ CANJEADO.");
+  }
+  const alerta = document.createElement("div"); alerta.className = "alerta oculto";
+  const reint = document.createElement("button"); reint.type = "button"; reint.className = "pri oculto"; reint.textContent = "Reintentar";
+  const canc = document.createElement("button"); canc.type = "button"; canc.textContent = "Cancelar";
+  caja.append(ic, ti, pr, ol, alerta, reint, canc);
+  p.append(caja);
+  p.classList.remove("oculto");
+  espera = {};
+  const yo = espera;
+  const avisar = (t) => { alerta.textContent = t; alerta.classList.remove("oculto"); };
+  canc.onclick = () => { try { localStorage.removeItem("sd_canje_ruleta"); } catch (e) {} pararEspera(); mostrarPremio(nombre, false, ""); };
+  reint.onclick = () => canjearConTarjeta(nombre);
+  // pantalla siempre encendida mientras espera
+  try { if (navigator.wakeLock) yo.lock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  // si el camarero lo marca desde su panel (o se canjea desde otra pantalla), se ve aquí al momento
+  yo.quitar = onSnapshot(doc(db, "ruleta_giros", usuario.uid), (d) => {
+    if (espera !== yo || !d.exists() || d.data().canjeado !== true) return;
+    pararEspera();
+    if (navigator.vibrate) navigator.vibrate(120);
+    mostrarPremio(nombre, true, "", true);
+  });
+  if (!nfcWeb) {
     try { localStorage.setItem("sd_canje_ruleta", String(Date.now())); } catch (e) {}
-    $("msg").textContent = "📲 Que el camarero acerque su tarjeta a la parte de arriba de tu iPhone. Toca el aviso que aparecerá y se canjeará solo.";
+    if (!ios) avisar("Este navegador no lee NFC. Abre la app con Chrome, o pide al camarero que lo marque desde su panel.");
     return;
   }
   try {
-    const ctrl = new AbortController(), lector = new NDEFReader();
-    await lector.scan({ signal: ctrl.signal });
-    $("msg").textContent = "📲 Espera a que el camarero acerque su tarjeta a la parte de atrás de tu móvil…";
-    const fin = setTimeout(() => { try { ctrl.abort(); } catch (e) {} $("msg").textContent = "No se ha detectado la tarjeta. Vuelve a pulsar «Canjear con el camarero»."; }, 60000);
+    yo.ctrl = new AbortController();
+    const lector = new NDEFReader();
+    await lector.scan({ signal: yo.ctrl.signal });
     lector.onreading = async (ev) => {
+      if (espera !== yo) return;
       let url = "";
       for (const rec of ev.message.records) if (rec.recordType === "url" || rec.recordType === "absolute-url") url = new TextDecoder().decode(rec.data);
       const pc = pcDe(url);
-      if (!pc) { $("msg").textContent = "Esa tarjeta no es la del camarero de Sweet Dreams."; return; }
-      clearTimeout(fin);
-      try { ctrl.abort(); } catch (e) {}
+      if (!pc) { avisar("Esa tarjeta no es la del camarero de Sweet Dreams. Que acerque la suya."); return; }
+      try { yo.ctrl.abort(); } catch (e) {}
       try {
         await updateDoc(doc(db, "ruleta_giros", usuario.uid), { canjeado: true, canjeadoEn: serverTimestamp(), canjeP: pc.p, canjeC: pc.c, canjeEstado: "pendiente" });
+        pararEspera();
         if (navigator.vibrate) navigator.vibrate(120);
-        $("msg").textContent = "";
         mostrarPremio(nombre, true, "", true);
-      } catch (e) { $("msg").textContent = "No se ha podido canjear: " + (e.code || e.message) + ". Enséñale el premio al camarero."; }
+      } catch (e) { avisar("No se ha podido canjear (" + (e.code || e.message) + "). Pulsa «Reintentar» o pide al camarero que lo marque desde su panel."); reint.classList.remove("oculto"); }
     };
+    lector.onreadingerror = () => avisar("No se ha podido leer la tarjeta. Que el camarero la acerque otra vez, despacio.");
   } catch (e) {
-    $("msg").textContent = e && e.name === "NotAllowedError" ? "Activa el permiso de NFC y vuelve a pulsar «Canjear con el camarero»." : "No se puede leer la tarjeta en este móvil. Enséñale el premio al camarero.";
+    if (e && e.name === "NotReadableError") avisar("⚠ El NFC de tu móvil está apagado. Actívalo en Ajustes › Conexiones › NFC y pulsa «Reintentar».");
+    else if (e && e.name === "NotAllowedError") avisar("⚠ Tienes que permitir que la app use el NFC. Pulsa «Reintentar» y acepta.");
+    else avisar("No se puede leer NFC en este móvil. Pide al camarero que marque el premio desde su panel.");
+    reint.classList.remove("oculto");
   }
 }
 
@@ -205,7 +260,6 @@ onAuthStateChanged(auth, async (u) => {
   try {
     const f = (await getDoc(doc(db, "users", u.uid))).data() || {};
     if (f.socio !== true && f.role !== "admin") { $("estado").textContent = "La ruleta es solo para socios. Pregunta en el bar cómo hacerte socio."; return; }
-    try { const n = await getDoc(doc(db, "settings", "nfc")); nfcActivo = n.exists() && n.data().activo === true; } catch (e) {}
     const mio = await getDoc(doc(db, "ruleta_giros", u.uid));
     if (mio.exists()) {
       const g = mio.data();
