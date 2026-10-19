@@ -52,13 +52,18 @@ const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#8b5cff", "#5dff9a", "#ff5c7a
 let usuario = null, config = null, premios = [], nfcActivo = false;
 
 // <logica>
+// Qué premio toca lo decide el «peso» (probabilidad); los quesitos se dibujan todos iguales
+// y la ruleta se para dentro del quesito que ha tocado (siempre en el mismo sitio para el mismo giro).
 function resultado(ms, premios) {
   const total = premios.reduce((s, p) => s + p.peso, 0);
   const x = ((ms % 1000) / 1000) * total;
   let acum = 0, idx = premios.length - 1;
   for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
-  return { idx: idx, angulo: (360 * x) / total };
+  const f = ((Math.floor(ms / 1000) * 7919) % 1000) / 1000;
+  return { idx: idx, angulo: ((idx + 0.2 + 0.6 * f) * 360) / premios.length };
 }
+// Los quesitos que se llaman «Otra vez será», «Sin premio» o «Nada» no son premio: no se canjean.
+const sinPremio = (nombre) => /^\s*(otra vez|sin premio|nada\b|sigue intent|vuelve a intent|suerte la pr)/i.test(String(nombre || ""));
 // Saca p y c del enlace que da la tarjeta del camarero.
 function pcDe(url) {
   try {
@@ -73,10 +78,9 @@ function pcDe(url) {
 function dibujar(lista) {
   const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2;
   g.clearRect(0, 0, c.width, c.height);
-  const total = lista.reduce((s, p) => s + p.peso, 0);
   let a0 = 0;
   lista.forEach((p, i) => {
-    const a1 = a0 + (p.peso / total) * Math.PI * 2;
+    const a1 = a0 + (Math.PI * 2) / lista.length;
     g.beginPath();
     g.moveTo(R, R);
     g.arc(R, R, R - 4, a0 - Math.PI / 2, a1 - Math.PI / 2);
@@ -118,6 +122,12 @@ function mostrarPremio(nombre, canjeado, cuando, recien) {
   const p = $("premio");
   p.innerHTML = "";
   const a = document.createElement("div");
+  if (sinPremio(nombre)) {
+    const a0 = document.createElement("div"); a0.textContent = "¡Vaya!";
+    const b0 = document.createElement("div"); b0.className = "nombre"; b0.textContent = nombre;
+    const c0 = document.createElement("div"); c0.className = "peq"; c0.textContent = "Esta vez no ha habido suerte. ¡En la próxima campaña volverás a girar!";
+    p.append(a0, b0, c0); p.classList.remove("oculto"); return;
+  }
   a.textContent = canjeado ? "Tu premio (ya canjeado):" : "¡Te ha tocado!";
   const b = document.createElement("div");
   b.className = "nombre";
