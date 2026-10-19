@@ -126,7 +126,9 @@ async function mostrarSocio(uid, datos) {
       p.append(el("small", "Todavía no ha girado la ruleta."));
     } else {
       const d = g.data(), nombre = await datosGiro(d);
-      if (d.canjeado === true) {
+      if (/^\s*(otra vez|sin premio|nada\b|sigue intent|vuelve a intent|suerte la pr)/i.test(nombre)) {
+        p.append(el("small", "Le tocó en la ruleta (no es premio):"), el("strong", nombre));
+      } else if (d.canjeado === true) {
         p.append(el("small", "Premio de la ruleta (ya canjeado" + (d.canjeadoEn ? " el " + fecha(d.canjeadoEn) : "") + "):"), el("strong", nombre));
       } else {
         p.append(el("small", "🎁 Premio de la ruleta pendiente:"), el("strong", nombre));
