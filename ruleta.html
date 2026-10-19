@@ -5,16 +5,15 @@
 <style>
 body{margin:0;padding:20px;display:flex;justify-content:center}
 main{width:100%;max-width:480px}
-.ruedaCaja{position:relative;width:320px;max-width:92%;margin:22px auto 18px}
+.caja{position:relative;width:320px;max-width:92%;margin:18px auto}
 #rueda{width:100%;height:auto;display:block;border-radius:50%;box-shadow:0 0 24px rgba(255,43,214,.55),0 0 50px rgba(25,242,255,.25);transition:transform 5.5s cubic-bezier(.12,.7,.1,1)}
 .puntero{position:absolute;top:-14px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:26px solid #ffe14d;filter:drop-shadow(0 0 8px rgba(255,225,77,.8));z-index:2}
-@keyframes brillo{0%{background-position:0% 50%}100%{background-position:300% 50%}}
-@keyframes latido{0%,100%{transform:scale(1);box-shadow:0 0 18px rgba(255,225,77,.55),0 0 30px rgba(255,43,214,.4)}50%{transform:scale(1.04);box-shadow:0 0 34px rgba(255,43,214,.85),0 0 54px rgba(255,225,77,.65)}}
-button#girar{width:100%;margin-top:10px;font-family:"Bungee","Rubik",sans-serif!important;font-weight:400!important;font-size:1.4rem!important;letter-spacing:.03em;padding:20px!important;color:#1a0610!important;background:linear-gradient(100deg,#ffe14d,#ff2bd6,#19f2ff,#ffe14d)!important;background-size:300% 100%!important;border:0!important;animation:brillo 3s linear infinite,latido 1.4s ease-in-out infinite!important}
-button#girar:disabled{opacity:.6;animation:none!important}
-@media (prefers-reduced-motion:reduce){button#girar{animation:none!important}}
+button.grande{width:100%;padding:16px;font-size:1.2rem;margin-top:10px}
 .premio{text-align:center;padding:16px;margin-top:16px}
 .premio .nombre{font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem;color:var(--amarillo);text-shadow:0 0 12px rgba(255,225,77,.6);margin:6px 0}
+.premio .canjear{margin-top:12px}
+.premio .hecho{margin-top:12px;padding:14px;border-radius:14px;border:2px solid #5dff9a;background:rgba(93,255,154,.14);color:#5dff9a;font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem}
+.premio .peq{font-size:.85rem;opacity:.85;margin-top:8px}
 .oculto{display:none!important}
 </style></head>
 <body><main>
@@ -22,8 +21,8 @@ button#girar:disabled{opacity:.6;animation:none!important}
 <header class="marca"><h1>Ruleta</h1></header>
 <p id="estado">Cargando…</p>
 <div id="panel" class="oculto">
-  <div class="ruedaCaja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
-  <button id="girar" type="button">¡GIRAR LA RULETA!</button>
+  <div class="caja"><div class="puntero"></div><canvas id="rueda" width="600" height="600"></canvas></div>
+  <button id="girar" class="pri grande" type="button">¡Girar la ruleta!</button>
   <p id="aviso" style="text-align:center;opacity:.85">Solo puedes girar una vez. Si te toca premio, enséñaselo al camarero para canjearlo.</p>
   <div id="premio" class="zona premio oculto"></div>
   <p id="msg" role="status"></p>
@@ -37,7 +36,7 @@ window.addEventListener("error", function (e) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -50,52 +49,54 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const COLORES = ["#ff2bd6", "#19f2ff", "#ffe14d", "#8b5cff", "#5dff9a", "#ff5c7a"];
-let usuario = null, config = null, premios = [];
+let usuario = null, config = null, premios = [], nfcActivo = false;
 
 // <logica>
 function resultado(ms, premios) {
   const total = premios.reduce((s, p) => s + p.peso, 0);
   const x = ((ms % 1000) / 1000) * total;
-  let acum = 0, idx = premios.length - 1, frac = 0.5;
-  for (let i = 0; i < premios.length; i++) {
-    if (x < acum + premios[i].peso) { idx = i; frac = (x - acum) / premios[i].peso; break; }
-    acum += premios[i].peso;
-  }
-  return { idx: idx, angulo: (idx + 0.1 + 0.8 * frac) * (360 / premios.length) };
+  let acum = 0, idx = premios.length - 1;
+  for (let i = 0; i < premios.length; i++) { acum += premios[i].peso; if (x < acum) { idx = i; break; } }
+  return { idx: idx, angulo: (360 * x) / total };
+}
+// Saca p y c del enlace que da la tarjeta del camarero.
+function pcDe(url) {
+  try {
+    const u = new URL(url);
+    const p = u.searchParams.get("p"), c = u.searchParams.get("c");
+    if (/^[0-9a-f]{32}$/i.test(p || "") && /^[0-9a-f]{16}$/i.test(c || "")) return { p: p.toUpperCase(), c: c.toUpperCase() };
+  } catch (e) {}
+  return null;
 }
 // </logica>
 
 function dibujar(lista) {
-  const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2, n = lista.length;
+  const c = $("rueda"), g = c.getContext("2d"), R = c.width / 2;
   g.clearRect(0, 0, c.width, c.height);
-  const paso = (Math.PI * 2) / n;
+  const total = lista.reduce((s, p) => s + p.peso, 0);
+  let a0 = 0;
   lista.forEach((p, i) => {
-    const a0 = i * paso, a1 = a0 + paso, m = (a0 + a1) / 2;
-    let color = COLORES[i % COLORES.length];
-    if (n > 1 && i === n - 1 && i % COLORES.length === 0) color = COLORES[2];
+    const a1 = a0 + (p.peso / total) * Math.PI * 2;
     g.beginPath();
     g.moveTo(R, R);
     g.arc(R, R, R - 4, a0 - Math.PI / 2, a1 - Math.PI / 2);
     g.closePath();
-    g.fillStyle = color;
+    g.fillStyle = COLORES[i % COLORES.length];
     g.fill();
     g.strokeStyle = "#0a0612";
     g.lineWidth = 4;
     g.stroke();
     g.save();
     g.translate(R, R);
-    g.rotate(m - Math.PI / 2);
-    const izquierda = m > Math.PI;
-    if (izquierda) g.rotate(Math.PI);
+    g.rotate((a0 + a1) / 2 - Math.PI / 2);
     g.fillStyle = "#0a0612";
+    g.font = "bold 30px Rubik, sans-serif";
+    g.textAlign = "right";
     g.textBaseline = "middle";
-    g.textAlign = izquierda ? "left" : "right";
-    const t = p.nombre.length > 26 ? p.nombre.slice(0, 25) + "…" : p.nombre;
-    let tam = 30;
-    g.font = "bold " + tam + "px Rubik, sans-serif";
-    while (g.measureText(t).width > R - 28 - 52 && tam > 15) { tam -= 2; g.font = "bold " + tam + "px Rubik, sans-serif"; }
-    g.fillText(t, izquierda ? -(R - 28) : R - 28, 0);
+    const t = p.nombre.length > 16 ? p.nombre.slice(0, 15) + "…" : p.nombre;
+    g.fillText(t, R - 28, 0);
     g.restore();
+    a0 = a1;
   });
   g.beginPath();
   g.arc(R, R, 34, 0, Math.PI * 2);
@@ -113,7 +114,7 @@ function girarA(angulo, tras) {
   setTimeout(tras, 5700);
 }
 
-function mostrarPremio(nombre, canjeado, cuando) {
+function mostrarPremio(nombre, canjeado, cuando, recien) {
   const p = $("premio");
   p.innerHTML = "";
   const a = document.createElement("div");
@@ -121,10 +122,54 @@ function mostrarPremio(nombre, canjeado, cuando) {
   const b = document.createElement("div");
   b.className = "nombre";
   b.textContent = nombre;
-  const c = document.createElement("div");
-  c.textContent = canjeado ? "Canjeado" + (cuando ? " el " + cuando : "") + "." : "Enséñaselo al camarero para canjearlo. Pendiente de canjear.";
-  p.append(a, b, c);
+  p.append(a, b);
+  if (recien) {
+    const h = document.createElement("div"); h.className = "hecho"; h.textContent = "✔ CANJEADO";
+    const t = document.createElement("div"); t.className = "peq"; t.textContent = "Ya está: el camarero te lo da ahora. " + new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+    p.append(h, t);
+  } else if (canjeado) {
+    const c = document.createElement("div"); c.textContent = "Canjeado" + (cuando ? " el " + cuando : "") + "."; p.append(c);
+  } else if (nfcActivo) {
+    const bt = document.createElement("button"); bt.type = "button"; bt.className = "pri canjear"; bt.textContent = "📲 Canjear con el camarero";
+    bt.onclick = () => canjearConTarjeta(nombre);
+    const t = document.createElement("div"); t.className = "peq"; t.textContent = "Pídelo en la barra, pulsa el botón y el camarero acercará su tarjeta a tu móvil.";
+    p.append(bt, t);
+  } else {
+    const c = document.createElement("div"); c.textContent = "Enséñaselo al camarero para canjearlo. Pendiente de canjear."; p.append(c);
+  }
   p.classList.remove("oculto");
+}
+
+// Canje con la tarjeta del camarero: en Android lo lee la propia app; en iPhone la tarjeta abre la pantalla de validar.
+async function canjearConTarjeta(nombre) {
+  $("msg").textContent = "";
+  if (!("NDEFReader" in window)) {
+    try { localStorage.setItem("sd_canje_ruleta", String(Date.now())); } catch (e) {}
+    $("msg").textContent = "📲 Que el camarero acerque su tarjeta a la parte de arriba de tu iPhone. Toca el aviso que aparecerá y se canjeará solo.";
+    return;
+  }
+  try {
+    const ctrl = new AbortController(), lector = new NDEFReader();
+    await lector.scan({ signal: ctrl.signal });
+    $("msg").textContent = "📲 Espera a que el camarero acerque su tarjeta a la parte de atrás de tu móvil…";
+    const fin = setTimeout(() => { try { ctrl.abort(); } catch (e) {} $("msg").textContent = "No se ha detectado la tarjeta. Vuelve a pulsar «Canjear con el camarero»."; }, 60000);
+    lector.onreading = async (ev) => {
+      let url = "";
+      for (const rec of ev.message.records) if (rec.recordType === "url" || rec.recordType === "absolute-url") url = new TextDecoder().decode(rec.data);
+      const pc = pcDe(url);
+      if (!pc) { $("msg").textContent = "Esa tarjeta no es la del camarero de Sweet Dreams."; return; }
+      clearTimeout(fin);
+      try { ctrl.abort(); } catch (e) {}
+      try {
+        await updateDoc(doc(db, "ruleta_giros", usuario.uid), { canjeado: true, canjeadoEn: serverTimestamp(), canjeP: pc.p, canjeC: pc.c, canjeEstado: "pendiente" });
+        if (navigator.vibrate) navigator.vibrate(120);
+        $("msg").textContent = "";
+        mostrarPremio(nombre, true, "", true);
+      } catch (e) { $("msg").textContent = "No se ha podido canjear: " + (e.code || e.message) + ". Enséñale el premio al camarero."; }
+    };
+  } catch (e) {
+    $("msg").textContent = e && e.name === "NotAllowedError" ? "Activa el permiso de NFC y vuelve a pulsar «Canjear con el camarero»." : "No se puede leer la tarjeta en este móvil. Enséñale el premio al camarero.";
+  }
 }
 
 async function girar() {
@@ -150,6 +195,7 @@ onAuthStateChanged(auth, async (u) => {
   try {
     const f = (await getDoc(doc(db, "users", u.uid))).data() || {};
     if (f.socio !== true && f.role !== "admin") { $("estado").textContent = "La ruleta es solo para socios. Pregunta en el bar cómo hacerte socio."; return; }
+    try { const n = await getDoc(doc(db, "settings", "nfc")); nfcActivo = n.exists() && n.data().activo === true; } catch (e) {}
     const mio = await getDoc(doc(db, "ruleta_giros", u.uid));
     if (mio.exists()) {
       const g = mio.data();
