@@ -153,7 +153,7 @@ async function pintarVentajas(db, user, ficha) {
       if (g.canjeado !== true && g.giro && g.giro.toMillis) {
         let nombre = "";
         try { const v = await getDoc(ref(db, "ruleta_versiones", String(g.version))); const pr = v.exists() ? premioRuleta(g.giro.toMillis(), v.data().premios || []) : null; nombre = pr ? pr.nombre : ""; } catch (e) {}
-        if (!sinPremio(nombre)) items.push({ t: "🎁 Tienes un premio de la ruleta por canjear" + (nombre ? ": " + nombre : "") + ".", b: "Ver mi premio", h: "ruleta.html" });
+           if (!sinPremio(nombre)) items.push({ t: "🎁 Tienes un premio de la ruleta por canjear" + (nombre ? ": " + nombre : "") + ".", b: "Ver mi premio", h: "ruleta.html" });
       }
     } else if (rc && rc.exists() && rc.data().activa === true) {
       items.push({ t: "🎡 Tienes un giro en la ruleta de premios. ¡Prueba suerte!", b: "¡Girar la ruleta!", h: "ruleta.html" });
