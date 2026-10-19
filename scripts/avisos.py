@@ -311,7 +311,7 @@ def ajustes_nfc():
 
 
 def revisar_tarjetas():
-    """Altas de tarjetas nuevas y validaciones de consumición pendientes."""
+    """Altas de tarjetas nuevas, validaciones de consumición y canjes de la ruleta hechos con la tarjeta del camarero."""
     ahora = int(time.time() * 1000)
     for d in consulta("tarjetas_altas", [("estado", "EQUAL", {"stringValue": "pendiente"})]):
         r = sun_leer(campo(d, "p") or "", campo(d, "c") or "")
@@ -323,44 +323,66 @@ def revisar_tarjetas():
                        "camarero": campo(d, "camarero") or "", "nombre": campo(d, "camareroNombre") or "", "activa": True, "ultimoCtr": ctr, "usos": 0, "alta": {"ms": ahora}}.items()}}},
                    cambiar(f"tarjetas_altas/{id_de(d)}", {"estado": "hecha", "tarjeta": uid_t})])
         print("Tarjeta dada de alta:", uid_t, "para", campo(d, "camareroNombre"))
-    pend = consulta("validaciones", [("estado", "EQUAL", {"stringValue": "pendiente"})])
+    pend = [("val", d) for d in consulta("validaciones", [("estado", "EQUAL", {"stringValue": "pendiente"})])]
+    pend += [("rul", d) for d in consulta("ruleta_giros", [("canjeEstado", "EQUAL", {"stringValue": "pendiente"})])]
     if not pend:
         return 0
     leidas = []
-    for d in pend:
-        r = sun_leer(campo(d, "p") or "", campo(d, "c") or "")
-        leidas.append((d, r))
-    leidas.sort(key=lambda x: (x[1][0], x[1][1]) if x[1] else ("", -1))   # por tarjeta y por orden de uso
-    tarjetas, validos = {}, []
-    for d, r in leidas:
-        vid, cli = id_de(d), campo(d, "uid")
+    for tipo, d in pend:
+        p_, c_ = (campo(d, "p"), campo(d, "c")) if tipo == "val" else (campo(d, "canjeP"), campo(d, "canjeC"))
+        leidas.append((tipo, d, sun_leer(p_ or "", c_ or "")))
+    leidas.sort(key=lambda x: (x[2][0], x[2][1]) if x[2] else ("", -1))   # por tarjeta y por orden de uso
+    tarjetas, validos, sospechosos = {}, [], []
+
+    def marcar(tipo, d, estado, extra=None):
+        if tipo == "val":
+            escribir([cambiar(f"validaciones/{id_de(d)}", dict({"estado": estado}, **(extra or {})))])
+        else:
+            escribir([cambiar(f"ruleta_giros/{id_de(d)}", dict({"canjeEstado": "ok" if estado == "valida" else estado}, **(extra or {})))])
+            if estado != "valida":
+                sospechosos.append((id_de(d), estado))
+
+    for tipo, d, r in leidas:
+        cli = campo(d, "uid") if tipo == "val" else id_de(d)
         if not r:
-            escribir([cambiar(f"validaciones/{vid}", {"estado": "falsa"})]); continue
+            marcar(tipo, d, "falsa"); continue
         uid_t, ctr = r
         if uid_t not in tarjetas:
             tarjetas[uid_t] = leer(f"tarjetas/{uid_t}")
         t = tarjetas[uid_t]
         if not t:
-            escribir([cambiar(f"validaciones/{vid}", {"estado": "desconocida", "tarjeta": uid_t})]); continue
+            marcar(tipo, d, "desconocida", {"tarjeta": uid_t} if tipo == "val" else {"canjeTarjeta": uid_t}); continue
         if campo(t, "activa", "booleanValue") is not True:
-            escribir([cambiar(f"validaciones/{vid}", {"estado": "baja", "tarjeta": uid_t})]); continue
+            marcar(tipo, d, "baja", {"tarjeta": uid_t} if tipo == "val" else {"canjeTarjeta": uid_t}); continue
         ultimo = int(campo(t, "ultimoCtr", "integerValue") or -1)
         if ctr <= ultimo:
-            escribir([cambiar(f"validaciones/{vid}", {"estado": "repetida", "tarjeta": uid_t})]); continue
+            marcar(tipo, d, "repetida", {"tarjeta": uid_t} if tipo == "val" else {"canjeTarjeta": uid_t}); continue
         t["fields"]["ultimoCtr"] = {"integerValue": str(ctr)}
         cambios_t = {"ultimoCtr": ctr, "usos": int(campo(t, "usos", "integerValue") or 0) + 1, "ultimoUso": {"ms": ahora}}
         t["fields"]["usos"] = {"integerValue": str(cambios_t["usos"])}
-            # el mismo cliente solo valida una vez por jornada (la jornada del bar acaba a las 6:00)
+        escribir([cambiar(f"tarjetas/{uid_t}", cambios_t)])
+        if tipo == "rul":
+            marcar(tipo, d, "valida", {"canjeTarjeta": uid_t, "canjeCamarero": campo(t, "camarero") or "", "canjeCamareroNombre": campo(t, "nombre") or ""})
+            print("Ruleta: premio canjeado con la tarjeta de", campo(t, "nombre"))
+            continue
+        # el mismo cliente solo valida una vez por jornada (la jornada del bar acaba a las 6:00)
         jornada = lambda doc: local(ms_de(campo(doc, "creado", "timestampValue")) - 6 * 3600000).date()
         recientes = [x for x in consulta("validaciones", [("uid", "EQUAL", {"stringValue": cli}), ("estado", "EQUAL", {"stringValue": "valida"})])
                      if jornada(x) == jornada(d)]
         estado = "repetida_hoy" if recientes else "valida"
-        escribir([cambiar(f"tarjetas/{uid_t}", cambios_t),
-                  cambiar(f"validaciones/{vid}", {"estado": estado, "tarjeta": uid_t, "ctr": ctr, "camarero": campo(t, "camarero") or "", "camareroNombre": campo(t, "nombre") or ""})])
+        marcar(tipo, d, estado, {"tarjeta": uid_t, "ctr": ctr, "camarero": campo(t, "camarero") or "", "camareroNombre": campo(t, "nombre") or ""})
         if estado == "valida" and cli not in validos:
             validos.append(cli)
     premiar_invitados(validos)
-    print(f"Tarjetas: {len(pend)} validación(es) revisada(s), {len(validos)} válida(s)")
+    # canjes de la ruleta con un código de tarjeta que no vale: aviso a los administradores
+    MOTIVOS = {"falsa": "código falso", "desconocida": "tarjeta no dada de alta", "baja": "tarjeta dada de baja", "repetida": "toque ya usado"}
+    for uid, estado in sospechosos:
+        nombre = nombre_de("users", uid)
+        for admin in admins():
+            for tk in tokens_de(admin):
+                enviar(tk, "⚠ Canje de ruleta dudoso", f"{nombre} ha canjeado su premio con una tarjeta que no vale ({MOTIVOS.get(estado, estado)}).", "ruleta-" + uid, APP + "admin-ruleta.html")
+        print("Ruleta: canje dudoso de", nombre, "-", estado)
+    print(f"Tarjetas: {len(pend)} toque(s) revisado(s), {len(validos)} validación(es) válida(s)")
     return len(validos)
 
 
