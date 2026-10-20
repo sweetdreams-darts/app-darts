@@ -21,7 +21,8 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "./";
   event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((ws) => {
-    for (const w of ws) { if ("focus" in w) return w.focus(); }
+    // si la app ya está abierta, se pone delante y va a la pantalla del aviso
+    for (const w of ws) { if ("focus" in w) return w.focus().then((c) => (c && "navigate" in c ? c.navigate(url) : c)).catch(() => self.clients.openWindow(url)); }
     return self.clients.openWindow(url);
   }));
 });
