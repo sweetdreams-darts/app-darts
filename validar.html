@@ -178,6 +178,20 @@ async function canjearRuleta(u, pc) {
   } catch (e) { msg("No se ha podido canjear: " + (e.code || e.message) + ". Enséñale el premio al camarero."); ver("vEmpezar"); }
 }
 
+// iPhone: si acaba de pulsar «Canjear con el camarero» en «Mis regalos», la tarjeta canjea ese regalo.
+async function canjearCupon(u, id, pc) {
+  try {
+    const c = await getDoc(doc(db, "cupones", id));
+    const d = c.exists() ? c.data() : null;
+    const cad = d && d.caduca && d.caduca.toMillis ? d.caduca.toMillis() : 0;
+    if (!d || d.uid !== u.uid || d.estado !== "pendiente" || (cad && cad <= Date.now())) { $("canjeTit").textContent = d && d.estado === "canjeado" ? "Ese regalo ya estaba canjeado" : "Ese regalo ya no está disponible"; $("canjeNombre").textContent = d ? d.nombre : ""; ver("vCanje"); return; }
+    await updateDoc(doc(db, "cupones", id), { estado: "canjeado", canjeadoEn: serverTimestamp(), canjeP: pc.p, canjeC: pc.c, canjeEstado: "pendiente" });
+    if (navigator.vibrate) navigator.vibrate(120);
+    $("canjeTit").textContent = "✔ REGALO CANJEADO"; $("canjeNombre").textContent = d.nombre || "";
+    ver("vCanje");
+  } catch (e) { msg("No se ha podido canjear: " + (e.code || e.message) + ". Pide al camarero que lo canjee en la caja."); ver("vEmpezar"); }
+}
+  
 async function escanear() {
   msg("");
   try {
@@ -218,6 +232,13 @@ async function empezar(u) {
     if (Number.isInteger(cfg.horas) && cfg.horas > 0) horas = cfg.horas;
   } catch (e) {}
   if (enlace) {
+    let cup = null;
+    try { cup = JSON.parse(localStorage.getItem("sd_canje_cupon") || "null"); } catch (e) {}
+    if (cup && cup.id && Date.now() - cup.t < 12 * 3600000) {
+      try { localStorage.removeItem("sd_canje_cupon"); } catch (e) {}
+      history.replaceState(null, "", location.pathname);
+      return canjearCupon(u, cup.id, enlace);
+    }
     let canje = 0;
     try { canje = Number(localStorage.getItem("sd_canje_ruleta") || 0); } catch (e) {}
     if (canje && Date.now() - canje < 12 * 3600000) {
