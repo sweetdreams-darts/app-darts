@@ -311,7 +311,7 @@ def ajustes_nfc():
 
 
 def revisar_tarjetas():
-    """Altas de tarjetas nuevas, validaciones de consumición y canjes de la ruleta hechos con la tarjeta del camarero."""
+    """Altas de tarjetas nuevas, validaciones de consumición y canjes (ruleta y regalos) hechos con la tarjeta del camarero."""
     ahora = int(time.time() * 1000)
     for d in consulta("tarjetas_altas", [("estado", "EQUAL", {"stringValue": "pendiente"})]):
         r = sun_leer(campo(d, "p") or "", campo(d, "c") or "")
@@ -325,6 +325,7 @@ def revisar_tarjetas():
         print("Tarjeta dada de alta:", uid_t, "para", campo(d, "camareroNombre"))
     pend = [("val", d) for d in consulta("validaciones", [("estado", "EQUAL", {"stringValue": "pendiente"})])]
     pend += [("rul", d) for d in consulta("ruleta_giros", [("canjeEstado", "EQUAL", {"stringValue": "pendiente"})])]
+    pend += [("cup", d) for d in consulta("cupones", [("canjeEstado", "EQUAL", {"stringValue": "pendiente"})])]
     if not pend:
         return 0
     leidas = []
@@ -338,9 +339,10 @@ def revisar_tarjetas():
         if tipo == "val":
             escribir([cambiar(f"validaciones/{id_de(d)}", dict({"estado": estado}, **(extra or {})))])
         else:
-            escribir([cambiar(f"ruleta_giros/{id_de(d)}", dict({"canjeEstado": "ok" if estado == "valida" else estado}, **(extra or {})))])
+            col = "ruleta_giros" if tipo == "rul" else "cupones"
+            escribir([cambiar(f"{col}/{id_de(d)}", dict({"canjeEstado": "ok" if estado == "valida" else estado}, **(extra or {})))])
             if estado != "valida":
-                sospechosos.append((id_de(d), estado))
+                sospechosos.append((tipo, campo(d, "uid") if tipo == "cup" else id_de(d), campo(d, "nombre") if tipo == "cup" else "", estado))
 
     for tipo, d, r in leidas:
         cli = campo(d, "uid") if tipo == "val" else id_de(d)
@@ -361,9 +363,9 @@ def revisar_tarjetas():
         cambios_t = {"ultimoCtr": ctr, "usos": int(campo(t, "usos", "integerValue") or 0) + 1, "ultimoUso": {"ms": ahora}}
         t["fields"]["usos"] = {"integerValue": str(cambios_t["usos"])}
         escribir([cambiar(f"tarjetas/{uid_t}", cambios_t)])
-        if tipo == "rul":
+        if tipo in ("rul", "cup"):
             marcar(tipo, d, "valida", {"canjeTarjeta": uid_t, "canjeCamarero": campo(t, "camarero") or "", "canjeCamareroNombre": campo(t, "nombre") or ""})
-            print("Ruleta: premio canjeado con la tarjeta de", campo(t, "nombre"))
+            print("Ruleta: premio canjeado" if tipo == "rul" else "Regalo canjeado", "con la tarjeta de", campo(t, "nombre"))
             continue
         # el mismo cliente solo valida una vez por jornada (la jornada del bar acaba a las 6:00)
         jornada = lambda doc: local(ms_de(campo(doc, "creado", "timestampValue")) - 6 * 3600000).date()
@@ -376,12 +378,16 @@ def revisar_tarjetas():
     premiar_invitados(validos)
     # canjes de la ruleta con un código de tarjeta que no vale: aviso a los administradores
     MOTIVOS = {"falsa": "código falso", "desconocida": "tarjeta no dada de alta", "baja": "tarjeta dada de baja", "repetida": "toque ya usado"}
-    for uid, estado in sospechosos:
+    for tipo, uid, premio, estado in sospechosos:
         nombre = nombre_de("users", uid)
+        if tipo == "rul":
+            tit, txt, pag = "⚠ Canje de ruleta dudoso", f"{nombre} ha canjeado su premio con una tarjeta que no vale ({MOTIVOS.get(estado, estado)}).", "admin-ruleta.html"
+        else:
+            tit, txt, pag = "⚠ Canje de regalo dudoso", f"{nombre} ha canjeado su regalo «{premio}» con una tarjeta que no vale ({MOTIVOS.get(estado, estado)}).", "admin-premios.html"
         for admin in admins():
             for tk in tokens_de(admin):
-                enviar(tk, "⚠ Canje de ruleta dudoso", f"{nombre} ha canjeado su premio con una tarjeta que no vale ({MOTIVOS.get(estado, estado)}).", "ruleta-" + uid, APP + "admin-ruleta.html")
-        print("Ruleta: canje dudoso de", nombre, "-", estado)
+                enviar(tk, tit, txt, tipo + "-" + uid, APP + pag)
+        print("Canje dudoso de", nombre, "-", estado)
     print(f"Tarjetas: {len(pend)} toque(s) revisado(s), {len(validos)} validación(es) válida(s)")
     return len(validos)
 
