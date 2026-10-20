@@ -2,6 +2,7 @@
 // de quien verifica su correo con su bienvenida, el programa de embajadores (invitan amigos y ganan puntos)
 // y el botón «Validar mi consumición» (tarjeta NFC del camarero).
 import { doc, getDoc, getDocs, setDoc, collection, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { estadoCupon, fechaUTC } from "./puntos.js";
 
 // <logica>
 const maxNum = (usuarios) => Math.max(0, ...(usuarios || []).map((u) => Number(u.socioNum) || 0));
@@ -10,9 +11,22 @@ const numSocio = (n) => String(n || 0).padStart(4, "0");
 function puedeAutoSocio(user, ficha) {
   return !!(user && user.emailVerified === true && ficha && ficha.role && ficha.role !== "robot" && ficha.socio !== true && !ficha.socioNum && !ficha.socioDesde && ficha.bloqueado !== true);
 }
-// El regalo de bienvenida es el premio gratis, activo y de «una sola vez» (lo creas en Puntos y premios).
+// El regalo de bienvenida es el regalo gratis, visible, «para todos los socios» y de «una sola vez» (lo creas en Puntos y premios).
 function premioBienvenida(premios) {
-  return (premios || []).filter((p) => p.activo !== false && Number(p.coste) === 0 && p.limite === "una").sort((a, b) => (a.orden || 0) - (b.orden || 0))[0] || null;
+  return (premios || []).filter((p) => p.activo !== false && p.para === "socios" && Number(p.coste) === 0 && p.limite === "una").sort((a, b) => (a.orden || 0) - (b.orden || 0))[0] || null;
+}
+// Regalos de socio que puede usar ahora: los que ya tiene activados y los que aún puede pedir.
+function regalosDe(premios, cupones, ahora) {
+  const regalos = (premios || []).filter((p) => p.activo === true && p.para === "socios" && Number(p.coste) === 0);
+  const activos = (cupones || []).filter((c) => Number(c.coste) === 0 && estadoCupon(c, ahora) === "pendiente" && regalos.some((p) => p.id === c.premioId));
+  const libres = regalos.filter((p) => {
+    const propios = (cupones || []).filter((c) => c.premioId === p.id);
+    if (propios.some((c) => estadoCupon(c, ahora) === "pendiente")) return false;
+    if (p.limite === "una" && propios.length) return false;
+    if (p.limite === "dia" && propios.some((c) => String(c.id || "").endsWith("_" + fechaUTC(ahora)))) return false;
+    return true;
+  });
+  return { activos, libres };
 }
 // Embajadores: ajustes por defecto, el enlace de cada embajador y el número que trae un enlace.
 const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0, minimo: 4.5 };
@@ -125,35 +139,43 @@ async function pintarBienvenida(db, n) {
   caja.className = "bienv";
   const p = (t, c) => { const e = document.createElement("p"); e.textContent = t; if (c) e.className = c; return e; };
   caja.append(p("🎉 ¡YA ERES SOCIO Nº " + numSocio(n) + "!", "b-tit"), p("Ya tienes tu carné de socio de Sweet Dreams y sus ventajas exclusivas."));
+  const botones = [["carne.html", "Ver mi carné"]];
   try {
     const pr = premioBienvenida((await getDocs(collection(db, "premios"))).docs.map((d) => d.data()));
-    if (pr) caja.append(p("🎁 Tienes un regalo de bienvenida: " + pr.nombre + ". Pídelo en la barra.", "b-reg"));
+    if (pr) { caja.append(p("🎁 Tienes un regalo de bienvenida: " + pr.nombre + ". Actívalo en «Mis regalos» y canjéalo en la barra.", "b-reg")); botones.push(["regalos.html", "Ver mi regalo"]); }
   } catch (e) {}
   const fila = document.createElement("div");
   fila.className = "b-fila";
-  [["carne.html", "Ver mi carné"]].forEach(([h, t]) => { const a = document.createElement("a"); a.href = h; a.textContent = t; fila.append(a); });
+  botones.forEach(([h, t]) => { const a = document.createElement("a"); a.href = h; a.textContent = t; fila.append(a); });
   caja.append(fila);
   tiles.parentNode.insertBefore(caja, tiles);
 }
 
-// Inicio: «Tus ventajas de socio» (ruleta y ofertas solo para socios). Solo sale si hay algo que ofrecerle.
+// Inicio: «Tus ventajas de socio» (regalos, ruleta y ofertas solo para socios). Solo sale si hay algo que ofrecerle.
 async function pintarVentajas(db, user, ficha) {
   try {
     const tiles = document.querySelector(".tiles");
     let caja = document.getElementById("ventajasCaja");
     if (!tiles || !user || !user.uid || !ficha || ficha.socio !== true) { if (caja) caja.remove(); return; }
     const hoyD = new Date(), hoy = hoyD.getFullYear() + "-" + String(hoyD.getMonth() + 1).padStart(2, "0") + "-" + String(hoyD.getDate()).padStart(2, "0");
-    const [rc, rg, of] = await Promise.all([
+    const [rc, rg, of, prs, cus] = await Promise.all([
       getDoc(ref(db, "ruleta_config", "actual")).catch(() => null),
       getDoc(ref(db, "ruleta_giros", user.uid)).catch(() => null),
-      getDocs(query(collection(db, "ofertas"), where("activa", "==", true))).catch(() => null)]);
+      getDocs(query(collection(db, "ofertas"), where("activa", "==", true))).catch(() => null),
+      getDocs(collection(db, "premios")).catch(() => null),
+      getDocs(query(collection(db, "cupones"), where("uid", "==", user.uid))).catch(() => null)]);
     const items = [];
+    if (prs && cus) {
+      const r = regalosDe(prs.docs.map((d) => Object.assign({ id: d.id }, d.data())), cus.docs.map((d) => Object.assign({ id: d.id }, d.data())), Date.now());
+      if (r.activos.length) items.push({ t: "🎁 Tienes un regalo listo para canjear: " + r.activos.map((c) => c.nombre).join(" · ") + ".", b: "Ver mi regalo", h: "regalos.html" });
+      else if (r.libres.length) items.push({ t: "🎁 " + (r.libres.length === 1 ? "Tienes un regalo de socio: " : "Tienes " + r.libres.length + " regalos de socio: ") + r.libres.slice(0, 2).map((p) => p.nombre).join(" · ") + (r.libres.length > 2 ? "…" : ""), b: r.libres.length === 1 ? "Ver mi regalo" : "Ver mis regalos", h: "regalos.html" });
+    }
     if (rg && rg.exists()) {
       const g = rg.data();
       if (g.canjeado !== true && g.giro && g.giro.toMillis) {
         let nombre = "";
         try { const v = await getDoc(ref(db, "ruleta_versiones", String(g.version))); const pr = v.exists() ? premioRuleta(g.giro.toMillis(), v.data().premios || []) : null; nombre = pr ? pr.nombre : ""; } catch (e) {}
-           if (!sinPremio(nombre)) items.push({ t: "🎁 Tienes un premio de la ruleta por canjear" + (nombre ? ": " + nombre : "") + ".", b: "Ver mi premio", h: "ruleta.html" });
+        if (!sinPremio(nombre)) items.push({ t: "🎁 Tienes un premio de la ruleta por canjear" + (nombre ? ": " + nombre : "") + ".", b: "Ver mi premio", h: "ruleta.html" });
       }
     } else if (rc && rc.exists() && rc.data().activa === true) {
       items.push({ t: "🎡 Tienes un giro en la ruleta de premios. ¡Prueba suerte!", b: "¡Girar la ruleta!", h: "ruleta.html" });
