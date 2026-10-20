@@ -156,7 +156,7 @@ async function canjearCupon(c) {
     saldo = d.puntos - coste;
     tx.update(refC, { estado: "canjeado", canjeadoEn: serverTimestamp(), canjeadoPor: yo.uid });
     if (coste > 0) tx.set(refS, { puntos: saldo, total: d.total, actualizado: serverTimestamp() });
-    tx.set(refM, datosMov("canje", 0, -coste, saldo, cu.data().nombre, c.uid, c.socioNombre));
+        tx.set(refM, datosMov("canje", 0, coste ? -coste : 0, saldo, cu.data().nombre, c.uid, c.socioNombre));
   });
   return saldo;
 }
