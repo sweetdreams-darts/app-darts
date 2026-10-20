@@ -42,6 +42,10 @@ video{width:100%;max-height:34vh;object-fit:cover;border-radius:14px;background:
     <input id="num" type="number" inputmode="numeric" placeholder="O escribe el nº de socio">
     <button id="buscar" type="button">Ir</button>
   </div>
+  <div class="fila">
+    <input id="codigo" type="text" autocomplete="off" autocapitalize="characters" maxlength="4" placeholder="O escribe el código del regalo">
+    <button id="buscarCod" type="button">Ir</button>
+  </div>
 
   <div id="socio" class="zona socio oculto">
     <div class="nom" id="sNombre"></div>
@@ -344,6 +348,23 @@ async function buscarNumero() {
 $("abrir").onclick = abrir;
 $("parar").onclick = parar;
 $("buscar").onclick = buscarNumero;
+// Buscar por el código de 4 letras que el cliente ve en «Mis regalos» (o en su cupón): carga a esa persona con el cupón resaltado.
+async function buscarCodigo() {
+  const cod = $("codigo").value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (cod.length !== 4) { muestraAviso("El código tiene 4 letras o números (por ejemplo, 9XSS).", true); return; }
+  try {
+    const q = await getDocs(query(collection(db, "cupones"), where("codigo", "==", cod), where("estado", "==", "pendiente")));
+    const l = q.docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((c) => estadoCupon(c, Date.now()) === "pendiente");
+    if (!l.length) { muestraAviso("✘ No hay ningún regalo pendiente con el código " + cod + ". Puede que ya esté canjeado o caducado.", true); return; }
+    if (new Set(l.map((c) => c.uid)).size > 1) { muestraAviso("Hay varios clientes con el código " + cod + ". Búscalo por su número de socio.", true); return; }
+    $("codigo").value = "";
+    await cargarSocio(l[0].uid, null);
+    const caja = [...document.querySelectorAll("#cupones .cup")].find((x) => x.textContent.includes("Código " + cod));
+    if (caja) { caja.style.outline = "3px solid #5dff9a"; caja.style.borderRadius = "12px"; caja.scrollIntoView({ block: "center" }); }
+  } catch (e) { muestraAviso("Error: " + (e.code || e.message), true); }
+}
+$("buscarCod").onclick = buscarCodigo;
+$("codigo").addEventListener("keydown", (e) => { if (e.key === "Enter") buscarCodigo(); });
 $("num").addEventListener("keydown", (e) => { if (e.key === "Enter") buscarNumero(); });
 $("importe").addEventListener("input", () => {
   const campo = $("importe"), pos = campo.selectionStart, antes = campo.value, nuevo = limpiaImporte(antes);
