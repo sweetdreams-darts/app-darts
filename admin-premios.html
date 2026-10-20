@@ -22,6 +22,7 @@ button.mal{background:#ff8787;color:#14213d}
 .card button{margin-top:8px;padding:9px}
 #msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
 .oculto{display:none!important}
+input,select,textarea,button{box-sizing:border-box;min-width:0;max-width:100%}
 </style></head>
 <body><main>
 <p><a href="admin.html">← Panel de administrador</a></p>
@@ -40,7 +41,8 @@ button.mal{background:#ff8787;color:#14213d}
   <button id="guardarCfg">Guardar</button>
 
   <h2>Premios y combos</h2>
-  <p style="margin-top:0;opacity:.85">Lo que los embajadores pueden canjear desde su móvil (solo ellos ven «Mis puntos y premios»). Un precio de 0 puntos es un cupón gratuito.</p>  <div id="lista"></div>
+  <p style="margin-top:0;opacity:.85"><b>Para embajadores:</b> los canjean con sus puntos en «Mis puntos y premios». <b>Para todos los socios:</b> son regalos gratis (0 puntos) que ven en «Mis regalos» y en su inicio; los socios no ganan puntos, así que no les pongas precio.</p>
+  <div id="lista"></div>
   <div class="card" id="form">
     <strong id="formTit">Nuevo premio o combo</strong>
     <label for="pNom">Nombre<small>Por ejemplo: Combo 2 cañas + tapa</small></label>
@@ -55,9 +57,11 @@ button.mal{background:#ff8787;color:#14213d}
       <div><label for="pHoras">Horas para usarlo</label><input id="pHoras" type="number" min="1" max="720" inputmode="numeric" value="24"></div>
       <div><label for="pOrden">Orden</label><input id="pOrden" type="number" inputmode="numeric" value="10"></div>
     </div>
-    <label for="pLim">Cuántas veces puede pedirlo cada embajador</label>
+    <label for="pLim">Cuántas veces puede pedirlo cada socio</label>
     <select id="pLim"><option value="dia">Una vez al día</option><option value="una">Una sola vez en total</option><option value="sin">Las veces que quiera (solo si cuesta puntos)</option></select>
-    <label class="chk"><input id="pAct" type="checkbox" checked><span>Visible para los embajadores</span></label>
+    <label for="pPara">¿Para quién es?</label>
+    <select id="pPara"><option value="embajadores">Solo embajadores (con sus puntos)</option><option value="socios">Todos los socios (regalo gratis)</option></select>
+    <label class="chk"><input id="pAct" type="checkbox" checked><span>Visible (si lo desmarcas, nadie lo ve)</span></label>
     <button id="pGuardar">Guardar</button>
     <button id="pNuevo" class="sec">Limpiar / nuevo</button>
   </div>
@@ -108,6 +112,7 @@ function validarPremio(p) {
   if (!Number.isInteger(p.coste) || p.coste < 0 || p.coste > 100000) return "Los puntos deben ser un número entero, 0 o más.";
   if (!Number.isInteger(p.caducaHoras) || p.caducaHoras < 1 || p.caducaHoras > 720) return "Las horas para usarlo deben estar entre 1 y 720.";
   if (p.coste === 0 && p.limite === "sin") return "Un cupón gratuito no puede ser ilimitado. Elige «una vez al día» o «una sola vez».";
+  if (p.para === "socios" && p.coste > 0) return "Los regalos para todos los socios tienen que ser gratis (0 puntos): los socios no ganan puntos. Ponlo a 0 o elige «Solo embajadores».";
   return "";
 }
 // </logica>
@@ -127,12 +132,12 @@ $("guardarCfg").onclick = async () => {
 function limpiarForm() {
   editando = "";
   $("formTit").textContent = "Nuevo premio o combo";
-  $("pNom").value = ""; $("pDes").value = ""; $("pTipo").value = "combo"; $("pCoste").value = "0"; $("pHoras").value = "24"; $("pOrden").value = "10"; $("pLim").value = "dia"; $("pAct").checked = true;
+  $("pNom").value = ""; $("pDes").value = ""; $("pTipo").value = "combo"; $("pCoste").value = "0"; $("pHoras").value = "24"; $("pOrden").value = "10"; $("pLim").value = "dia"; $("pPara").value = "embajadores"; $("pAct").checked = true;
 }
 function editar(p) {
   editando = p.id;
   $("formTit").textContent = "Editar: " + p.nombre;
-  $("pNom").value = p.nombre; $("pDes").value = p.descripcion || ""; $("pTipo").value = p.tipo; $("pCoste").value = String(p.coste); $("pHoras").value = String(p.caducaHoras); $("pOrden").value = String(p.orden); $("pLim").value = p.limite; $("pAct").checked = p.activo === true;
+  $("pNom").value = p.nombre; $("pDes").value = p.descripcion || ""; $("pTipo").value = p.tipo; $("pCoste").value = String(p.coste); $("pHoras").value = String(p.caducaHoras); $("pOrden").value = String(p.orden); $("pLim").value = p.limite; $("pPara").value = p.para === "socios" ? "socios" : "embajadores"; $("pAct").checked = p.activo === true;
   $("form").scrollIntoView();
 }
 async function cargarPremios() {
@@ -142,7 +147,7 @@ async function cargarPremios() {
   if (!premios.length) l.append(el("p", "Todavía no hay premios. Crea el primero abajo."));
   premios.forEach((p) => {
     const c = el("div", "", "card");
-    c.append(el("strong", p.nombre + (p.activo ? "" : " (oculto)")), el("small", (p.tipo === "combo" ? "Combo" : p.tipo === "cupon" ? "Cupón" : "Premio") + " · " + (p.coste > 0 ? p.coste + " puntos" : "gratis") + " · " + p.caducaHoras + " h · " + (p.limite === "una" ? "una vez" : p.limite === "dia" ? "una al día" : "sin límite")));
+    c.append(el("strong", p.nombre + (p.activo ? "" : " (oculto)")), el("small", (p.para === "socios" ? "🎁 Para todos los socios · " : "👑 Para embajadores · ") + (p.tipo === "combo" ? "Combo" : p.tipo === "cupon" ? "Cupón" : "Premio") + " · " + (p.coste > 0 ? p.coste + " puntos" : "gratis") + " · " + p.caducaHoras + " h · " + (p.limite === "una" ? "una vez" : p.limite === "dia" ? "una al día" : "sin límite")));
     const e = el("button", "Editar", "sec"); e.type = "button"; e.onclick = () => editar(p);
     const b = el("button", "Borrar", "mal"); b.type = "button";
     b.onclick = async () => { if (!confirm("¿Borrar «" + p.nombre + "»? Los cupones ya activados seguirán valiendo.")) return; try { await deleteDoc(doc(db, "premios", p.id)); msg("Borrado."); await cargarPremios(); } catch (x) { msg("Error: " + (x.code || x.message)); } };
@@ -151,7 +156,7 @@ async function cargarPremios() {
   });
 }
 $("pGuardar").onclick = async () => {
-  const p = { nombre: $("pNom").value.trim(), descripcion: $("pDes").value.trim(), tipo: $("pTipo").value, coste: Number($("pCoste").value), caducaHoras: Number($("pHoras").value), orden: Number($("pOrden").value) || 0, limite: $("pLim").value, activo: $("pAct").checked };
+  const p = { nombre: $("pNom").value.trim(), descripcion: $("pDes").value.trim(), tipo: $("pTipo").value, coste: Number($("pCoste").value), caducaHoras: Number($("pHoras").value), orden: Number($("pOrden").value) || 0, limite: $("pLim").value, para: $("pPara").value, activo: $("pAct").checked };
   const error = validarPremio(p);
   if (error) { msg(error); return; }
   try {
