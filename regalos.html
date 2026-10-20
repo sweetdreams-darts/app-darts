@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mis regalos</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h2{font-size:1.1rem;margin:22px 0 6px}
+button{width:100%;padding:12px;font-size:1rem;margin-top:10px}
+.reg{padding:12px 14px;margin-top:10px}
+.reg strong{display:block;font-size:1.1rem}
+.reg p{margin:4px 0 0;opacity:.85;font-size:.92rem}
+.reg .gratis{font-family:"Bungee","Rubik",sans-serif;color:#5dff9a;margin-top:4px}
+.activo{padding:14px;margin-top:10px;border:2px solid #5dff9a;box-shadow:0 0 16px rgba(93,255,154,.3);text-align:center}
+.activo .nom{font-family:"Bungee","Rubik",sans-serif;font-size:1.3rem;color:#ffe14d}
+.activo .cod{font-family:"Bungee","Rubik",sans-serif;font-size:1.6rem;letter-spacing:4px;color:#fff;margin-top:6px}
+.activo small{display:block;opacity:.85;margin-top:4px}
+.espera .icono{font-size:3.6rem;margin:4px 0}
+.latido{animation:latido 1.2s ease-in-out infinite}
+@keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.espera .tit{font-family:"Bungee","Rubik",sans-serif;font-size:1.05rem;color:#19f2ff;margin:4px 0 8px}
+.espera ol{text-align:left;margin:0 0 6px;padding-left:22px;font-size:.92rem}
+.espera li{margin:7px 0}
+.alerta{margin:10px 0 0;padding:10px;border-radius:12px;border:1.5px solid #ffe14d;color:#ffe14d;font-weight:700;font-size:.92rem}
+.hecho{margin-top:10px;padding:14px;border-radius:14px;border:2px solid #5dff9a;background:rgba(93,255,154,.14);color:#5dff9a;font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem}
+.peq{font-size:.85rem;opacity:.85}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="display:flex;justify-content:space-between;margin:0"><a href="./">← Inicio</a><a href="carne.html">Mi carné</a></p>
+<header class="marca"><h1>Mis regalos</h1></header>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div id="activosCaja" class="oculto"><h2>Listos para canjear</h2><div id="activos"></div></div>
+  <h2>Tus regalos de socio</h2>
+  <div id="lista"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, query, where, onSnapshot, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { idCupon, codigoCupon, estadoCupon, fechaUTC } from "./puntos.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+let uid = "", premios = [], cupones = [], espera = null;
+
+// <logica>
+// Regalos de socio: premios gratis, visibles y «para todos los socios».
+const esRegalo = (p) => p.activo === true && p.para === "socios" && Number(p.coste) === 0;
+function motivoNo(p, cupones, ahora) {
+  const propios = cupones.filter((c) => c.premioId === p.id);
+  if (propios.some((c) => estadoCupon(c, ahora) === "pendiente")) return "Ya lo tienes activado";
+  if (p.limite === "una" && propios.length) return "Ya lo has usado";
+  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaUTC(ahora)))) return "Ya lo has pedido hoy";
+  return "";
+}
+function pcDe(url) {
+  try {
+    const u = new URL(url);
+    const p = u.searchParams.get("p"), c = u.searchParams.get("c");
+    if (/^[0-9a-f]{32}$/i.test(p || "") && /^[0-9a-f]{16}$/i.test(c || "")) return { p: p.toUpperCase(), c: c.toUpperCase() };
+  } catch (e) {}
+  return null;
+}
+const hora = (ms) => { const d = new Date(ms); return d.toLocaleDateString("es-ES", { day: "numeric", month: "numeric" }) + " a las " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+// </logica>
+
+function pintar() {
+  const ahora = Date.now();
+  const act = cupones.filter((c) => Number(c.coste) === 0 && estadoCupon(c, ahora) === "pendiente");
+  $("activosCaja").classList.toggle("oculto", !act.length);
+  const a = $("activos"); a.innerHTML = "";
+  act.forEach((c) => {
+    const card = el("div", "", "zona activo");
+    card.append(el("div", "🎁 " + c.nombre, "nom"), el("div", "Código " + c.codigo, "cod"), el("small", "Válido hasta el " + hora(c.caduca.toMillis ? c.caduca.toMillis() : c.caduca)));
+    const b = el("button", "🎁 Canjear con el camarero", "pri"); b.type = "button";
+    b.onclick = () => canjear(c, card);
+    card.append(b, el("small", "Púlsalo en la barra: el camarero pasará su tarjeta por tu móvil. También puede canjearlo desde la caja con tu código."));
+    a.append(card);
+  });
+  const l = $("lista"); l.innerHTML = "";
+  const regs = premios.filter(esRegalo);
+  if (!regs.length) l.append(el("p", "Ahora mismo no tienes regalos. Cuando el bar ponga alguno, te saldrá aquí y en tu inicio.", "peq"));
+  regs.forEach((p) => {
+    const card = el("div", "", "zona reg"), no = motivoNo(p, cupones, ahora);
+    card.append(el("strong", p.nombre));
+    if (p.descripcion) card.append(el("p", p.descripcion));
+    card.append(el("div", "GRATIS · " + (p.limite === "una" ? "una sola vez" : "una vez al día"), "gratis"));
+    const b = el("button", no || "Activar mi regalo", no ? "sec" : "pri"); b.type = "button"; b.disabled = !!no;
+    if (!no) b.onclick = () => activar(p);
+    card.append(b);
+    l.append(card);
+  });
+}
+
+async function activar(p) {
+  if (!confirm("¿Activar «" + p.nombre + "»? Tendrás " + p.caducaHoras + (p.caducaHoras === 1 ? " hora" : " horas") + " para canjearlo en el bar.")) return;
+  try {
+    const id = idCupon(uid, p.id, p.limite, Date.now(), Math.random().toString(36).slice(2, 10));
+    const c = { uid: uid, premioId: p.id, nombre: p.nombre, coste: 0, estado: "pendiente", codigo: codigoCupon(Math.random), creado: serverTimestamp(), caduca: Timestamp.fromMillis(Date.now() + p.caducaHoras * 3600000 - 120000) };
+    await setDoc(doc(db, "cupones", id), c);
+    cupones.push(Object.assign({ id: id }, c, { creado: Timestamp.fromMillis(Date.now()) }));
+    $("msg").textContent = "✔ Regalo activado. Canjéalo en la barra.";
+    pintar();
+    window.scrollTo(0, 0);
+  } catch (e) { $("msg").textContent = "No se ha podido activar: " + (e.code === "permission-denied" ? "ya lo has pedido o no está disponible." : (e.code || e.message)); }
+}
+
+function pararEspera() {
+  if (!espera) return;
+  try { espera.ctrl && espera.ctrl.abort(); } catch (e) {}
+  try { espera.lock && espera.lock.release(); } catch (e) {}
+  try { espera.quitar && espera.quitar(); } catch (e) {}
+  espera = null;
+}
+function hecho(c, card) {
+  pararEspera();
+  if (navigator.vibrate) navigator.vibrate(120);
+  card.innerHTML = "";
+  card.append(el("div", "🎁 " + c.nombre, "nom"), el("div", "✔ CANJEADO", "hecho"), el("small", "Ya está: el camarero te lo da ahora. " + new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })));
+  const x = cupones.find((y) => y.id === c.id); if (x) x.estado = "canjeado";
+}
+// Espera sin límite de tiempo hasta que el camarero pasa su tarjeta (o lo canjea desde la caja).
+async function canjear(c, card) {
+  pararEspera();
+  $("msg").textContent = "";
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent), nfcWeb = "NDEFReader" in window;
+  card.innerHTML = "";
+  const caja = el("div", "", "espera");
+  const ol = document.createElement("ol");
+  const paso = (t) => ol.append(el("li", t));
+  if (ios) { paso("Enséñale esta pantalla al camarero: acercará su tarjeta a la parte de arriba de tu iPhone."); paso("Te saldrá un aviso arriba: tócalo y el regalo se canjeará solo."); }
+  else { paso("Ten el NFC activado (Ajustes › Conexiones › NFC)."); paso("Enséñale esta pantalla al camarero: acercará su tarjeta a la parte de atrás de tu móvil."); paso("No cierres esta pantalla hasta que salga ✔ CANJEADO."); }
+  const alerta = el("div", "", "alerta oculto");
+  const reint = el("button", "Reintentar", "pri oculto"); reint.type = "button";
+  const canc = el("button", "Cancelar"); canc.type = "button";
+  caja.append(el("div", "📲", "icono latido"), el("div", "Esperando la tarjeta del camarero…", "tit"), el("div", "🎁 " + c.nombre, "nom"), el("div", "Código " + c.codigo, "cod"), ol, alerta, reint, canc);
+  card.append(caja);
+  espera = {};
+  const yo = espera;
+  const avisar = (t) => { alerta.textContent = t; alerta.classList.remove("oculto"); };
+  canc.onclick = () => { try { localStorage.removeItem("sd_canje_cupon"); } catch (e) {} pararEspera(); pintar(); };
+  reint.onclick = () => canjear(c, card);
+  try { if (navigator.wakeLock) yo.lock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  yo.quitar = onSnapshot(doc(db, "cupones", c.id), (d) => { if (espera === yo && d.exists() && d.data().estado === "canjeado") hecho(c, card); });
+  if (!nfcWeb) {
+    try { localStorage.setItem("sd_canje_cupon", JSON.stringify({ id: c.id, t: Date.now() })); } catch (e) {}
+    if (!ios) avisar("Este navegador no lee NFC. Abre la app con Chrome, o pide al camarero que lo canjee en la caja con tu código.");
+    return;
+  }
+  try {
+    yo.ctrl = new AbortController();
+    const lector = new NDEFReader();
+    await lector.scan({ signal: yo.ctrl.signal });
+    lector.onreading = async (ev) => {
+      if (espera !== yo) return;
+      let url = "";
+      for (const rec of ev.message.records) if (rec.recordType === "url" || rec.recordType === "absolute-url") url = new TextDecoder().decode(rec.data);
+      const pc = pcDe(url);
+      if (!pc) { avisar("Esa tarjeta no es la del camarero de Sweet Dreams. Que acerque la suya."); return; }
+      try { yo.ctrl.abort(); } catch (e) {}
+      try {
+        await updateDoc(doc(db, "cupones", c.id), { estado: "canjeado", canjeadoEn: serverTimestamp(), canjeP: pc.p, canjeC: pc.c, canjeEstado: "pendiente" });
+        hecho(c, card);
+      } catch (e) { avisar("No se ha podido canjear (" + (e.code || e.message) + "). Pulsa «Reintentar» o pide al camarero que lo canjee en la caja."); reint.classList.remove("oculto"); }
+    };
+    lector.onreadingerror = () => avisar("No se ha podido leer la tarjeta. Que el camarero la acerque otra vez, despacio.");
+  } catch (e) {
+    if (e && e.name === "NotReadableError") avisar("⚠ El NFC de tu móvil está apagado. Actívalo en Ajustes › Conexiones › NFC y pulsa «Reintentar».");
+    else if (e && e.name === "NotAllowedError") avisar("⚠ Tienes que permitir que la app use el NFC. Pulsa «Reintentar» y acepta.");
+    else avisar("No se puede leer NFC en este móvil. Pide al camarero que lo canjee en la caja con tu código.");
+    reint.classList.remove("oculto");
+  }
+}
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  uid = u.uid;
+  try {
+    const yo = await getDoc(doc(db, "users", uid));
+    if (!yo.exists() || (yo.data().socio !== true && yo.data().role !== "admin")) { $("estado").textContent = "Los regalos son para socios. Verifica tu correo y te harás socio automáticamente."; return; }
+    const [pr, cu] = await Promise.all([getDocs(collection(db, "premios")), getDocs(query(collection(db, "cupones"), where("uid", "==", uid)))]);
+    premios = pr.docs.map((d) => Object.assign({ id: d.id, coste: 0, caducaHoras: 24, limite: "dia", orden: 0 }, d.data())).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    cupones = cu.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+    $("estado").textContent = "";
+    pintar();
+    $("panel").classList.remove("oculto");
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
