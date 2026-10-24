@@ -223,7 +223,7 @@ let ficha = null, uid = "", dianas = [], ocupados = new Set(), diaSel = "", hoy 
 function pintarDias() {
   const c = $("dias");
   c.innerHTML = "";
-  diasProximos(hoy, 14).forEach((d, i) => {
+  diasProximos(hoy, 30).forEach((d, i) => {
     const b = el("button", i === 0 ? "Hoy" : i === 1 ? "Mañana" : diaCorto(d));
     b.type = "button";
     if (d === diaSel) b.classList.add("sel");
