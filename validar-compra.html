@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Validar compra</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:16px;display:flex;justify-content:center}
+main{width:100%;max-width:460px}
+.minimo{margin:4px 0 14px;padding:12px 14px;border-radius:14px;border:2px solid #ffe14d;background:rgba(255,225,77,.12);color:#ffe14d;font-weight:800;text-align:center;font-size:1.05rem}
+.pantalla{margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid rgba(25,242,255,.6);background:rgba(10,6,18,.75);text-align:center;font-family:"Bungee","Rubik",sans-serif;font-size:2.6rem;letter-spacing:6px;color:#19f2ff;min-height:1.4em}
+.pantalla.vacia{color:rgba(255,255,255,.35);font-size:1.1rem;letter-spacing:0;font-family:"Rubik",sans-serif;line-height:2.4}
+.teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.teclado button{margin:0;padding:18px 0;font-size:1.7rem;font-weight:800;border-radius:16px}
+.teclado .t-sec{font-size:1.1rem}
+.validar{width:100%;margin-top:14px;padding:18px;font-size:1.25rem;font-weight:900;border:0!important;border-radius:16px;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)!important;box-shadow:0 0 18px rgba(25,242,255,.35)}
+.validar:disabled{opacity:.4}
+.tarjeta{padding:16px;text-align:center}
+.tarjeta .nom{font-size:1.5rem;font-weight:900;margin:6px 0 2px}
+.tarjeta .num{font-family:"Bungee","Rubik",sans-serif;color:#19f2ff;font-size:1.3rem}
+.tarjeta .ya{margin-top:10px;padding:8px 10px;border-radius:10px;border:1px solid #ff8787;color:#ff8787;font-weight:700;font-size:.92rem}
+.hecho{margin:10px 0;padding:16px;border-radius:16px;border:2px solid #5dff9a;background:rgba(93,255,154,.14);color:#5dff9a;font-family:"Bungee","Rubik",sans-serif;font-size:1.5rem}
+button.grande{width:100%;padding:16px;font-size:1.1rem;margin-top:10px}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="margin:0"><a href="caja.html">← Caja</a></p>
+<header class="marca"><h1>Validar compra</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <div id="minimo" class="minimo">🍹 Valida solo si ha consumido 4,50 € o más</div>
+
+  <section id="vTeclado">
+    <div id="pantalla" class="pantalla vacia">Nº de socio</div>
+    <div class="teclado" id="teclado"></div>
+    <button id="ok" class="validar" type="button" disabled>VALIDAR</button>
+    <p id="msg" role="status" style="min-height:1.3em;color:#ff8787;font-weight:700;text-align:center"></p>
+  </section>
+
+  <section id="vConfirmar" class="oculto">
+    <div class="zona tarjeta">
+      <div>¿Validar la compra de…?</div>
+      <div id="cNom" class="nom"></div>
+      <div id="cNum" class="num"></div>
+      <div id="cYa" class="ya oculto"></div>
+    </div>
+    <button id="si" class="validar" type="button">✔ SÍ, VALIDAR</button>
+    <button id="no" class="grande" type="button">Cancelar</button>
+  </section>
+
+  <section id="vHecho" class="oculto">
+    <div class="zona tarjeta">
+      <div class="hecho">✔ COMPRA VALIDADA</div>
+      <div id="hNom" class="nom"></div>
+      <div id="hNum" class="num"></div>
+      <div id="hHora" style="opacity:.8;margin-top:6px"></div>
+    </div>
+    <button id="otro" class="validar" type="button">Siguiente cliente</button>
+  </section>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, setDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { mesDe } from "./puntos.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const ver = (id) => ["vTeclado", "vConfirmar", "vHecho"].forEach((v) => $(v).classList.toggle("oculto", v !== id));
+const eur = (n) => Number(n).toFixed(2).replace(".", ",") + " €";
+const num4 = (n) => String(n).padStart(4, "0");
+const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+// la jornada del bar acaba a las 6:00
+const inicioJornada = (ms) => { const d = new Date(ms - 6 * 3600000); d.setHours(6, 0, 0, 0); return d.getTime(); };
+let yo = { uid: "", nombre: "" }, minimo = 4.5, numero = "", socio = null;
+
+function pintarNumero() {
+  const p = $("pantalla");
+  p.textContent = numero || "Nº de socio"; p.classList.toggle("vacia", !numero);
+  $("ok").disabled = !numero; $("msg").textContent = "";
+}
+function tecla(t) {
+  if (t === "⌫") numero = numero.slice(0, -1);
+  else if (t === "C") numero = "";
+  else if (numero.length < 5) numero = (numero + t).replace(/^0+/, "");
+  pintarNumero();
+}
+["1", "2", "3", "4", "5", "6", "7", "8", "9", "C", "0", "⌫"].forEach((t) => {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = t === "C" ? "Borrar" : t;
+  if (t === "C" || t === "⌫") b.className = "t-sec";
+  b.onclick = () => tecla(t); $("teclado").append(b);
+});
+
+$("ok").onclick = async () => {
+  const n = Number(numero); if (!n) return;
+  $("ok").disabled = true;
+  try {
+    const s = await getDocs(query(collection(db, "users"), where("socio", "==", true), where("socioNum", "==", n)));
+    if (s.empty) { $("msg").textContent = "No hay ningún socio con el nº " + num4(n) + "."; $("ok").disabled = false; return; }
+    const d = s.docs[0];
+    socio = { uid: d.id, nombre: d.data().nombre || "Socio", num: n };
+    $("cNom").textContent = socio.nombre; $("cNum").textContent = "Socio nº " + num4(n);
+    $("cYa").classList.add("oculto");
+    try {   // ¿ya tiene una compra apuntada en esta jornada?
+      const m = await getDocs(query(collection(db, "socios_mov"), where("uid", "==", socio.uid)));
+      const desde = inicioJornada(Date.now());
+      const hoy = m.docs.map((x) => x.data()).filter((x) => x.tipo === "compra" && x.creado && x.creado.toMillis && x.creado.toMillis() >= desde)
+        .sort((a, b) => b.creado.toMillis() - a.creado.toMillis());
+      if (hoy.length) { $("cYa").textContent = "⚠ Ya tiene una compra apuntada hoy a las " + hora(hoy[0].creado.toMillis()) + ". Valida otra solo si es una consumición nueva."; $("cYa").classList.remove("oculto"); }
+    } catch (e) {}
+    $("si").textContent = "✔ SÍ, HA CONSUMIDO " + eur(minimo) + " O MÁS";
+    ver("vConfirmar");
+  } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
+  $("ok").disabled = !numero;
+};
+
+$("si").onclick = async () => {
+  if (!socio) return;
+  $("si").disabled = true;
+  try {
+    let saldo = 0;
+    try { const p = await getDoc(doc(db, "socios_puntos", socio.uid)); saldo = p.exists() ? p.data().puntos || 0 : 0; } catch (e) {}
+    await setDoc(doc(collection(db, "socios_mov")), {
+      uid: socio.uid, socioNombre: socio.nombre, tipo: "compra", importe: minimo, puntos: 0, saldo: saldo,
+      por: yo.uid, porNombre: yo.nombre, nota: "compra validada en caja (consumición mínima)", mes: mesDe(Date.now()), creado: serverTimestamp()
+    });
+    if (navigator.vibrate) navigator.vibrate(120);
+    $("hNom").textContent = socio.nombre; $("hNum").textContent = "Socio nº " + num4(socio.num); $("hHora").textContent = "Validada a las " + hora(Date.now()) + " por " + yo.nombre;
+    ver("vHecho");
+  } catch (e) { alert("No se ha podido validar: " + (e.code || e.message)); }
+  $("si").disabled = false;
+};
+$("no").onclick = () => { socio = null; ver("vTeclado"); pintarNumero(); };
+$("otro").onclick = () => { socio = null; numero = ""; pintarNumero(); ver("vTeclado"); };
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const m = await getDoc(doc(db, "users", u.uid));
+    const rol = m.exists() ? m.data().role : "";
+    if (rol !== "staff" && rol !== "admin") { $("estado").textContent = "Esta página es solo para el personal del bar."; return; }
+    yo = { uid: u.uid, nombre: m.data().nombre || "Personal" };
+    try {
+      const c = await getDoc(doc(db, "settings", "invitaciones"));
+      const v = c.exists() ? c.data().minimo : undefined;
+      if (typeof v === "number" && v >= 0 && v <= 100) minimo = v;
+    } catch (e) {}
+    $("minimo").textContent = "🍹 Valida solo si ha consumido " + eur(minimo) + " o más";
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    pintarNumero();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
