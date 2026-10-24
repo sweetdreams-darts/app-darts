@@ -271,6 +271,59 @@ async function pintarEmbajador(db, user, ficha) {
   } catch (e) {}
 }
 
+// Inicio: aviso para activar las notificaciones (solo socios que no las tienen activadas).
+async function pintarAvisos(db, user, ficha) {
+  try {
+    if (!ficha || ficha.socio !== true || document.getElementById("avisosCaja")) return;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const instalada = window.navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    const hayAvisos = "Notification" in window && "serviceWorker" in navigator;
+    let estado = "";
+    if (ios && !instalada) estado = "instalar";
+    else if (!hayAvisos) return;
+    else if (Notification.permission === "granted") return;
+    else estado = Notification.permission === "denied" ? "bloqueados" : "activar";
+    const luego = Number(localStorage.getItem("sd_avisos_luego") || 0);
+    if (Date.now() - luego < 7 * 864e5) return;
+    let emb = false;
+    try { const e = await getDoc(ref(db, "embajadores", user.uid)); emb = e.exists() && e.data().activo === true; } catch (e) {}
+    const tiles = document.querySelector(".tiles");
+    if (!tiles || document.getElementById("avisosCaja")) return;
+    if (!document.getElementById("estiloAvisos")) {
+      const st = document.createElement("style");
+      st.id = "estiloAvisos";
+      st.textContent = ".avisos-c{margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(25,242,255,.75);background:linear-gradient(150deg,rgba(25,242,255,.12),rgba(139,92,255,.12));box-shadow:0 0 16px rgba(25,242,255,.2)}" +
+        ".avisos-c .a-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.9rem;color:#19f2ff;margin:0 0 6px}.avisos-c p{margin:5px 0;font-size:.88rem}.avisos-c ul{margin:4px 0 6px;padding-left:20px;font-size:.88rem}.avisos-c li{margin:3px 0}" +
+        ".avisos-c .a-fila{display:flex;gap:8px;margin-top:10px}.avisos-c .a-fila a,.avisos-c .a-fila button{flex:1;text-align:center;padding:10px;border-radius:12px;font-weight:800;font-size:.88rem;text-decoration:none;cursor:pointer}" +
+        ".avisos-c .a-si{background:linear-gradient(135deg,#19f2ff,#8b5cff);color:#0a0612!important;border:0}.avisos-c .a-no{background:transparent;color:#fff!important;border:1px solid rgba(255,255,255,.3)}";
+      document.head.appendChild(st);
+    }
+    const caja = document.createElement("div"); caja.id = "avisosCaja"; caja.className = "avisos-c";
+    const p = (t, c) => { const e = document.createElement("p"); e.textContent = t; if (c) e.className = c; return e; };
+    const lista = document.createElement("ul");
+    ["⏰ Un aviso un rato antes de que empiece tu reserva de diana, para que no se te pase."].concat(emb ? ["🎉 Cuando venga al bar un amigo que has invitado."] : []).forEach((t) => { const li = document.createElement("li"); li.textContent = t; lista.append(li); });
+    const fila = document.createElement("div"); fila.className = "a-fila";
+    const no = document.createElement("button"); no.type = "button"; no.className = "a-no"; no.textContent = "Ahora no";
+    no.onclick = () => { try { localStorage.setItem("sd_avisos_luego", String(Date.now())); } catch (e) {} caja.remove(); };
+    if (estado === "activar") {
+      caja.append(p("🔔 ACTIVA LOS AVISOS", "a-tit"), p("Te avisaremos en el móvil de:"), lista, p("Nada de publicidad: solo avisos útiles. Puedes quitarlos cuando quieras."));
+      const si = document.createElement("a"); si.className = "a-si"; si.href = "avisos.html"; si.textContent = "Activar avisos";
+      fila.append(si, no);
+    } else if (estado === "bloqueados") {
+      caja.append(p("🔕 TIENES LOS AVISOS BLOQUEADOS", "a-tit"), p("Si quieres recibirlos:"), lista,
+        p("Desbloquéalos en tu navegador: toca el candado (o los ajustes de la página) junto a la dirección → Notificaciones → Permitir. Luego entra en «Avisos»."));
+      const si = document.createElement("a"); si.className = "a-si"; si.href = "avisos.html"; si.textContent = "Ir a Avisos";
+      fila.append(si, no);
+    } else {
+      caja.append(p("🔔 ¿QUIERES RECIBIR AVISOS?", "a-tit"), p("En iPhone, primero instala la app en tu pantalla de inicio y ábrela desde allí. Así te podremos avisar de:"), lista);
+      const si = document.createElement("a"); si.className = "a-si"; si.href = "instalar.html"; si.textContent = "Cómo instalarla";
+      fila.append(si, no);
+    }
+    caja.append(fila);
+    tiles.parentNode.insertBefore(caja, tiles);
+  } catch (e) {}
+}
+
 // Botón «Validar mi consumición» en el inicio (solo socios y solo si lo has activado en «Tarjetas de camareros»).
 async function pintarBotonValidar(db) {
   try {
