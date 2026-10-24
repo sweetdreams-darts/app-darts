@@ -236,13 +236,17 @@ async function pintarInvitado(db, user, ficha) {
     const paso = (hecho, txt) => { const li = document.createElement("li"), b = document.createElement("b"), t = document.createElement("span"); b.textContent = hecho ? "✔" : "○"; t.textContent = txt; li.append(b, t); ol.append(li); };
     paso(socio, socio ? "Ya eres socio nº " + numSocio(ficha.socioNum) + "." : "Verifica tu correo (te hemos mandado un enlace): así te haces socio y tienes tu carné.");
     paso(false, "Pide en la barra algo de " + euros(cfg.minimo) + " o más (un cachi, por ejemplo).");
-    paso(false, nfc ? "Al pagar, pulsa «Validar mi visita» y el camarero acercará su tarjeta. También vale enseñar tu carné de socio." : "Al pagar, enseña tu carné de socio (o di tu número de socio) al camarero.");
+    paso(false, "Al pagar, valida tu visita de una de estas 3 formas:");
     caja.append(ol);
+    const formas = document.createElement("ul"); formas.className = "i-formas";
+    ["📲 Pulsa «Validar mi visita» y el camarero acercará su tarjeta a tu móvil.", "🪪 Enséñale tu carné de socio.", "🔢 O dile tu número de socio" + (socio ? " (" + numSocio(ficha.socioNum) + ")." : ".")].forEach((t) => { const li = document.createElement("li"); li.textContent = t; formas.append(li); });
+    caja.append(formas);
     if (socio) {
-      const a = document.createElement("a");
-      a.className = "i-btn"; a.href = nfc ? "validar.html" : "carne.html"; a.textContent = nfc ? "📲 Validar mi visita" : "Ver mi carné de socio";
-      caja.append(a);
-      if (nfc) { const b = document.getElementById("btnValidar"); if (b) b.remove(); }
+      const fila = document.createElement("div"); fila.className = "i-fila";
+      const v = document.createElement("a"); v.className = "i-btn"; v.href = "validar.html"; v.textContent = "📲 Validar mi visita";
+      const c = document.createElement("a"); c.className = "i-btn i-sec"; c.href = "carne.html"; c.textContent = "🪪 Ver mi carné";
+      fila.append(v, c); caja.append(fila);
+      const b = document.getElementById("btnValidar"); if (b) b.remove();
     }
   } catch (e) {}
 }
