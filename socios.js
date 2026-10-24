@@ -351,7 +351,7 @@ async function pintarBotonValidar(db) {
 export async function autoSocio(db, user, ficha) {
   try {
     if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); await pintarEmbajador(db, user, ficha); await pintarVentajas(db, user, ficha); }
-    if (ficha && ficha.socio === true) pintarBotonValidar(db);
+    if (ficha && ficha.socio === true) { pintarBotonValidar(db); pintarAvisos(db, user, ficha); }
     if (!puedeAutoSocio(user, ficha)) return 0;
     if (typeof user.getIdToken === "function") await user.getIdToken(true);
     const n = await runTransaction(db, async (tx) => {
@@ -371,6 +371,7 @@ export async function autoSocio(db, user, ficha) {
     await pintarEmbajador(db, user, ficha);
     await pintarVentajas(db, user, ficha);
     pintarBotonValidar(db);
+    pintarAvisos(db, user, ficha);
     return n;
   } catch (e) { return 0; }   // sin reglas publicadas, sin conexión o sin contador: no pasa nada
 }
