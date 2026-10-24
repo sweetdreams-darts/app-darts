@@ -228,7 +228,6 @@ async function empezar(u) {
   try {
     const c = await getDoc(doc(db, "settings", "nfc"));
     const cfg = c.exists() ? c.data() : {};
-    if (cfg.activo !== true) { ver("vOff"); return; }
     if (Number.isInteger(cfg.horas) && cfg.horas > 0) horas = cfg.horas;
   } catch (e) {}
   if (enlace) {
