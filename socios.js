@@ -222,7 +222,9 @@ async function pintarInvitado(db, user, ficha) {
       st.textContent = ".invitado{margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,225,77,.75);background:linear-gradient(150deg,rgba(255,225,77,.12),rgba(255,43,214,.10));box-shadow:0 0 16px rgba(255,225,77,.18)}" +
         ".invitado .i-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.9rem;color:#ffe14d;margin:0 0 4px}.invitado p{margin:5px 0;font-size:.88rem}" +
         ".invitado ol{margin:6px 0 0;padding-left:0;list-style:none}.invitado li{margin:7px 0;font-size:.88rem;display:flex;gap:8px}.invitado li b{flex:none}" +
-        ".invitado .i-btn{display:block;margin-top:10px;padding:12px;border-radius:12px;text-align:center;font-weight:800;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)}";
+        ".invitado .i-btn{display:block;margin-top:10px;padding:12px;border-radius:12px;text-align:center;font-weight:800;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)}" +
+        ".invitado .i-formas{margin:2px 0 0 26px;padding-left:18px;font-size:.86rem}.invitado .i-formas li{display:list-item;margin:4px 0}" +
+        ".invitado .i-fila{display:flex;gap:8px}.invitado .i-fila .i-btn{flex:1}.invitado .i-btn.i-sec{background:transparent;color:#fff!important;border:1px solid rgba(255,255,255,.35)}";
       document.head.appendChild(st);
     }
     if (!caja) { caja = document.createElement("div"); caja.id = "invitadoCaja"; tiles.parentNode.insertBefore(caja, tiles); }
