@@ -201,7 +201,9 @@ function tarjetaPartido(x, locales) {
   const i = mk("div");
   i.append(mk("div", etiquetaNivel(x.cat, x.nivel) + (x.extra ? " · Partido añadido" : " · Jornada " + x.jornada), "nivel"));
   const eq = mk("div", "", "equipos");
-  eq.append(mk("strong", x.equipoMio), document.createTextNode(" contra " + x.rival + (x.esLocal ? " (local)" : " (visitante)")));
+  // primero siempre el equipo local (como en el calendario); el tuyo, en negrita
+  if (x.esLocal) eq.append(mk("strong", x.equipoMio), document.createTextNode(" contra " + x.rival + " (local)"));
+  else eq.append(document.createTextNode(x.rival + " contra "), mk("strong", x.equipoMio), document.createTextNode(" (visitante)"));
   i.append(eq);
   if (x.sede) { const a = enlace("📍 " + x.sede, mapsDe(x.sede, locales)); a.className = "sede"; a.target = "_blank"; a.rel = "noopener"; i.append(a); }
   if (x.cambio && !x.extra) i.append(mk("span", x.cambio, "cambio"));
