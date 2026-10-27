@@ -32,6 +32,7 @@ main{width:100%;max-width:560px}
 .tr-op{display:block;width:100%;margin:0 0 10px;padding:14px 12px;text-align:left;font-size:1rem}
 .tr-op.bien{background:#16351f!important;border-color:#5dff9a!important;color:#5dff9a!important}
 .tr-op.mal{background:#3a1a1f!important;border-color:#ff5c7a!important;color:#ff9aaa!important}
+.tr-op.elegida{border-color:#19f2ff!important;box-shadow:0 0 0 2px #19f2ff inset}
 #tr-info{min-height:1.4em;font-weight:800;margin:4px 0 10px}
 #tr-sig{margin-top:auto;padding:14px}
 .oculto{display:none!important}
@@ -185,7 +186,7 @@ async function pintarLibre() {
 let cola = [], modo = "", idx = 0, reloj = null, aciertosPartida = 0;
 function jugar(preguntas, m) {
   if (!preguntas.length) return;
-  cola = preguntas; modo = m; idx = 0; aciertosPartida = 0;
+  cola = preguntas; modo = m; idx = 0; aciertosPartida = 0; pendientes = [];
   $("tr-juego").classList.remove("oculto");
   siguiente();
 }
@@ -194,9 +195,13 @@ async function cerrarJuego() {
   clearInterval(reloj);
   await recargar();
 }
-$("tr-sig").onclick = () => { idx++; if (idx >= cola.length) return fin(); siguiente(); };
-function fin() {
+const avanzar = () => { idx++; if (idx >= cola.length) return fin(); siguiente(); };
+$("tr-sig").onclick = avanzar;
+async function fin() {
   clearInterval(reloj);
+  $("tr-sig").classList.add("oculto");
+  $("tr-info").textContent = "Calculando…";
+  try { const r = await conTiempo(Promise.all(pendientes), 6000); aciertosPartida = r.reduce((a, b) => a + b, 0); } catch (e) {}
   $("tr-num").textContent = "";
   $("tr-seg").textContent = "";
   $("tr-cat").textContent = "";
@@ -207,10 +212,14 @@ function fin() {
   const b = $("tr-sig");
   b.textContent = "Volver";
   b.classList.remove("oculto");
-  b.onclick = () => { b.onclick = () => { idx++; if (idx >= cola.length) return fin(); siguiente(); }; cerrarJuego(); };
+  b.onclick = () => { b.onclick = avanzar; cerrarJuego(); };
 }
+// Ninguna espera es infinita: si la red no contesta en «ms», se avisa y se puede seguir.
+const conTiempo = (pr, ms) => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(Object.assign(new Error("lento"), { code: "lento" })), ms))]);
+let pendientes = [];   // respuestas que aún se están guardando (para el resultado final)
 async function siguiente() {
-  const q = cola[idx], seg = Number((modo === "R" && reto && reto.seg) || cfg.seg || 20);
+  const q = cola[idx], seg = Number((modo === "R" && reto && reto.seg) || cfg.seg || 20), yoIdx = idx;
+  clearInterval(reloj);
   $("tr-sig").classList.add("oculto");
   $("tr-sig").textContent = idx + 1 >= cola.length ? "Ver resultado" : "Siguiente";
   $("tr-num").textContent = (modo === "R" ? "Reto · " : "Libre · ") + "Pregunta " + (idx + 1) + " de " + cola.length;
@@ -219,38 +228,56 @@ async function siguiente() {
   $("tr-info").textContent = "";
   const ops = $("tr-ops");
   ops.innerHTML = "";
-  // abrir la pregunta: desde aquí corre el tiempo (lo apunta el servidor, no el móvil)
-  try {
-    const datos = { uid: uid, q: q.id, modo: modo, t: serverTimestamp() };
-    if (modo === "R") datos.dia = reto.dia; else datos.cat = q.cat;
-    await setDoc(doc(db, "trivial_aperturas", uid + "_" + q.id), datos);
-  } catch (e) {
-    hechas.add(q.id); guardarLocal();
-    $("tr-info").textContent = "Esta pregunta ya la habías abierto antes: no puede volver a jugarse.";
-    $("tr-sig").classList.remove("oculto");
-    return;
-  }
+  // abrir la pregunta en segundo plano: el tiempo que vale es el del servidor (empieza un poco después que el del móvil, así que nadie sale perjudicado)
+  const datos = { uid: uid, q: q.id, modo: modo, t: serverTimestamp() };
+  if (modo === "R") datos.dia = reto.dia; else datos.cat = q.cat;
+  const abierta = conTiempo(setDoc(doc(db, "trivial_aperturas", uid + "_" + q.id), datos), 9000);
   hechas.add(q.id); guardarLocal();
   let quedan = seg, contestada = false;
   const pintarReloj = () => { $("tr-seg").textContent = "⏱ " + quedan + " s"; $("tr-barra").firstElementChild.style.width = (100 * quedan / seg) + "%"; };
-  pintarReloj();
-  const responder = async (e, boton) => {
+  const parar = () => { contestada = true; clearInterval(reloj); [...ops.children].forEach((b) => (b.disabled = true)); };
+  const lenta = setTimeout(() => { if (!contestada && idx === yoIdx) $("tr-info").textContent = "📶 Conectando…"; }, 1500);
+  abierta.then(() => { clearTimeout(lenta); if (!contestada && idx === yoIdx && $("tr-info").textContent === "📶 Conectando…") $("tr-info").textContent = ""; }).catch((er) => {
+    clearTimeout(lenta);
+    if (idx !== yoIdx || contestada) return;
+    parar();
+    if (er && er.code === "lento") {
+      $("tr-info").textContent = "📶 No hay conexión. Comprueba tu internet y vuelve a intentarlo.";
+      const b = $("tr-sig"); b.textContent = "Reintentar"; b.classList.remove("oculto");
+      b.onclick = () => { b.onclick = avanzar; hechas.delete(q.id); guardarLocal(); siguiente(); };
+    } else {
+      $("tr-info").textContent = "Esta pregunta ya la habías abierto antes: no puede volver a jugarse.";
+      $("tr-sig").classList.remove("oculto");
+    }
+  });
+  const responder = (e, boton) => {
     if (contestada) return;
-    contestada = true;
-    clearInterval(reloj);
-    [...ops.children].forEach((b) => (b.disabled = true));
-    try {
-      await setDoc(doc(db, "trivial_resp", uid + "_" + q.id), { uid: uid, q: q.id, e: e, t: serverTimestamp(), nombre: nombre });
-      const s = await getDoc(doc(db, "trivial_sol", q.id));
-      const c = s.exists() ? s.data().c : -1;
-      if (c >= 0) ops.children[c].classList.add("bien");
+    parar();
+    if (boton) boton.classList.add("elegida");
+    $("tr-info").textContent = e === -1 ? "⏱ Se acabó el tiempo." : "";
+    const comprobando = setTimeout(() => { if (idx === yoIdx && !$("tr-info").textContent) $("tr-info").textContent = "Comprobando…"; }, 400);
+    const trabajo = (async () => {
+      try { await abierta; } catch (er) { throw Object.assign(new Error("apertura"), { code: er && er.code === "lento" ? "sinred" : "abierta" }); }
+      await conTiempo(setDoc(doc(db, "trivial_resp", uid + "_" + q.id), { uid: uid, q: q.id, e: e, t: serverTimestamp(), nombre: nombre }), 9000);
+      const s = await conTiempo(getDoc(doc(db, "trivial_sol", q.id)), 9000);
+      return s.exists() ? s.data().c : -1;
+    })();
+    pendientes.push(trabajo.then((c) => (e === c ? 1 : 0)).catch(() => 0));
+    trabajo.then((c) => {
+      clearTimeout(comprobando);
+      if (idx !== yoIdx) return;
+      if (c >= 0 && ops.children[c]) ops.children[c].classList.add("bien");
       if (e === c) { aciertosPartida++; $("tr-info").textContent = "✔ ¡Correcto!"; }
       else { if (boton) boton.classList.add("mal"); $("tr-info").textContent = e === -1 ? "⏱ Se acabó el tiempo." : "✘ No era esa."; }
-    } catch (er) { $("tr-info").textContent = "⏱ Fuera de tiempo: cuenta como fallo."; }
-    $("tr-sig").classList.remove("oculto");
+    }).catch((er) => {
+      clearTimeout(comprobando);
+      if (idx !== yoIdx) return;
+      const c = er && er.code;
+      $("tr-info").textContent = c === "lento" ? "📶 Conexión lenta: tu respuesta se guardará en cuanto haya red." : c === "sinred" ? "📶 No hay conexión: esta respuesta no se ha podido guardar." : c === "abierta" ? "Esta pregunta ya la habías abierto antes: no puede volver a jugarse." : "⏱ Fuera de tiempo: cuenta como fallo.";
+    }).finally(() => { if (idx === yoIdx) $("tr-sig").classList.remove("oculto"); });
   };
   q.ops.forEach((t, i) => { const b = el("button", t, "tr-op"); b.type = "button"; b.onclick = () => responder(i, b); ops.append(b); });
-  clearInterval(reloj);
+  pintarReloj();
   reloj = setInterval(() => { quedan--; pintarReloj(); if (quedan <= 0) responder(-1, null); }, 1000);
 }
 
