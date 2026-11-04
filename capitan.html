@@ -417,6 +417,16 @@ onAuthStateChanged(auth, async (u) => {
     pintarDias();
     pintarPartidos();
     escuchar();
+    // desde el calendario de la Zona Liga: «✏️ Pedir cambio» abre directamente el formulario de ese partido
+    const pedir = new URLSearchParams(location.search).get("cambio");
+    if (pedir) {
+      history.replaceState(null, "", location.pathname);
+      const p = partidosDe(equipos, partidos, cambios, hoy).find((x) => x.id === pedir);
+      const pend = p && pedidosEnviados.find((s) => s.partidoId === p.id && s.estado === "pendiente");
+      if (p && p.enSD && !pend) { pestana("par"); abrirForm(p); }
+      else if (pend) { pestana("sol"); $("msg").textContent = "Ya has pedido un cambio para ese partido: está aquí, pendiente de que el bar lo revise."; }
+      else { pestana("par"); $("msg").textContent = p ? "Ese partido se juega en otro local: el cambio se acuerda con ese local y con el otro equipo." : "Ese partido no es de tus equipos o ya se ha jugado."; }
+    }
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
 });
 </script>
