@@ -341,6 +341,7 @@ onAuthStateChanged(auth, async (u) => {
   try {
     const yo = await getDoc(doc(db, "users", u.uid));
     if (!yo.exists() || !["player", "admin"].includes(yo.data().role)) { $("estado").textContent = "La Zona Liga es solo para jugadores oficiales acreditados por el bar."; return; }
+      misEquipos = new Set(yo.data().capitanDe || []);
     try {
       const c = await getDoc(doc(db, "liga_config", "equiposSweetDreams"));
       nombresSD = new Set(c.exists() ? (c.data().nombres || []).map(norm) : []);
