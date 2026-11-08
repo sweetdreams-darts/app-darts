@@ -16,6 +16,7 @@ main{width:100%;max-width:480px}
   <div id="avisoVerif" class="zona oculto">Para reservar, primero verifica tu email desde el <a href="./">inicio</a>.</div>
   <div class="tiles">
     <a id="tReservar" class="tile t-rosa grande" href="reservar.html"><span class="emoji">🎯</span><strong>Reservar diana</strong><small>Elige día, diana y hora</small></a>
+    <a id="tApl" class="tile t-violeta oculto" href="mis-aplazadas.html"><span class="emoji">📅</span><strong>Mis partidas aplazadas</strong><small>Ponles fecha nueva</small></a>
     <a id="tMis" class="tile t-cian" href="mis-reservas.html"><span class="emoji">🎟️</span><strong>Mis reservas</strong><small>Ver o cancelar</small></a>
     <a id="tLiga" class="tile t-amarillo" href="liga.html"><span class="emoji">🏆</span><strong>Zona Liga</strong><small>Calendarios y locales</small></a>
     <div class="tile t-violeta bloq"><span class="emoji">🎲</span><strong>Torneos</strong><small>Próximamente</small></div>
@@ -55,6 +56,9 @@ onAuthStateChanged(auth, async (u) => {
     $("tLiga").classList.toggle("bloq", !liga);
     $("tClas").classList.toggle("bloq", !liga);
     $("tCap").classList.toggle("oculto", !capitan);
+        // los jugadores de la liga ven «Mis partidas aplazadas» al lado de «Reservar diana»
+    $("tReservar").classList.toggle("grande", !liga);
+    $("tApl").classList.toggle("oculto", !liga);
     $("avisoLiga").classList.toggle("oculto", liga);
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
