@@ -77,13 +77,16 @@ main{width:100%;max-width:560px}
   <h2 id="fTitulo" style="margin:0 0 4px"></h2>
   <p id="fPartido" class="peq"></p>
   <label>¿Qué quieres hacer?</label>
-  <label class="op"><input type="radio" name="tipoCambio" value="mover" checked><span>Cambiar de día y hora</span></label>
-  <label class="op"><input type="radio" name="tipoCambio" value="aplazar"><span>Aplazarlo (sin fecha nueva todavía)</span></label>
+  <label class="op" id="opMover"><input type="radio" name="tipoCambio" value="mover" checked><span>Cambiar de día y hora</span></label>
+  <label class="op" id="opAplazar"><input type="radio" name="tipoCambio" value="aplazar"><span>Aplazarlo (sin fecha nueva todavía)</span></label>
+  <label class="op" id="opIda"><input type="radio" name="tipoCambio" value="ida_vuelta"><span>🔁 Cambiar ida por vuelta</span></label>
+  <label class="op" id="opOnline"><input type="radio" name="tipoCambio" value="online"><span>💻 Jugar la partida online desde Sweet Dreams</span></label>
   <div id="fMover">
     <label>Día nuevo<input id="fFecha" type="date"></label>
     <label>Hora de inicio<select id="fHora"></select></label>
     <p id="fDisp" class="peq"></p>
   </div>
+  <p id="fEspecial" class="peq"></p>
   <label class="op"><input type="checkbox" id="fRival"><span>El otro equipo está de acuerdo</span></label>
   <label>Mensaje para el bar (opcional)<textarea id="fNota" maxlength="200" placeholder="Por ejemplo: jugamos mejor el jueves por el trabajo"></textarea></label>
   <p id="fInfo" class="mal"></p>
@@ -103,6 +106,7 @@ window.addEventListener("unhandledrejection", function (e) {
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { efectivo, etiquetas, vueltaDe, motivoNoCruce, motivoNoOnline, dianasLibres, msDe, textoCruce } from "./cambios-liga.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, onSnapshot, query, where, orderBy, Timestamp, documentId, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
@@ -180,13 +184,10 @@ function partidosDe(equipos, partidos, cambios, hoy) {
       if (clave(p.local) !== cl && clave(p.visitante) !== cl) continue;
       if (vistos.has(p.id + "|" + ek)) continue;
       vistos.add(p.id + "|" + ek);
-      const c = cambios.get(p.id);
-      let dia = p.dia, hora = p.hora, estado = "normal", antes = "";
-      if (c && c.estado === "movido") { dia = c.dia; hora = c.hora; estado = "movido"; antes = diaCorto(p.dia) + " a las " + p.hora; }
-      else if (c && c.estado === "aplazado") estado = "aplazado";
-      if (estado !== "aplazado" && dia < hoy) continue;
-      if (estado === "aplazado" && p.dia < hoy) continue;
-      out.push({ id: p.id, equipoKey: ek, equipoNombre: clave(p.local) === cl ? p.local : p.visitante, cat: p.categoria, nivel: p.nivel, jornada: p.jornada, local: p.local, visitante: p.visitante, dia: dia, hora: hora, diaOriginal: p.dia, horaOriginal: p.hora, estado: estado, antes: antes, sede: p.sede || "", enSD: p.categoria === "parejas" ? p.enSweetDreams === true : true });
+      const e = efectivo(p, cambios);
+      // los aplazados se enseñan siempre (sobre todo después de su fecha original, que es cuando hay que ponerles fecha nueva)
+      if (e.estado !== "aplazado" && e.dia < hoy) continue;
+      out.push({ id: p.id, equipoKey: ek, equipoNombre: clave(p.local) === cl ? p.local : p.visitante, cat: p.categoria, nivel: p.nivel, jornada: p.jornada, local: e.local, visitante: e.visitante, dia: e.dia, hora: e.hora, diaOriginal: p.dia, horaOriginal: p.hora, estado: e.estado, antes: e.estado === "movido" ? diaCorto(p.dia) + " a las " + p.hora : "", sede: e.sede, enSD: e.enSD, especial: etiquetas(e), e: e, p: p });
     }
   }
   return out.sort((a, b) => a.dia.localeCompare(b.dia) || a.hora.localeCompare(b.hora) || a.id.localeCompare(b.id));
@@ -202,6 +203,11 @@ function mensajeCambio(s) {
   const liga = s.cat === "parejas" ? "Parejas nivel " + s.nivel : "Liga online equipos, nivel " + s.nivel;
   const partido = s.local + " – " + s.visitante + " (" + liga + "), jornada " + (s.jornada || "?") + ", prevista el " + diaLargo(s.diaOriginal) + " a las " + s.horaOriginal;
   const acuerdo = s.rivalDeAcuerdo ? " El otro equipo está de acuerdo." : " Falta confirmarlo con el otro equipo.";
+  if (s.tipo === "ida_vuelta" || s.tipo === "online") {
+    const p = partidos.find((x) => x.id === s.partidoId), e = p ? efectivo(p, cambios) : null, v = p ? vueltaDe(p, partidos) : null;
+    if (s.tipo === "online") return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Para el partido " + partido + ", os proponemos jugarlo online: nosotros desde Sweet Dreams, en vez de desplazarnos." + acuerdo + " Gracias.";
+    return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Os proponemos cambiar la ida por la vuelta: " + (e && v ? textoCruce(e, efectivo(v, cambios)) : "partido " + partido + ".") + acuerdo + " Gracias.";
+  }
   if (s.tipo === "aplazar") return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos aplazar el partido " + partido + "." + acuerdo + " Os proponemos nueva fecha en cuanto la tengamos. Gracias.";
   return "Hola, somos el equipo " + s.equipoNombre + " (Sweet Dreams, Valladolid). Queremos cambiar el partido " + partido + " al " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva + " en Sweet Dreams." + acuerdo + " ¿Os parece bien? Gracias.";
 }
@@ -263,6 +269,13 @@ function pintarLibres() {
 $("tipoH").onchange = pintarLibres;
 
 // ---------- Mis partidos ----------
+// Qué cambios se pueden pedir en un partido.
+function opcionesDe(p) {
+  const v = p.p ? vueltaDe(p.p, partidos) : null, eV = v ? efectivo(v, cambios) : null;
+  const ida = p.cat === "parejas" && !!v && motivoNoCruce(p.e, eV, hoy) === "";
+  const online = p.cat === "parejas" && motivoNoOnline(p.e, hoy) === "";
+  return { mover: p.enSD, aplazar: p.enSD && p.estado !== "aplazado", ida: ida, online: online, vuelta: v, eV: eV, alguna: p.enSD || ida || online };
+}
 function textoEstado(p) {
   return p.estado === "movido" ? "Cambiado de fecha (antes: " + p.antes + ")" : p.estado === "aplazado" ? "Aplazado: pendiente de nueva fecha" : "";
 }
@@ -281,13 +294,15 @@ function pintarPartidos() {
     const e = textoEstado(p);
     if (e) c.append(el("span", e, "cap-et"));
     const pend = pedidosEnviados.find((s) => s.partidoId === p.id && s.estado === "pendiente");
+    (p.especial || []).forEach((t) => c.append(el("span", t, "cap-et")));
     if (pend) c.append(el("span", "⏳ Solicitud pendiente", "cap-et"));
-    if (p.enSD) {
+    if (opcionesDe(p).alguna) {
       const b = el("button", pend ? "Ya has pedido un cambio" : p.estado === "aplazado" ? "Pedir nueva fecha" : "Pedir cambio");
       b.type = "button";
       b.disabled = !!pend;
       b.onclick = () => abrirForm(p);
       c.append(b);
+      if (!p.enSD) c.append(el("small", "Se juega en otro local: desde aquí puedes pedir jugarlo online desde Sweet Dreams o cambiar la ida por la vuelta.", "peq"));
     } else c.append(el("small", "Este partido se juega en otro local: el cambio se acuerda con ese local y con el otro equipo.", "peq"));
     cont.append(c);
   }
@@ -298,7 +313,13 @@ function abrirForm(p) {
   itemForm = p;
   $("fTitulo").textContent = p.estado === "aplazado" ? "Pedir nueva fecha" : "Pedir un cambio";
   $("fPartido").textContent = p.local + " – " + p.visitante + " · " + (p.cat === "parejas" ? "Parejas" : "Online") + " N" + p.nivel + " · " + (p.estado === "aplazado" ? "aplazado" : diaLargo(p.dia) + " a las " + p.hora);
-  document.querySelector('input[name="tipoCambio"][value="mover"]').checked = true;
+  const op = opcionesDe(p);
+  $("opMover").classList.toggle("oculto", !op.mover);
+  $("opAplazar").classList.toggle("oculto", !op.aplazar);
+  $("opIda").classList.toggle("oculto", !op.ida);
+  $("opOnline").classList.toggle("oculto", !op.online);
+  const primera = ["mover", "aplazar", "ida_vuelta", "online"].find((t) => ({ mover: op.mover, aplazar: op.aplazar, ida_vuelta: op.ida, online: op.online })[t]) || "mover";
+  document.querySelector('input[name="tipoCambio"][value="' + primera + '"]').checked = true;
   $("fFecha").value = p.dia < hoy ? hoy : p.dia;
   $("fFecha").min = hoy;
   $("fHora").innerHTML = "";
@@ -307,9 +328,38 @@ function abrirForm(p) {
   $("fRival").checked = false;
   $("fNota").value = "";
   $("fInfo").textContent = "";
-  $("fMover").classList.remove("oculto");
   $("cap-form").classList.remove("oculto");
-  comprobarForm();
+  mostrarTipo();
+}
+// Huecos ocupados de un día (de 6:00 a 6:00).
+async function ocupadosDia(dia) {
+  const s = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(aMs(dia, 6, 0))), where("inicio", "<", Timestamp.fromMillis(aMs(dia, 30, 0)))));
+  return new Set(s.docs.map((d) => d.id));
+}
+// Explicación y dianas libres para «cambiar ida por vuelta» y «jugar online».
+async function mostrarTipo() {
+  const tipo = document.querySelector('input[name="tipoCambio"]:checked').value, p = itemForm;
+  $("fMover").classList.toggle("oculto", tipo !== "mover");
+  $("fEspecial").textContent = "";
+  if (!p) return;
+  if (tipo === "mover") return comprobarForm();
+  if (tipo === "aplazar") return;
+  const op = opcionesDe(p);
+  try {
+    if (tipo === "ida_vuelta") {
+      // el partido que pasa a jugarse en Sweet Dreams necesita una diana ese día
+      const entra = !p.e.enSD && op.eV.enSD ? p.e : !op.eV.enSD && p.e.enSD ? op.eV : null;
+      let disp = "";
+      if (entra) {
+        const oc = await ocupadosDia(entra.dia), lib = dianasLibres(entra.categoria, entra.nivel, msDe(entra.dia, entra.hora), dianas, (id) => oc.has(id), false);
+        disp = lib.length ? " ✔ Ese día hay diana libre en Sweet Dreams." : " ⚠ Ese día no queda ninguna diana libre en Sweet Dreams: puedes enviarla igualmente y el bar se pondrá en contacto contigo.";
+      }
+      $("fEspecial").textContent = "Se intercambian las dos jornadas: " + textoCruce(p.e, op.eV) + disp;
+    } else if (tipo === "online") {
+      const oc = await ocupadosDia(p.e.dia), lib = dianasLibres(p.cat, p.nivel, msDe(p.e.dia, p.e.hora), dianas, (id) => oc.has(id), true);
+      $("fEspecial").textContent = "Jugaréis online desde Sweet Dreams el " + diaLargo(p.e.dia) + " a las " + p.e.hora + ", en vez de ir a " + (p.e.sede || "su local") + ". Se os reservará una diana G3." + (lib.length ? " ✔ A esa hora hay diana libre." : " ⚠ A esa hora no hay ninguna diana G3 libre: puedes enviarla igualmente y el bar se pondrá en contacto contigo.");
+    }
+  } catch (e) { $("fEspecial").textContent = ""; }
 }
 async function comprobarForm() {
   if (!itemForm) return;
@@ -326,7 +376,7 @@ async function comprobarForm() {
 }
 $("fFecha").onchange = comprobarForm;
 $("fHora").onchange = comprobarForm;
-document.querySelectorAll('input[name="tipoCambio"]').forEach((r) => (r.onchange = () => $("fMover").classList.toggle("oculto", r.value === "aplazar" && r.checked)));
+document.querySelectorAll('input[name="tipoCambio"]').forEach((r) => (r.onchange = mostrarTipo));
 $("fCancelar").onclick = () => { $("cap-form").classList.add("oculto"); itemForm = null; };
 $("fEnviar").onclick = async () => {
   if (!itemForm) return;
@@ -360,7 +410,7 @@ function pintarSolicitudes() {
   for (const s of pedidosEnviados) {
     const c = el("div", "", "card cap-partido");
     c.append(el("div", s.local + " – " + s.visitante, "t"));
-    c.append(el("small", s.tipo === "aplazar" ? "Aplazarlo (antes: " + diaCorto(s.diaOriginal) + " a las " + s.horaOriginal + ")" : "De " + diaCorto(s.diaOriginal) + " " + s.horaOriginal + " a " + diaCorto(s.diaNuevo) + " " + s.horaNueva));
+    c.append(el("small", s.tipo === "ida_vuelta" ? "🔁 Cambiar ida por vuelta" : s.tipo === "online" ? "💻 Jugar online desde Sweet Dreams (" + diaCorto(s.diaOriginal) + " a las " + s.horaOriginal + ")" : s.tipo === "aplazar" ? "Aplazarlo (antes: " + diaCorto(s.diaOriginal) + " a las " + s.horaOriginal + ")" : "De " + diaCorto(s.diaOriginal) + " " + s.horaOriginal + " a " + diaCorto(s.diaNuevo) + " " + s.horaNueva));
     c.append(el("span", s.estado === "pendiente" ? "⏳ Pendiente de que el bar la revise" : s.estado === "aprobada" ? "✔ Aprobada" : "✘ Rechazada", "cap-et" + (s.estado === "aprobada" ? " ok" : s.estado === "rechazada" ? " no" : "")));
     if (s.respuesta) c.append(el("small", "Respuesta del bar: " + s.respuesta));
     const cp = el("button", "Copiar mensaje para el otro equipo y la organización");
@@ -423,7 +473,7 @@ onAuthStateChanged(auth, async (u) => {
       history.replaceState(null, "", location.pathname);
       const p = partidosDe(equipos, partidos, cambios, hoy).find((x) => x.id === pedir);
       const pend = p && pedidosEnviados.find((s) => s.partidoId === p.id && s.estado === "pendiente");
-      if (p && p.enSD && !pend) { pestana("par"); abrirForm(p); }
+      if (p && opcionesDe(p).alguna && !pend) { pestana("par"); abrirForm(p); }
       else if (pend) { pestana("sol"); $("msg").textContent = "Ya has pedido un cambio para ese partido: está aquí, pendiente de que el bar lo revise."; }
       else { pestana("par"); $("msg").textContent = p ? "Ese partido se juega en otro local: el cambio se acuerda con ese local y con el otro equipo." : "Ese partido no es de tus equipos o ya se ha jugado."; }
     }
