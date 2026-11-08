@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mis partidas aplazadas</title>
+<meta name="theme-color" content="#0a0612">
+<link rel="stylesheet" href="estilo.css">
+<style>
+body{margin:0;padding:18px 14px 50px;display:flex;justify-content:center}
+main{width:100%;max-width:560px}
+.peq{font-size:.82rem;opacity:.8}
+.ap{margin-top:10px;padding:12px 14px}
+.ap .t{font-weight:800}
+.ap small{display:block;opacity:.85;margin-top:3px}
+.et{display:inline-block;margin:6px 6px 0 0;padding:2px 9px;border-radius:999px;font-size:.72rem;font-weight:800;background:rgba(255,225,77,.2);border:1px solid #ffe14d;color:#ffe14d}
+.ap a.btn{display:block;margin-top:10px;padding:11px;border-radius:12px;text-align:center;font-weight:800;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#ffe14d,#ff9f43)}
+.ap a.btn.sec{background:transparent;color:#ffe14d!important;border:1.5px solid #ffe14d}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p style="margin:0 0 4px"><a href="dardos.html">← Universo Dardos</a></p>
+<header class="marca"><h1>Mis partidas aplazadas</h1></header>
+<p id="estado">Cargando…</p>
+<div id="panel" class="oculto">
+  <p class="peq" id="intro">Partidas aplazadas de tus equipos. Si eres el capitán, desde aquí pides la fecha nueva.</p>
+  <div id="lista"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where, documentId } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { clave, efectivo, etiquetas, diaCorto } from "./cambios-liga.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const rango = (t) => (t ? Number(String(t).slice(1)) * 10 + (t[0] === "I" ? 1 : 0) : 0);
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en el <a href="./">inicio</a>.'; return; }
+  try {
+    const f = await getDoc(doc(db, "users", u.uid));
+    const ficha = f.exists() ? f.data() : null;
+    if (!ficha || !["player", "admin"].includes(ficha.role)) { $("estado").textContent = "Esta zona es solo para jugadores oficiales de la liga."; return; }
+    // mis equipos: los que he elegido en «Mis equipos» y aquellos de los que soy capitán
+    const capitan = new Set(ficha.capitanDe || []), mios = new Set(capitan);
+    try { const m = await getDoc(doc(db, "mis_equipos", u.uid)); ((m.exists() && m.data().equipos) || []).forEach((x) => mios.add(x.cat + "|" + x.nivel + "|" + clave(x.equipo))); } catch (e) {}
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    const lista = $("lista");
+    if (!mios.size) { lista.append(el("p", "Todavía no has elegido tus equipos.", "peq")); const a = el("a", "Elegir mis equipos", "btn"); a.href = "mis-equipos.html"; const c = el("div", "", "zona ap"); c.append(a); lista.append(c); return; }
+    const pares = [...new Set([...mios].map((k) => k.split("|").slice(0, 2).join("|")))];
+    const [trozos, cs, pend] = await Promise.all([
+      Promise.all(pares.map((k) => { const [c, n] = k.split("|"); return getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", c), where("nivel", "==", Number(n)))); })),
+      getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`"))),
+      getDocs(query(collection(db, "cambios_pedidos"), where("uid", "==", u.uid))).catch(() => ({ docs: [] }))
+    ]);
+    const cambios = new Map(cs.docs.map((d) => [d.id.slice(7), d.data()]));
+    const pendientes = new Set(pend.docs.map((d) => d.data()).filter((s) => s.estado === "pendiente").map((s) => s.partidoId));
+    const todos = trozos.flatMap((t) => t.docs.map((d) => Object.assign({ id: d.id }, d.data())));
+    const ultima = {};
+    todos.forEach((p) => { const k = p.categoria + "|" + p.nivel; ultima[k] = Math.max(ultima[k] || 0, rango(p.temporada)); });
+    const out = [];
+    for (const p of todos) {
+      if (rango(p.temporada) !== ultima[p.categoria + "|" + p.nivel]) continue;
+      const kl = p.categoria + "|" + p.nivel + "|" + clave(p.local), kv = p.categoria + "|" + p.nivel + "|" + clave(p.visitante);
+      if (!mios.has(kl) && !mios.has(kv)) continue;
+      const e = efectivo(p, cambios);
+      if (e.estado !== "aplazado") continue;
+      out.push({ p: p, e: e, cap: capitan.has(kl) || capitan.has(kv) });
+    }
+    out.sort((a, b) => a.p.dia.localeCompare(b.p.dia));
+    if (!out.length) { lista.append(el("p", "🎉 Ninguno de tus equipos tiene partidas aplazadas.", "")); return; }
+    for (const { p, e, cap } of out) {
+      const c = el("div", "", "zona ap");
+      c.append(el("div", (p.categoria === "parejas" ? "Parejas" : "Online") + " N" + p.nivel + " · Jornada " + p.jornada, "t"));
+      c.append(el("div", e.local + " – " + e.visitante));
+      c.append(el("small", "Era el " + diaCorto(p.dia) + " a las " + p.hora + (e.sede ? " · " + e.sede : "")));
+      c.append(el("span", "Aplazado: pendiente de nueva fecha", "et"));
+      etiquetas(e).forEach((t) => c.append(el("span", t, "et")));
+      if (pendientes.has(p.id)) {
+        c.append(el("span", "⏳ Ya has pedido la fecha nueva", "et"));
+        const a = el("a", "Ver mi solicitud", "btn sec"); a.href = "capitan.html?cambio=" + encodeURIComponent(p.id); c.append(a);
+      } else if (cap) {
+        const a = el("a", "📅 Pedir nueva fecha", "btn"); a.href = "capitan.html?cambio=" + encodeURIComponent(p.id); c.append(a);
+      } else c.append(el("small", "La fecha nueva la pide el capitán de tu equipo desde la app."));
+      lista.append(c);
+    }
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
