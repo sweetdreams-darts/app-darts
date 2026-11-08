@@ -21,6 +21,10 @@ export function ajustarPartidos(filas, cambios) {
       x.aplazado = true;
       x.cambio = "Aplazado: pendiente de nueva fecha";
     }
+    // «cambiar ida por vuelta» y «jugar online desde Sweet Dreams»
+    const cr = cambios && cambios.get(x.id + "~cruce"), on = cambios && cambios.get(x.id + "~online");
+    if (cr) { x.local = cr.local; x.visitante = cr.visitante; x.sede = cr.sede || ""; x.cambio = (x.cambio ? x.cambio + " · " : "") + "🔁 Ida y vuelta cambiadas"; }
+    if (on) { x.sede = "Sweet Dreams (online)"; x.nota = "💻 Online: " + on.equipo + " juega desde Sweet Dreams"; }
     res.push(x);
   }
   if (cambios) {
