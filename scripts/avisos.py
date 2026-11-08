@@ -461,7 +461,55 @@ def recordatorios():
             json={"fields": {"recordado": {"booleanValue": True}}})
         print("Recordatorio enviado:", cuerpo)
 
+# ---------------- avisos al administrador: solicitudes de capitanes, embajadores y vínculos de la liga ----------------
+def dia_bonito(dia):
+    """«2026-11-16» → «lun 16 nov»."""
+    try:
+        y, m, d = (int(x) for x in dia.split("-"))
+        return fecha_bonita(int(datetime(y, m, d, 12).timestamp() * 1000))
+    except Exception:
+        return dia or "?"
 
+
+def aviso_capitan(d):
+    tipo = campo(d, "tipo")
+    que = {"aplazar": "aplazar", "ida_vuelta": "cambiar ida por vuelta", "online": "jugar online desde Sweet Dreams"}.get(
+        tipo, f"pasarlo al {dia_bonito(campo(d, 'diaNuevo'))} a las {campo(d, 'horaNueva')}")
+    cuerpo = f"{campo(d, 'capitan') or 'Un capitán'} ({campo(d, 'equipoNombre')}) pide {que}: {campo(d, 'local')} – {campo(d, 'visitante')}. Toca para revisarla."
+    return "🧢 Solicitud de capitán", cuerpo, "capitan-" + id_de(d), APP + "admin-solicitudes.html"
+
+
+def aviso_embajador(d):
+    cuerpo = f"{campo(d, 'nombre') or 'Un socio'} ({campo(d, 'facultad') or '?'}) quiere ser embajador. Toca para verlo."
+    return "👑 Quiere ser embajador", cuerpo, "embajador-" + id_de(d), APP + "admin-embajadores.html"
+
+
+def aviso_vinculo(d):
+    cuerpo = f"{nombre_de('users', id_de(d))} dice que en la liga es «{campo(d, 'nombre')}». Toca para vincularlo."
+    return "🔗 Pide su ficha de la liga", cuerpo, "vinculo-" + id_de(d), APP + "admin-jugadores.html"
+
+
+VIGILAR = [("cambios_pedidos", "avisos_estado/capitanes", aviso_capitan),
+           ("embajadores_solicitudes", "avisos_estado/embajadores", aviso_embajador),
+           ("liga_vinculos_pedidos", "avisos_estado/vinculos", aviso_vinculo)]
+
+
+def revisar_coleccion(coleccion, ultima, hacer):
+    """Avisa a los administradores de cada documento nuevo de la colección (por su fecha «creado»)."""
+    mayor = ultima
+    for d in consulta(coleccion, [("creado", "GREATER_THAN", {"timestampValue": iso(ultima)})], "creado"):
+        mayor = max(mayor, ms_de(campo(d, "creado", "timestampValue")) + 1)
+        try:
+            titulo, cuerpo, tag, url = hacer(d)
+        except Exception as e:
+            print("No se ha podido preparar el aviso:", coleccion, e)
+            continue
+        for admin in admins():
+            for t in tokens_de(admin):
+                enviar(t, titulo, cuerpo, tag, url)
+        print(titulo + ":", cuerpo)
+    return mayor
+    
 def main():
     t0 = time.time()
     ultima, ultima_u = leer_estado()
@@ -476,6 +524,13 @@ def main():
     if ultima_inv is None:
         ultima_inv = int(time.time() * 1000)
         escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitaciones", "fields": {"ultimaMs": valor(ultima_inv)}}}])
+        marcas = {}
+    for col, ruta, _ in VIGILAR:
+        m = leer_marca(ruta)
+        if m is None:   # la primera vez se empieza desde ahora, para no avisar de cosas antiguas
+            m = int(time.time() * 1000)
+            escribir([{"update": {"name": f"{RAIZ}/{ruta}", "fields": {"ultimaMs": valor(m)}}}])
+        marcas[col] = m
     try:
         limpiar_cuentas_borradas()
     except Exception as e:
@@ -490,6 +545,14 @@ def main():
                 guardar_estado(ultima, ultima_u)
             recordatorios()
             revisar_tarjetas()
+                for col, ruta, hacer in VIGILAR:
+                try:
+                    nueva_m = revisar_coleccion(col, marcas[col], hacer)
+                    if nueva_m != marcas[col]:
+                        marcas[col] = nueva_m
+                        escribir([{"update": {"name": f"{RAIZ}/{ruta}", "fields": {"ultimaMs": valor(nueva_m)}}}])
+                except Exception as e:
+                    print("Error revisando", col + ":", e)
             nueva_inv = revisar_invitaciones(ultima_inv)
             if nueva_inv != ultima_inv:
                 ultima_inv = nueva_inv
