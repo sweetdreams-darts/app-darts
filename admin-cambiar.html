@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ida/vuelta y online</title>
+<meta name="theme-color" content="#14213d">
+<style>
+body{font-family:system-ui,sans-serif;background:#14213d;color:#f1faee;margin:0;padding:20px;display:flex;justify-content:center}
+main{width:100%;max-width:600px}
+a{color:#ffd166}
+h2{font-size:1.05rem;margin:22px 0 4px;color:#ffd166}
+button,input,select{font-family:inherit;font-size:.95rem;border-radius:10px;border:1px solid #3d5380;padding:10px 12px;margin-top:8px;box-sizing:border-box;max-width:100%}
+input,select{width:100%;background:#0f1a30;color:#f1faee}
+button{background:#ffd166;color:#14213d;font-weight:700;border:0;width:100%;text-align:left}
+button.sec{background:transparent;color:#f1faee;border:1px solid #3d5380}
+.card{background:#1d2f52;border-radius:12px;padding:12px 14px;margin-top:10px}
+.card small{display:block;opacity:.88;margin-top:3px}
+.et{display:inline-block;margin:6px 6px 0 0;padding:2px 9px;border-radius:999px;background:#ffd166;color:#14213d;font-size:.78rem;font-weight:800}
+.nota{margin-top:8px;padding:8px 10px;border-radius:8px;background:#0f1a30;font-size:.9rem}
+.aviso{margin-top:8px;padding:8px 10px;border-radius:8px;background:#3b2a1a;border:1px solid #ffd166;font-size:.9rem}
+#msg{min-height:1.4em;color:#ffd166;position:sticky;top:6px;background:#14213d;padding:6px 0;z-index:3}
+.fila{display:flex;gap:8px}.fila>*{flex:1}
+.oculto{display:none!important}
+</style></head>
+<body><main>
+<p><a href="admin.html">← Panel de administrador</a></p>
+<h1>Ida/vuelta y online</h1>
+<p style="opacity:.85;margin-top:0">Para cambiar tú directamente un partido de parejas, sin que lo pida el capitán: <b>cambiar la ida por la vuelta</b> o <b>jugarlo online desde Sweet Dreams</b>. La diana se asigna sola y todo se puede deshacer aquí mismo.</p>
+<p id="estado">Cargando…</p>
+<p id="msg" role="status"></p>
+<div id="panel" class="oculto">
+  <div class="fila">
+    <select id="niv"></select>
+    <input id="buscar" type="text" placeholder="Buscar equipo">
+  </div>
+  <div id="lista"></div>
+</div>
+<script>
+window.addEventListener("error", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
+});
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFirestore, doc, collection, getDoc, getDocs, writeBatch, query, where, orderBy, Timestamp, documentId } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { clave, efectivo, etiquetas, vueltaDe, motivoNoCruce, motivoNoOnline, dianasLibres, msDe, opsCruce, opsOnline, opsQuitarOnline, escribir, textoCruce, diaCorto, aMs } from "./cambios-liga.js";
+const app = initializeApp({
+  apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
+  authDomain: "sweet-dreams-darts.firebaseapp.com",
+  projectId: "sweet-dreams-darts",
+  storageBucket: "sweet-dreams-darts.firebasestorage.app",
+  messagingSenderId: "232279000383",
+  appId: "1:232279000383:web:f40d9ae65a4266f372bf8a"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+const F = { doc: doc, writeBatch: writeBatch, Timestamp: Timestamp };
+const $ = (id) => document.getElementById(id);
+const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+const pad = (n) => String(n).padStart(2, "0");
+const hoyIso = () => { const d = new Date(Date.now() - 6 * 3600000); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+const rango = (t) => (t ? Number(String(t).slice(1)) * 10 + (t[0] === "I" ? 1 : 0) : 0);
+let dianas = [], partidos = [], cambios = new Map(), sdEquipos = new Set();
+const msg = (t) => { $("msg").textContent = t; };
+
+async function ocupadosDia(dia) {
+  const s = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(aMs(dia, 6, 0))), where("inicio", "<", Timestamp.fromMillis(aMs(dia, 30, 0)))));
+  return new Map(s.docs.map((d) => [d.id, d.data()]));
+}
+const bloqueoDe = async (id) => { const b = await getDoc(doc(db, "liga_bloqueos", id)); return b.exists() ? Object.assign({ id: id }, b.data()) : null; };
+
+async function cargarNivel() {
+  msg("");
+  $("lista").innerHTML = "";
+  const n = Number($("niv").value);
+  const [ps, cs] = await Promise.all([getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", "parejas"), where("nivel", "==", n))),
+    getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`")))]);
+  const todos = ps.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const ultima = Math.max(0, ...todos.map((p) => rango(p.temporada)));
+  partidos = todos.filter((p) => rango(p.temporada) === ultima);
+  cambios = new Map(cs.docs.map((d) => [d.id.slice(7), d.data()]));
+  sdEquipos = new Set(partidos.filter((p) => p.enSweetDreams === true).map((p) => clave(p.local)));
+  pintar();
+}
+
+function pintar() {
+  const cont = $("lista"), hoy = hoyIso(), f = clave($("buscar").value);
+  cont.innerHTML = "";
+  const lista = partidos.map((p) => ({ p: p, e: efectivo(p, cambios) }))
+    .filter((x) => (x.e.estado === "aplazado" || x.e.dia >= hoy) && (!f || clave(x.e.local).includes(f) || clave(x.e.visitante).includes(f)))
+    .sort((a, b) => a.e.dia.localeCompare(b.e.dia) || a.e.hora.localeCompare(b.e.hora));
+  if (!lista.length) { cont.append(el("p", "No hay partidos próximos en este nivel.")); return; }
+  for (const { p, e } of lista) {
+    const c = el("div", "", "card");
+    c.append(el("strong", "J" + e.jornada + " · " + (e.estado === "aplazado" ? "aplazado" : diaCorto(e.dia) + " · " + e.hora)));
+    c.append(el("div", e.local + " – " + e.visitante));
+    if (e.sede) c.append(el("small", "Sede: " + e.sede + (e.enSD ? " · en Sweet Dreams" : "")));
+    if (e.estado === "movido") c.append(el("span", "Cambiado de fecha", "et"));
+    etiquetas(e).forEach((t) => c.append(el("span", t, "et")));
+    const caja = el("div");
+    const v = vueltaDe(p, partidos), eV = v ? efectivo(v, cambios) : null;
+    if (e.cruce || (v && motivoNoCruce(e, eV, hoy) === "")) {
+      const b = el("button", e.cruce ? "↩️ Deshacer el cambio de ida y vuelta" : "🔁 Cambiar ida por vuelta (con la J" + (v ? v.jornada : "?") + ")", "sec");
+      b.onclick = () => prepararCruce(p, v, caja);
+      c.append(b);
+    }
+    if (e.online) {
+      const b = el("button", "Quitar el online (liberar la diana)", "sec");
+      b.onclick = async () => { if (!confirm("¿Quitar el online y liberar la diana?")) return; try { await escribir(db, F, opsQuitarOnline(e, await bloqueoDe(p.id))); msg("✔ Online quitado y diana liberada."); await cargarNivel(); } catch (er) { msg("Error: " + (er.code || er.message)); } };
+      c.append(b);
+    } else if (motivoNoOnline(e, hoy) === "") {
+      const b = el("button", "💻 Jugar online desde Sweet Dreams", "sec");
+      b.onclick = () => prepararOnline(p, caja);
+      c.append(b);
+    }
+    c.append(caja);
+    cont.append(c);
+  }
+}
+
+async function prepararCruce(pA, pB, caja) {
+  caja.innerHTML = "";
+  const eA = efectivo(pA, cambios), eB = efectivo(pB, cambios);
+  const mot = motivoNoCruce(eA, eB, hoyIso());
+  if (mot) { caja.append(el("div", mot, "aviso")); return; }
+  caja.append(el("div", (eA.cruce ? "Volverá a quedar como en el calendario: " : "Quedará así: ") + textoCruce(eA, eB), "nota"));
+  const [bA, bB] = await Promise.all([bloqueoDe(pA.id), bloqueoDe(pB.id)]);
+  const entra = !eA.enSD && eB.enSD ? eA : !eB.enSD && eA.enSD ? eB : null;   // el que pasa a jugarse en Sweet Dreams
+  const aplicar = async (dId, nombre) => {
+    try { await escribir(db, F, opsCruce(pA, pB, eA, eB, bA, bB, dId ? { [entra.id]: dId } : {})); msg("✔ Hecho: " + textoCruce(eA, eB) + (nombre ? " (" + nombre + ")" : "")); await cargarNivel(); }
+    catch (er) { msg("Error: " + (er.code || er.message)); }
+  };
+  if (!entra) { const a = el("button", "Aplicar"); a.onclick = () => aplicar("", ""); caja.append(a); return; }
+  const oc = await ocupadosDia(entra.dia);
+  const libres = dianasLibres(entra.categoria, entra.nivel, msDe(entra.dia, entra.hora), dianas, (id) => { const x = oc.get(id); return !!x && x.partidoId !== entra.id; }, false);
+  if (!libres.length) { caja.append(el("div", "⚠ El " + diaCorto(entra.dia) + " a las " + entra.hora + " no hay ninguna diana libre. Libera una en «Equipos y bloqueos de liga» y vuelve.", "aviso")); return; }
+  libres.forEach((d, i) => { const a = el("button", (i === 0 ? "Aplicar (automático): " : "Aplicar en ") + d.nombre + " el " + diaCorto(entra.dia)); a.onclick = () => aplicar(d.id, d.nombre); caja.append(a); });
+}
+
+async function prepararOnline(p, caja) {
+  caja.innerHTML = "";
+  const e = efectivo(p, cambios);
+  const candidatos = [e.local, e.visitante].filter((n) => sdEquipos.has(clave(n)));
+  const opciones = candidatos.length === 1 ? candidatos : [e.local, e.visitante];
+  const sel = document.createElement("select");
+  opciones.forEach((n) => sel.add(new Option("Juega desde Sweet Dreams: " + n, n)));
+  if (opciones.length > 1) caja.append(el("small", "¿Qué equipo juega desde Sweet Dreams?"), sel);
+  const oc = await ocupadosDia(e.dia);
+  const libres = dianasLibres(e.categoria, e.nivel, msDe(e.dia, e.hora), dianas, (id) => { const x = oc.get(id); return !!x && x.partidoId !== e.id; }, true);
+  caja.append(el("div", "Se bloqueará una diana G3 el " + diaCorto(e.dia) + " a las " + e.hora + ".", "nota"));
+  if (!libres.length) { caja.append(el("div", "⚠ A esa hora no hay ninguna diana G3 libre. Libera una en «Equipos y bloqueos de liga» y vuelve.", "aviso")); return; }
+  libres.forEach((d, i) => {
+    const a = el("button", (i === 0 ? "Aplicar (automático): " : "Aplicar en ") + d.nombre);
+    a.onclick = async () => { try { const eq = opciones.length > 1 ? sel.value : opciones[0]; await escribir(db, F, opsOnline(e, d.id, eq)); msg("✔ " + eq + " juega online desde Sweet Dreams en la " + d.nombre + "."); await cargarNivel(); } catch (er) { msg("Error: " + (er.code || er.message)); } };
+    caja.append(a);
+  });
+}
+
+$("niv").onchange = () => cargarNivel().catch((e) => msg("Error: " + (e.code || e.message)));
+$("buscar").oninput = pintar;
+
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    const yo = await getDoc(doc(db, "users", u.uid));
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
+    for (let i = 1; i <= 13; i++) $("niv").add(new Option("Parejas · nivel " + i, i));
+    $("estado").textContent = "";
+    $("panel").classList.remove("oculto");
+    await cargarNivel();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
