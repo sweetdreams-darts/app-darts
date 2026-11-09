@@ -40,6 +40,15 @@ window.addEventListener("error", function (e) {
   var s = document.getElementById("estado");
   if (s) s.textContent = "Error en la página: " + e.message + " (línea " + e.lineno + ")";
 });
+window.addEventListener("unhandledrejection", function (e) {
+  var s = document.getElementById("estado");
+  if (s) s.textContent = "Error: " + ((e.reason && (e.reason.code || e.reason.message)) || e.reason);
+});
+// si a los 20 segundos sigue sin arrancar, se dice
+setTimeout(function () {
+  var s = document.getElementById("estado");
+  if (s && s.textContent === "Cargando…") s.textContent = "No ha podido arrancar la página (no se ha cargado el programa). Cierra la pestaña y vuelve a abrirla; si sigue así, mándame una captura.";
+}, 20000);
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
@@ -58,6 +67,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt !== undefined && txt !== null && txt !== "") e.textContent = txt; if (cls) e.className = cls; return e; };
+$("estado").textContent = "Conectando…";
+// Ninguna espera es infinita: si el servidor no contesta en «ms», se da error y se sigue.
+const conTiempo = (pr, ms) => Promise.race([pr, new Promise((_, no) => setTimeout(() => no(new Error("el servidor no contesta (" + Math.round(ms / 1000) + " s)")), ms))]);
 
 // <logica>
 const pad = (n) => String(n).padStart(2, "0");
@@ -171,7 +183,8 @@ function tarjeta(s) {
   card.append(el("small", s.tipo === "aplazar" ? "Pide: APLAZARLO" : s.tipo === "ida_vuelta" ? "Pide: 🔁 CAMBIAR IDA POR VUELTA" : s.tipo === "online" ? "Pide: 💻 JUGAR ONLINE DESDE SWEET DREAMS" : "Pide: pasarlo al " + diaLargo(s.diaNuevo) + " a las " + s.horaNueva));
   card.append(el("small", s.rivalDeAcuerdo ? "✔ El otro equipo está de acuerdo" : "⚠ Falta el acuerdo del otro equipo"));
   if (s.nota) card.append(el("div", "💬 " + s.nota, "nota"));
-  if (!c.p) { card.append(el("div", "No encuentro este partido en el calendario de la liga.", "aviso")); }
+  if (c.error) { card.append(el("div", "⚠ No se ha podido cargar este partido: " + c.error, "aviso")); const rt = el("button", "Reintentar"); rt.onclick = () => hacer(async () => {}, ""); card.append(rt); }
+  else if (!c.p) { card.append(el("div", "No encuentro este partido en el calendario de la liga.", "aviso")); }
   else if (s.tipo === "ida_vuelta" || s.tipo === "online") tarjetaEspecial(s, c, card);
   else {
     const ya = estaAplicada(s, c.b, c.p);
@@ -242,4 +255,69 @@ function tarjetaEspecial(s, c, card) {
   const entra = !eA.enSD && eB.enSD ? eA : !eB.enSD && eA.enSD ? eB : null;   // el partido que pasa a jugarse en Sweet Dreams
   const aplicar = (dId, nombre) => hacer(async () => { await escribirEsp(db, F, opsCruce(pA, pB, eA, eB, c.b, c.bB, dId ? { [entra.id]: dId } : {})); await resolver(s, "aprobada", "Hecho: " + textoCruce(eA, eB) + (nombre ? " En Sweet Dreams jugáis en la " + nombre + "." : "") + " Avisad a la organización."); }, "✔ Ida y vuelta cambiadas" + (nombre ? " (" + nombre + ")" : "") + ".");
   if (!entra) { const a = el("button", "Aprobar el cambio"); a.onclick = () => aplicar("", ""); card.append(a); return; }
-  if (!c.abierta) { cons
+  if (!c.abierta) { const v = el("button", "Ver dianas libres el " + diaCorto(entra.dia)); v.onclick = () => abrirContexto(s); card.append(v); return; }
+  const libres = libresEsp(entra.categoria, entra.nivel, msDe(entra.dia, entra.hora), dianas, (id) => { const x = c.slots.get(id); return !!x && x.partidoId !== entra.id; }, false);
+  if (!libres.length) return avisar("⚠ El " + diaLargo(entra.dia) + " a las " + entra.hora + " no hay ninguna diana libre. Habla con la capitana o libera una diana en «Liga: equipos y bloqueos».");
+  libres.forEach((d, i) => { const a = el("button", (i === 0 ? "Aprobar (automático): " : "Aprobar y poner en ") + d.nombre + " el " + diaCorto(entra.dia)); a.onclick = () => aplicar(d.id, d.nombre); card.append(a); });
+}
+const F = { doc: doc, writeBatch: writeBatch, Timestamp: Timestamp };
+const hoyIso = () => { const d = new Date(Date.now() - 6 * 3600000); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+function render() {
+  const pen = solicitudes.filter((s) => s.estado === "pendiente"), res = solicitudes.filter((s) => s.estado !== "pendiente").slice(0, 10);
+  $("nPend").textContent = "(" + pen.length + ")";
+  $("pendientes").innerHTML = "";
+  if (!pen.length) $("pendientes").append(el("p", "No hay solicitudes pendientes.", "vacio"));
+  pen.forEach((s) => $("pendientes").append(tarjeta(s)));
+  $("resueltas").innerHTML = "";
+  if (!res.length) $("resueltas").append(el("p", "Todavía no has resuelto ninguna.", "vacio"));
+  res.forEach((s) => {
+    const c = el("div", "", "card");
+    c.append(el("strong", s.equipoNombre + " · " + s.local + " – " + s.visitante), el("small", s.tipo === "aplazar" ? "Aplazarlo" : s.tipo === "ida_vuelta" ? "Cambiar ida por vuelta" : s.tipo === "online" ? "Jugar online desde Sweet Dreams" : "Al " + diaCorto(s.diaNuevo) + " a las " + s.horaNueva), el("span", s.estado === "aprobada" ? "✔ Aprobada" : "✘ Rechazada", "est " + (s.estado === "aprobada" ? "ap" : "re")));
+    if (s.respuesta) c.append(el("small", s.respuesta));
+    $("resueltas").append(c);
+  });
+}
+async function cargar() {
+  if ($("panel").classList.contains("oculto")) $("estado").textContent = "Cargando solicitudes…";
+  const snap = await conTiempo(getDocs(query(collection(db, "cambios_pedidos"), orderBy("creado", "desc"), limit(40))), 20000);
+  cambiosTodos = null;
+  solicitudes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+  const nuevo = new Map();
+  const pend = solicitudes.filter((s) => s.estado === "pendiente");
+  if ($("panel").classList.contains("oculto")) $("estado").textContent = "Preparando " + pend.length + (pend.length === 1 ? " solicitud pendiente…" : " solicitudes pendientes…");
+  await Promise.all(pend.map(async (s) => { try { await conTiempo(prepararUna(s, nuevo), 20000); } catch (e) { nuevo.set(s.id, { error: e.code || e.message }); } }));
+  ctx = nuevo;
+  $("estado").textContent = "";
+  $("panel").classList.remove("oculto");
+  render();
+}
+async function prepararUna(s, nuevo) {
+  {
+    const [p, b] = await Promise.all([getDoc(doc(db, "liga_partidos", s.partidoId)), getDoc(doc(db, "liga_bloqueos", s.partidoId))]);
+    const antes = ctx.get(s.id);
+    const x = { p: p.exists() ? p.data() : null, b: b.exists() ? Object.assign({ id: s.partidoId }, b.data()) : null, abierta: false, slots: antes && antes.slots, delDia: antes && antes.delDia };
+    if ((s.tipo === "ida_vuelta" || s.tipo === "online") && x.p) {
+      if (!cambiosTodos) { cambiosTodos = new Map(); (await getDocs(query(collection(db, "liga_config"), where(documentId(), ">=", "cambio_"), where(documentId(), "<", "cambio`")))).forEach((d) => cambiosTodos.set(d.id.slice(7), d.data())); }
+      x.cambios = cambiosTodos;
+      x.partidos = (await getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", x.p.categoria), where("nivel", "==", x.p.nivel)))).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      const v = vueltaDe(Object.assign({ id: s.partidoId }, x.p), x.partidos);
+      if (v) { const bb = await getDoc(doc(db, "liga_bloqueos", v.id)); x.bB = bb.exists() ? Object.assign({ id: v.id }, bb.data()) : null; }
+    }
+    nuevo.set(s.id, x);
+  }
+}
+onAuthStateChanged(auth, async (u) => {
+  $("panel").classList.add("oculto");
+  if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
+  try {
+    $("estado").textContent = "Comprobando tu cuenta…";
+    const yo = await conTiempo(getDoc(doc(db, "users", u.uid)), 20000);
+    if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
+    yoUid = u.uid;
+    $("estado").textContent = "Cargando las dianas…";
+    dianas = (await conTiempo(getDocs(query(collection(db, "dartboards"), orderBy("orden"))), 20000)).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
+    await cargar();
+  } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }
+});
+</script>
+</main></body></html>
