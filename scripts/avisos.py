@@ -524,7 +524,7 @@ def main():
     if ultima_inv is None:
         ultima_inv = int(time.time() * 1000)
         escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitaciones", "fields": {"ultimaMs": valor(ultima_inv)}}}])
-        marcas = {}
+    marcas = {}
     for col, ruta, _ in VIGILAR:
         m = leer_marca(ruta)
         if m is None:   # la primera vez se empieza desde ahora, para no avisar de cosas antiguas
@@ -545,7 +545,7 @@ def main():
                 guardar_estado(ultima, ultima_u)
             recordatorios()
             revisar_tarjetas()
-                for col, ruta, hacer in VIGILAR:
+            for col, ruta, hacer in VIGILAR:
                 try:
                     nueva_m = revisar_coleccion(col, marcas[col], hacer)
                     if nueva_m != marcas[col]:
