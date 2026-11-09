@@ -91,6 +91,7 @@ const norm = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCa
 let datos = [], locales = [], localesCargados = false, nombresSD = new Set(), seq = 0, cambios = new Map(), misEquipos = new Set();
 // misma clave de equipo que usa la pantalla de Capitanes («parejas|3|los primos»)
 const claveCap = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 // <logica>
 function filtrar(datos, o) {
   const ult = {};
@@ -116,7 +117,11 @@ function filtrar(datos, o) {
 }
 function ajustar(datos, cambios) {
   const res = [];
-  for (const x of datos) {
+  for (let x of datos) {
+    // «cambiar ida por vuelta» y «jugar online desde Sweet Dreams»
+    const cr = cambios.get(x.id + "~cruce"), on = cambios.get(x.id + "~online");
+    if (cr || on) x = Object.assign({}, x, cr ? { local: cr.local, visitante: cr.visitante, sede: cr.sede, enSweetDreams: cr.enSD === true } : {}, on ? { enSweetDreams: true } : {},
+      { especial: [cr ? "🔁 Ida y vuelta cambiadas" : "", on ? "💻 Online: " + on.equipo + " juega desde Sweet Dreams" : ""].filter(Boolean) });
     const c = cambios.get(x.id);
     if (c && c.estado === "movido") {
       res.push(Object.assign({}, x, { dia: c.dia, hora: c.hora, fechaMs: new Date(c.dia + "T" + c.hora + ":00").getTime(), cambio: "Cambiado de fecha (antes: " + c.diaOriginal.slice(8) + "/" + c.diaOriginal.slice(5, 7) + " a las " + c.horaOriginal + ")" }));
@@ -201,6 +206,17 @@ async function cargar() {
         }
       }
     }
+    // con «solo Sweet Dreams», también los partidos que pasan a jugarse aquí (ida/vuelta cambiadas u online)
+    if (cat0 === "parejas" && $("soloSD").checked && $("niv").value === "todos") {
+      const ya = new Set(datos.map((x) => x.id));
+      for (const [k, c] of cambios) {
+        if (!(k.endsWith("~cruce") && c.enSD) && !k.endsWith("~online")) continue;
+        const id = k.split("~")[0];
+        if (ya.has(id)) continue;
+        const s = await getDoc(doc(db, "liga_partidos", id));
+        if (s.exists()) { const v = s.data(); datos.push({ id: id, categoria: v.categoria, nivel: v.nivel, temporada: v.temporada, jornada: v.jornada, dia: v.dia, hora: v.hora, local: v.local, visitante: v.visitante, sede: v.sede, nota: v.nota, enSweetDreams: v.enSweetDreams, fechaMs: v.fecha.toMillis() }); ya.add(id); }
+      }
+    }
     const cat = $("cat").value, niv = $("niv").value;
     const prev = $("equipo").value;
     $("equipo").innerHTML = "";
@@ -238,11 +254,12 @@ function pintar() {
     if (p.sede) c.append(el("small", "Sede: " + p.sede));
     if (p.nota) c.append(el("small", p.nota));
     if (p.cambio) c.append(el("span", p.cambio, "sd"));
+    (p.especial || []).forEach((t) => c.append(el("span", t, "sd")));
     const esSD = p.extra ? true : p.categoria === "parejas" ? p.enSweetDreams : (nombresSD.has(norm(p.local)) || nombresSD.has(norm(p.visitante)));
     if (esSD) c.append(el("span", "En Sweet Dreams", "sd"));
     // si eres capitán de uno de los dos equipos, puedes pedir el cambio desde aquí
     const k = (eq) => p.categoria + "|" + p.nivel + "|" + claveCap(eq);
-    if (esSD && misEquipos.size && (!p.dia || p.dia >= iso(hoy)) && (misEquipos.has(k(p.local)) || misEquipos.has(k(p.visitante)))) {
+    if ((esSD || p.categoria === "parejas") && misEquipos.size && (!p.dia || p.dia >= iso(hoy)) && (misEquipos.has(k(p.local)) || misEquipos.has(k(p.visitante)))) {
       const a = el("a", "✏️ Pedir cambio", "cap-btn"); a.href = "capitan.html?cambio=" + encodeURIComponent(p.id); c.append(a);
     }
     cont.append(c);
@@ -341,7 +358,7 @@ onAuthStateChanged(auth, async (u) => {
   try {
     const yo = await getDoc(doc(db, "users", u.uid));
     if (!yo.exists() || !["player", "admin"].includes(yo.data().role)) { $("estado").textContent = "La Zona Liga es solo para jugadores oficiales acreditados por el bar."; return; }
-      misEquipos = new Set(yo.data().capitanDe || []);
+    misEquipos = new Set(yo.data().capitanDe || []);
     try {
       const c = await getDoc(doc(db, "liga_config", "equiposSweetDreams"));
       nombresSD = new Set(c.exists() ? (c.data().nombres || []).map(norm) : []);
