@@ -61,6 +61,7 @@ const iso = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.g
 const minutos = (t) => { const p = t.split(":").map(Number); return p[0] * 60 + p[1]; };
 let visperas = [];
 let user = null, dianas = [], cfg = null, horario = null, lista = [], jornada = null, dianaSel = null, ocupados = new Set();
+let esAdmin = false;
 
 function mensaje(t, ok) { $("msg").textContent = t || ""; $("msg").className = ok ? "ok" : ""; }
 
@@ -82,10 +83,32 @@ function calcularJornadas() {
   return res;
 }
 
+// Un hueco está ocupado si es de la liga, de una reserva que sigue existiendo o de una reserva antigua (sin «reserva»).
+// Si su reserva se borró, el hueco queda libre y se puede volver a reservar.
 async function cargarOcupados() {
   ocupados = new Set();
   const q = query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromMillis(jornada.abre)), where("inicio", "<", Timestamp.fromMillis(jornada.cierra)));
-  (await getDocs(q)).forEach((d) => ocupados.add(d.id));
+  const qr = query(collection(db, "reservations"), where("inicio", ">=", Timestamp.fromMillis(jornada.abre - cfg.maxHoras * 3600000)), where("inicio", "<", Timestamp.fromMillis(jornada.cierra)));
+  const [sl, rs] = await Promise.all([getDocs(q), getDocs(qr)]);
+  const vivas = new Set(rs.docs.map((d) => d.id));
+  sl.forEach((d) => { const x = d.data(); if (x.tipo !== "reserva" || !x.reserva || vivas.has(x.reserva)) ocupados.add(d.id); });
+}
+
+// Ficha de cupo libre (una por cada reserva activa permitida): la que no existe, la de una reserva ya borrada o la de una que ya terminó.
+async function fichaLibre() {
+  const ahora = Date.now();
+  const [fichas, mias] = await Promise.all([
+    Promise.all(Array.from({ length: cfg.maxActivas }, (_, n) => getDoc(doc(db, "cupo_reservas", user.uid + "_" + n)))),
+    getDocs(query(collection(db, "reservations"), where("uid", "==", user.uid)))
+  ]);
+  const vivas = new Set(mias.docs.map((d) => d.id));
+  let usada = -1;
+  for (let n = 0; n < fichas.length; n++) {
+    const f = fichas[n];
+    if (!f.exists()) return { n: n, nueva: true };
+    if (usada < 0 && (!vivas.has(f.data().reserva) || f.data().fin.toMillis() < ahora - MIN)) usada = n;
+  }
+  return usada >= 0 ? { n: usada, nueva: false } : null;
 }
 
 function pintarDianas() {
@@ -151,17 +174,29 @@ $("reservar").onclick = async () => {
   $("reservar").disabled = true;
   mensaje("Reservando…");
   try {
+    const ficha = await fichaLibre();
+    if (!ficha && !esAdmin) {
+      mensaje("Ya tienes " + cfg.maxActivas + " reservas activas, que es el máximo. Cancela alguna o espera a que termine.");
+      $("reservar").disabled = false;
+      return;
+    }
+    const refR = doc(collection(db, "reservations"));
     const b = writeBatch(db);
     for (let s = ini; s < fin; s += tr) {
-      b.set(doc(db, "slots", dianaSel + "_" + s), { dianaId: dianaSel, inicio: Timestamp.fromMillis(s), uid: user.uid, tipo: "reserva" });
+      b.set(doc(db, "slots", dianaSel + "_" + s), { dianaId: dianaSel, inicio: Timestamp.fromMillis(s), uid: user.uid, tipo: "reserva", reserva: refR.id });
     }
-    b.set(doc(collection(db, "reservations")), { uid: user.uid, dianaId: dianaSel, inicio: Timestamp.fromMillis(ini), fin: Timestamp.fromMillis(fin), creado: serverTimestamp() });
+    const datos = { uid: user.uid, dianaId: dianaSel, inicio: Timestamp.fromMillis(ini), fin: Timestamp.fromMillis(fin), creado: serverTimestamp() };
+    if (ficha) {
+      datos.cupo = ficha.n;
+      b.set(doc(db, "cupo_reservas", user.uid + "_" + ficha.n), { uid: user.uid, n: ficha.n, reserva: refR.id, fin: Timestamp.fromMillis(fin) });
+    }
+    b.set(refR, datos);
     await b.commit();
     const nombre = dianas.find((d) => d.id === dianaSel).nombre;
     mensaje("✔ Reserva hecha: " + nombre + ", " + jornada.etiqueta + ", de " + hhmm(ini) + " a " + hhmm(fin) + ".", true);
   } catch (e) {
     mensaje(e.code === "permission-denied"
-      ? "No se ha podido reservar: alguien ha reservado ese hueco hace un momento, o ya no se cumple la antelación mínima, o tu email todavía no está verificado. Elige otra hora."
+      ? "No se ha podido reservar: alguien ha reservado ese hueco hace un momento, ya no se cumple la antelación mínima, la reserva es más larga de lo permitido, ya tienes el máximo de reservas activas o tu email todavía no está verificado. Elige otra hora."
       : "Error: " + (e.code || e.message));
   }
   await cargarOcupados();
@@ -173,14 +208,18 @@ onAuthStateChanged(auth, async (u) => {
   $("panel").classList.add("oculto");
   if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
   try {
-    const [d, r, h, v] = await Promise.all([
+    const [d, r, h, v, f] = await Promise.all([
       getDocs(query(collection(db, "dartboards"), orderBy("orden"))),
       getDoc(doc(db, "settings", "reservas")),
       getDoc(doc(db, "settings", "horario")),
-      getDoc(doc(db, "settings", "visperas"))
+      getDoc(doc(db, "settings", "visperas")),
+      getDoc(doc(db, "users", u.uid))
     ]);
     dianas = d.docs.map((x) => ({ id: x.id, ...x.data() })).filter((x) => x.activa);
-    cfg = { min: r.data().minAntelacionMin, max: r.data().maxDiasAntelacion, tramo: r.data().tramoMin };
+    esAdmin = f.exists() && f.data().role === "admin";
+    // los mismos valores por defecto que las reglas de Firebase y limites-reserva.js
+    cfg = { min: r.data().minAntelacionMin, max: r.data().maxDiasAntelacion, tramo: r.data().tramoMin,
+      maxActivas: Number(r.data().maxActivas) > 0 ? Number(r.data().maxActivas) : 3, maxHoras: Number(r.data().maxHoras) > 0 ? Number(r.data().maxHoras) : 4 };
     horario = h.data();
     visperas = v.exists() ? (v.data().fechas || []) : [];
     lista = calcularJornadas();

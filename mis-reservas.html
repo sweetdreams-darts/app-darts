@@ -22,7 +22,7 @@ a{color:#ffd166}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, collection, getDocs, query, where, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, collection, getDoc, getDocs, query, where, writeBatch, Timestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -89,6 +89,11 @@ async function cancelar(r) {
       if (x.dianaId === r.dianaId && x.uid === user.uid && x.tipo === "reserva" && x.inicio.toMillis() > Date.now() + MIN) b.delete(s.ref);
     });
     b.delete(doc(db, "reservations", r.id));
+    // la ficha de cupo de esta reserva queda libre para otra reserva
+    if (Number.isInteger(r.cupo)) {
+      const f = await getDoc(doc(db, "cupo_reservas", user.uid + "_" + r.cupo));
+      if (f.exists() && f.data().reserva === r.id) b.delete(f.ref);
+    }
     await b.commit();
     mensaje("✔ Reserva cancelada.", true);
   } catch (e) { mensaje("No se pudo cancelar: " + (e.code || e.message)); }

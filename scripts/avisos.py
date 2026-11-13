@@ -1,6 +1,7 @@
 # Avisos push: revisa reservas nuevas, usuarios nuevos y recordatorios, y envía notificaciones con Firebase Cloud Messaging.
-# También comprueba las tarjetas NFC de los camareros, da los puntos a los embajadores cuando viene un amigo suyo
-# y, una vez por jornada, borra los datos de las cuentas borradas.
+# También comprueba las tarjetas NFC de los camareros, da los puntos a los embajadores cuando viene un amigo suyo,
+# mantiene la cuenta protegida de cada persona (cuentas/{uid}: alta, bloqueo y número de socio)
+# y, una vez por jornada, borra todos los datos de las cuentas que ya no existen en Firebase Authentication.
 import json, os, re, time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -21,7 +22,8 @@ MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "
 K_META = bytes.fromhex(os.environ.get("NFC_K_META") or "00" * 16)
 K_FILE = bytes.fromhex(os.environ.get("NFC_K_FILE") or "00" * 16)
 cred = service_account.Credentials.from_service_account_info(
-    CUENTA, scopes=["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/firebase.messaging"])
+    CUENTA, scopes=["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/firebase.messaging",
+                    "https://www.googleapis.com/auth/identitytoolkit"])
 cache = {}
 
 
@@ -136,6 +138,10 @@ def revisar_usuarios(ultima):
         alta = ms_de(campo(d, "creado", "timestampValue"))
         mayor = max(mayor, alta + 1)
         uid = id_de(d)
+        try:
+            asegurar_cuenta(uid, alta)
+        except Exception as e:
+            print("No se ha podido preparar la cuenta protegida:", e)
         nombre = (campo(d, "nombre") or "").strip() or "Sin nombre"
         cuerpo = f"{nombre} se ha registrado ({fecha_bonita(alta)}, {hora(alta)}). Toca para verlo."
         for admin in admins():
@@ -146,14 +152,69 @@ def revisar_usuarios(ultima):
     return mayor
 
 
+# ---------------- cuenta protegida (cuentas/{uid}) ----------------
+def asegurar_cuenta(uid, alta_ms):
+    """Si la persona no tiene cuenta protegida (o le falta la fecha de alta), se la pone con la fecha de su ficha.
+    Si ya la tiene, no se toca: así, aunque borre su ficha y la vuelva a crear, su alta sigue siendo la primera."""
+    c = leer(f"cuentas/{uid}")
+    if c and "alta" in c.get("fields", {}):
+        return
+    escribir([cambiar(f"cuentas/{uid}", {"alta": {"ms": alta_ms}})])
+
+
+def sincronizar_cuentas():
+    """Rellena la cuenta protegida de todas las fichas: fecha de alta, número de socio y bloqueo de reservas.
+    Solo añade: quitar un bloqueo lo hace el administrador desde su panel."""
+    ahora = int(time.time() * 1000)
+    cuentas = {id_de(d): d.get("fields", {}) for d in listar("cuentas")}
+    writes = []
+    for u in listar("users"):
+        uid, c = id_de(u), cuentas.get(id_de(u), {})
+        cambios = {}
+        if "alta" not in c:
+            creado = campo(u, "creado", "timestampValue")
+            cambios["alta"] = {"ms": ms_de(creado) if creado else ahora}
+        num = int(campo(u, "socioNum", "integerValue") or 0)
+        if num and not int(c.get("socioNum", {}).get("integerValue", 0) or 0):
+            cambios["socioNum"] = num
+        if campo(u, "bloqueado", "booleanValue") is True and c.get("bloqueado", {}).get("booleanValue") is not True:
+            cambios["bloqueado"] = True
+        if cambios:
+            writes.append(cambiar(f"cuentas/{uid}", cambios))
+    escribir(writes)
+    print(f"Cuentas protegidas: {len(writes)} actualizada(s)")
+    return len(writes)
+
+
+def existen_en_auth(uids, control):
+    """De esos uids, cuáles siguen existiendo en Firebase Authentication. Devuelve None si no se ha podido comprobar bien.
+    «control» es una cuenta que seguro que existe (un administrador): si la respuesta no la trae, algo va mal y no se borra nada."""
+    url = f"https://identitytoolkit.googleapis.com/v1/projects/{PROYECTO}/accounts:lookup"
+    uids, out = list(uids), set()
+    for i in range(0, len(uids), 90):
+        r = api("POST", url, json={"localId": uids[i:i + 90] + [control]})
+        if r.status_code != 200:
+            print("No se ha podido consultar Firebase Authentication:", r.status_code, r.text[:200])
+            return None
+        vistos = {x.get("localId") for x in r.json().get("users", [])}
+        if control not in vistos:
+            print("La consulta a Firebase Authentication no ha devuelto la cuenta de control: no se borra nada")
+            return None
+        out |= vistos
+    return out
+
+
 # ---------------- utilidades para leer y escribir varios documentos ----------------
 def leer(ruta):
     r = api("GET", f"{BASE}/{ruta}")
     return r.json() if r.status_code == 200 else None
 
 
-def listar(coleccion):
-    r = api("POST", f"{BASE}:runQuery", json={"structuredQuery": {"from": [{"collectionId": coleccion}]}})
+def listar(coleccion, campos=None):
+    q = {"from": [{"collectionId": coleccion}]}
+    if campos is not None:   # solo esos campos (o solo el nombre del documento si la lista está vacía)
+        q["select"] = {"fields": [{"fieldPath": c} for c in (campos or ["__name__"])]}
+    r = api("POST", f"{BASE}:runQuery", json={"structuredQuery": q})
     r.raise_for_status()
     return [x["document"] for x in r.json() if "document" in x]
 
@@ -247,38 +308,52 @@ def premiar_invitados(uids):
     ahora = int(time.time() * 1000)
     mes = mes_de(ahora)
     for uid in pendientes:
-        num = int(invs[f"invitaciones/{uid}"]["fields"]["ref"]["integerValue"])
-        quien = consulta("users", [("socioNum", "EQUAL", {"integerValue": str(num)})])
-        amigo = leer(f"users/{uid}")
-        nombre = nombre_corto(campo(amigo, "nombre") if amigo else "")
-        if not quien or id_de(quien[0]) == uid:
-            escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "no hay socio con ese número", "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
-            continue
-        socio = id_de(quien[0])
-        emb = leer(f"embajadores/{socio}")
-        if not emb or campo(emb, "activo", "booleanValue") is not True:
-            escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "quien invitó no es embajador activo", "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
-            print("Invitación de alguien que no es embajador activo: sin puntos (socio", num, ")")
-            continue
-        if cfg["maxMes"]:
-            ya = consulta("invitaciones", [("refUid", "EQUAL", {"stringValue": socio}), ("premiadoMes", "EQUAL", {"stringValue": mes})])
-            if sum(1 for d in ya if int(campo(d, "puntos", "integerValue") or 0) > 0) >= cfg["maxMes"]:
-                escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "tope del mes", "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
-                print("Embajadores: tope del mes para el socio", num)
-                continue
-        pts = cfg["puntos"]
-        sp = leer(f"socios_puntos/{socio}")
-        saldo = (int(campo(sp, "puntos", "integerValue") or 0) if sp else 0) + pts
-        mov = {"uid": socio, "tipo": "ajuste", "importe": 0, "puntos": pts, "saldo": saldo, "por": "robot", "porNombre": "Embajadores", "nota": "has invitado a " + nombre, "mes": mes, "creado": {"ms": ahora}}
-        escribir([
-            {"update": {"name": f"{RAIZ}/socios_puntos/{socio}", "fields": {"actualizado": valor({"ms": ahora})}}, "updateMask": {"fieldPaths": ["actualizado"]},
-             "updateTransforms": [{"fieldPath": "puntos", "increment": {"integerValue": str(pts)}}, {"fieldPath": "total", "increment": {"integerValue": str(pts)}}]},
-            {"update": {"name": f"{RAIZ}/socios_mov/inv_{uid}", "fields": {k: valor(v) for k, v in mov.items()}}, "currentDocument": {"exists": False}},
-            cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": pts, "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes}),
-        ])
-        for t in tokens_de(socio):
-            enviar(t, "🎉 Tu amigo ha venido", f"{nombre} ha venido a Sweet Dreams: +{pts} puntos para ti.", "invitar-" + uid, APP + "mis-puntos.html")
-        print(f"Embajadores: +{pts} puntos para el socio {num} por {nombre}")
+        # cada invitación por separado: si una falla, las demás siguen (y el robot no se queda atascado)
+        try:
+            premiar_uno(uid, invs[f"invitaciones/{uid}"], cfg, ahora, mes)
+        except Exception as e:
+            print("Embajadores: no se ha podido atender la invitación de", uid, "-", e)
+
+
+def premiar_uno(uid, inv, cfg, ahora, mes):
+    """Atiende una invitación: da los puntos al embajador (una sola vez por invitado) o apunta por qué no."""
+    num = int(inv["fields"]["ref"]["integerValue"])
+    if leer(f"socios_mov/inv_{uid}"):
+        # este invitado ya hizo ganar puntos a un embajador alguna vez: no se repite
+        escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "ya se premió antes", "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
+        print("Embajadores: invitación ya premiada antes, sin puntos")
+        return
+    quien = consulta("users", [("socioNum", "EQUAL", {"integerValue": str(num)})])
+    amigo = leer(f"users/{uid}")
+    nombre = nombre_corto(campo(amigo, "nombre") if amigo else "")
+    if not quien or id_de(quien[0]) == uid:
+        escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "no hay socio con ese número", "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
+        return
+    socio = id_de(quien[0])
+    emb = leer(f"embajadores/{socio}")
+    if not emb or campo(emb, "activo", "booleanValue") is not True:
+        escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "quien invitó no es embajador activo", "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
+        print("Invitación de alguien que no es embajador activo: sin puntos (socio", num, ")")
+        return
+    if cfg["maxMes"]:
+        ya = consulta("invitaciones", [("refUid", "EQUAL", {"stringValue": socio}), ("premiadoMes", "EQUAL", {"stringValue": mes})])
+        if sum(1 for d in ya if int(campo(d, "puntos", "integerValue") or 0) > 0) >= cfg["maxMes"]:
+            escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "tope del mes", "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
+            print("Embajadores: tope del mes para el socio", num)
+            return
+    pts = cfg["puntos"]
+    sp = leer(f"socios_puntos/{socio}")
+    saldo = (int(campo(sp, "puntos", "integerValue") or 0) if sp else 0) + pts
+    mov = {"uid": socio, "tipo": "ajuste", "importe": 0, "puntos": pts, "saldo": saldo, "por": "robot", "porNombre": "Embajadores", "nota": "has invitado a " + nombre, "mes": mes, "creado": {"ms": ahora}}
+    escribir([
+        {"update": {"name": f"{RAIZ}/socios_puntos/{socio}", "fields": {"actualizado": valor({"ms": ahora})}}, "updateMask": {"fieldPaths": ["actualizado"]},
+         "updateTransforms": [{"fieldPath": "puntos", "increment": {"integerValue": str(pts)}}, {"fieldPath": "total", "increment": {"integerValue": str(pts)}}]},
+        {"update": {"name": f"{RAIZ}/socios_mov/inv_{uid}", "fields": {k: valor(v) for k, v in mov.items()}}, "currentDocument": {"exists": False}},
+        cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": pts, "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes}),
+    ])
+    for t in tokens_de(socio):
+        enviar(t, "🎉 Tu amigo ha venido", f"{nombre} ha venido a Sweet Dreams: +{pts} puntos para ti.", "invitar-" + uid, APP + "mis-puntos.html")
+    print(f"Embajadores: +{pts} puntos para el socio {num} por {nombre}")
 
 
 # ---------------- tarjetas NFC de los camareros ----------------
@@ -406,26 +481,73 @@ def sin_borrados(v, borrados):
     return {"mapValue": {"fields": f}}
 
 
+VERSION_LIMPIEZA = 2
+# Colecciones cuyo documento se llama como la persona (uid) y colecciones que la guardan en el campo «uid».
+POR_ID = ("trivial_puntos", "invitaciones", "perfil_extra", "embajadores", "embajadores_solicitudes", "socios_puntos",
+          "ruleta_giros", "mis_equipos", "liga_vinculos", "liga_vinculos_pedidos", "cuentas")
+POR_CAMPO = ("socios_mov", "cupones", "push_tokens", "validaciones", "trivial_aperturas", "reservations", "cupo_reservas")
+
+
+def borrar_datos_de(uid, ahora):
+    """Todas las escrituras para borrar lo que queda guardado de una cuenta que ya no existe."""
+    writes = [{"delete": f"{RAIZ}/{col}/{uid}"} for col in POR_ID]
+    for col in POR_CAMPO:
+        for d in consulta(col, [("uid", "EQUAL", {"stringValue": uid})]):
+            writes.append({"delete": d["name"]})
+            if col == "trivial_aperturas":
+                writes.append({"delete": f"{RAIZ}/trivial_resp/{id_de(d)}"})
+            if col == "reservations":
+                # sus huecos que aún no han pasado
+                diana = campo(d, "dianaId") or ""
+                ini, fin = ms_de(campo(d, "inicio", "timestampValue")), ms_de(campo(d, "fin", "timestampValue"))
+                t = max(ini, ahora - ahora % 900000)
+                rutas = []
+                while t < fin:
+                    rutas.append(f"slots/{diana}_{t}")
+                    t += 900000
+                for ruta, sl in leer_varios(rutas).items():
+                    if campo(sl, "uid") == uid and campo(sl, "tipo") == "reserva":
+                        writes.append({"delete": f"{RAIZ}/{ruta}"})
+    for g in consulta("trivial_ganadores", [("uid", "EQUAL", {"stringValue": uid})]):
+        writes.append(cambiar(f"trivial_ganadores/{id_de(g)}", {"uid": "", "n": "Cuenta borrada"}))
+    return writes
+
+
 def limpiar_cuentas_borradas():
-    """Una vez por jornada: borra el trivial, la invitación, el perfil y los datos de embajador de las cuentas que ya no existen."""
+    """Una vez por jornada: rellena las cuentas protegidas y borra TODOS los datos de las cuentas que ya no existen.
+    Una cuenta solo se da por borrada si no tiene ficha y además ya no existe en Firebase Authentication
+    (quien solo borra su ficha sigue teniendo cuenta: sus datos no se tocan)."""
     ahora = int(time.time() * 1000)
     hoy = local(ahora - 6 * 3600000).strftime("%Y-%m-%d")   # la jornada del bar acaba a las 6:00
     est = leer("avisos_estado/limpieza")
-    if campo(est or {}, "dia") == hoy:
-        return 0
-    COLS = ("trivial_puntos", "invitaciones", "perfil_extra", "embajadores", "embajadores_solicitudes")
-    uids = sorted({id_de(d) for col in COLS for d in listar(col)})
-    existen = leer_varios([f"users/{u}" for u in uids])
-    borrados = [u for u in uids if f"users/{u}" not in existen]
+    version = int(campo(est or {}, "v", "integerValue") or 0)
+    if campo(est or {}, "dia") == hoy and (version >= VERSION_LIMPIEZA or campo(est or {}, "error")):
+        return 0   # ya se hizo hoy (o hoy no se pudo: se vuelve a intentar mañana)
+    try:
+        sincronizar_cuentas()
+    except Exception as e:
+        print("Error al rellenar las cuentas protegidas:", e)
+    uids = {id_de(d) for col in POR_ID for d in listar(col, [])}
+    if version < VERSION_LIMPIEZA:
+        # la primera vez se repasa todo, para encontrar también restos antiguos
+        for col in POR_CAMPO:
+            uids |= {campo(d, "uid") for d in listar(col, ["uid"]) if campo(d, "uid")}
+    uids.discard("liga")
+    uids.discard("robot")
+    existen = leer_varios([f"users/{u}" for u in sorted(uids)])
+    sin_ficha = sorted(u for u in uids if f"users/{u}" not in existen)
+    borrados = []
+    if sin_ficha:
+        control = next(iter(admins()), None)
+        vivos = existen_en_auth(sin_ficha, control) if control else None
+        if vivos is None:
+            print("Limpieza diaria: no se ha podido comprobar qué cuentas existen en Firebase Authentication; hoy no se borra nada")
+            escribir([{"update": {"name": f"{RAIZ}/avisos_estado/limpieza", "fields": {"dia": valor(hoy), "v": valor(version), "error": valor("sin acceso a Authentication")}}}])
+            return 0
+        borrados = [u for u in sin_ficha if u not in vivos]
     writes = []
     for uid in borrados:
-        for v in consulta("validaciones", [("uid", "EQUAL", {"stringValue": uid})]):
-            writes.append({"delete": f"{RAIZ}/validaciones/{id_de(v)}"})
-        for a in consulta("trivial_aperturas", [("uid", "EQUAL", {"stringValue": uid})]):
-            writes += [{"delete": f"{RAIZ}/trivial_aperturas/{id_de(a)}"}, {"delete": f"{RAIZ}/trivial_resp/{id_de(a)}"}]
-        writes += [{"delete": f"{RAIZ}/{col}/{uid}"} for col in COLS]
-        for g in consulta("trivial_ganadores", [("uid", "EQUAL", {"stringValue": uid})]):
-            writes.append(cambiar(f"trivial_ganadores/{id_de(g)}", {"uid": "", "n": "Cuenta borrada"}))
+        writes += borrar_datos_de(uid, ahora)
     if borrados:
         rk = leer("trivial_ranking/actual")
         if rk:
@@ -433,8 +555,13 @@ def limpiar_cuentas_borradas():
             for k in ("semana", "mes", "historico"):
                 if k in f:
                     f[k] = sin_borrados(f[k], set(borrados))
+            lib = f.get("libre", {}).get("mapValue", {}).get("fields")
+            if lib:
+                for k in ("semana", "mes", "historico"):
+                    if k in lib:
+                        lib[k] = sin_borrados(lib[k], set(borrados))
             writes.append({"update": {"name": f"{RAIZ}/trivial_ranking/actual", "fields": f}})
-    writes.append({"update": {"name": f"{RAIZ}/avisos_estado/limpieza", "fields": {"dia": valor(hoy), "borradas": valor(len(borrados))}}})
+    writes.append({"update": {"name": f"{RAIZ}/avisos_estado/limpieza", "fields": {"dia": valor(hoy), "v": valor(VERSION_LIMPIEZA), "borradas": valor(len(borrados))}}})
     escribir(writes)
     print(f"Limpieza diaria: {len(borrados)} cuenta(s) borrada(s) con datos que quitar")
     return len(borrados)

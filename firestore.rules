@@ -1,0 +1,688 @@
+rules_version = '2';
+// Reglas de seguridad de Firestore de Sweet Dreams.
+// Este archivo es la copia de referencia: lo que manda es lo que esté publicado en la consola de Firebase
+// (Firestore Database → Reglas). Si cambias algo allí, cópialo también aquí.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function conectado() {
+      return request.auth != null;
+    }
+    function tieneFicha() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function miRol() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function esAdmin() {
+      return conectado() && tieneFicha() && miRol() == 'admin';
+    }
+    function esStaff() {
+      return conectado() && tieneFicha() && miRol() == 'staff';
+    }
+    // Ficha protegida de cada cuenta (alta, bloqueo, número de socio). La persona no la puede borrar ni cambiar,
+    // así que borrar su ficha de «users» ya no sirve para saltarse un bloqueo ni para volver a hacerse socio.
+    function cuenta(uid) {
+      return /databases/$(database)/documents/cuentas/$(uid);
+    }
+    // Hace falta tener ficha y no estar bloqueado (ni en la ficha ni en la cuenta protegida).
+    function noBloqueado() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('bloqueado', false) != true
+        && (!exists(cuenta(request.auth.uid)) || get(cuenta(request.auth.uid)).data.get('bloqueado', false) != true);
+    }
+    function esSocio() {
+      return conectado() && tieneFicha()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('socio', false) == true;
+    }
+    function esRobot() {
+      return conectado() && tieneFicha() && miRol() == 'robot';
+    }
+    function esJugadorOAdmin() {
+      return conectado() && tieneFicha() && miRol() in ['player', 'admin'];
+    }
+    function puedeLeerLiga() {
+      return esJugadorOAdmin() || esRobot();
+    }
+    function puedeEscribirLiga() {
+      return esAdmin() || esRobot();
+    }
+    function reglas() {
+      return get(/databases/$(database)/documents/settings/reservas).data;
+    }
+    function dianaActiva(id) {
+      return get(/databases/$(database)/documents/dartboards/$(id)).data.activa == true;
+    }
+
+    match /users/{uid} {
+          // Socio automático: quien verifica su correo y nunca ha sido socio se da de alta solo, con el siguiente número del contador.
+          // «Nunca ha sido socio» se mira también en su cuenta protegida, que no se puede borrar.
+      function altaSocioAutomatica() {
+        return request.auth.token.email_verified == true
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['socio', 'socioNum', 'socioDesde'])
+          && resource.data.get('socio', false) != true
+          && !('socioNum' in resource.data)
+          && !('socioDesde' in resource.data)
+          && resource.data.get('bloqueado', false) != true
+          && (!exists(cuenta(uid)) || (get(cuenta(uid)).data.get('socioNum', 0) == 0 && get(cuenta(uid)).data.get('bloqueado', false) != true))
+          && request.resource.data.socio == true
+          && request.resource.data.socioNum is int
+          && request.resource.data.socioDesde == request.time
+          && getAfter(/databases/$(database)/documents/contadores/socios).data.ultimo == request.resource.data.socioNum;
+      }
+      allow update: if conectado() && request.auth.uid == uid && altaSocioAutomatica();
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin() || (esStaff() && resource.data.socio == true));
+
+      allow create: if conectado()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'email', 'role', 'creado', 'acepto'])
+        && request.resource.data.role == 'user'
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.creado == request.time
+        && (!('acepto' in request.resource.data) || request.resource.data.acepto == request.time)
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0
+        && request.resource.data.nombre.size() <= 60;
+
+      allow update: if esAdmin()
+        || (conectado() && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre']));
+
+      allow delete: if conectado() && (request.auth.uid == uid || esAdmin());
+    }
+
+    // ---------- Cuenta protegida: fecha de alta, bloqueo y número de socio ----------
+    // La persona solo puede crearla al registrarse (con la fecha de ahora). Después solo la toca el administrador
+    // (y el robot, que la rellena para las cuentas antiguas y la borra cuando la cuenta se elimina de verdad).
+    match /cuentas/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin());
+      allow create: if esAdmin() || (conectado() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['alta'])
+        && request.resource.data.alta == request.time);
+      allow update, delete: if esAdmin();
+    }
+
+    match /dartboards/{id} {
+      allow read: if conectado();
+      allow write: if esAdmin();
+    }
+
+    match /settings/{id} {
+      allow read: if conectado();
+      allow write: if esAdmin();
+    }
+
+    // ---------- Reservas ----------
+    // Cada reserva se guarda junto con sus huecos de 15 minutos (slots) y una de las «fichas de cupo» de la persona
+    // (cupo_reservas). Hay tantas fichas como reservas activas se permiten, así que nadie puede tener más.
+    // Un hueco cuya reserva ya no existe queda libre: cualquiera lo puede volver a reservar.
+    match /slots/{slotId} {
+      function huecoDeReservaValido() {
+        let d = request.resource.data;
+        let r = getAfter(/databases/$(database)/documents/reservations/$(d.reserva)).data;
+        return conectado()
+          && noBloqueado()
+          && request.auth.token.email_verified == true
+          && d.keys().hasOnly(['dianaId', 'inicio', 'uid', 'tipo', 'reserva'])
+          && d.uid == request.auth.uid
+          && d.tipo == 'reserva'
+          && d.dianaId is string
+          && d.inicio is timestamp
+          && d.reserva is string
+          && slotId.split('_').size() == 2
+          && slotId.split('_')[0] == d.dianaId
+          && int(slotId.split('_')[1]) == d.inicio.toMillis()
+          && d.inicio.toMillis() % 900000 == 0
+          && d.inicio >= request.time + duration.value(reglas().minAntelacionMin, 'm')
+          && d.inicio <= request.time + duration.value(reglas().maxDiasAntelacion, 'd')
+          && dianaActiva(d.dianaId)
+          && r.uid == request.auth.uid
+          && r.dianaId == d.dianaId
+          && r.inicio <= d.inicio
+          && d.inicio < r.fin;
+      }
+      allow read: if conectado();
+
+      allow create: if esAdmin() || huecoDeReservaValido();
+
+      // Hueco que se quedó sin reserva (se borró la reserva pero no el hueco): se puede volver a reservar.
+      allow update: if esAdmin() || (huecoDeReservaValido()
+        && resource.data.get('tipo', '') == 'reserva'
+        && resource.data.get('reserva', '') != ''
+        && !exists(/databases/$(database)/documents/reservations/$(resource.data.reserva)));
+
+      allow delete: if esAdmin() || (
+        conectado()
+        && resource.data.uid == request.auth.uid
+        && resource.data.tipo == 'reserva'
+        && resource.data.inicio > request.time
+      );
+    }
+
+    match /reservations/{id} {
+      // Se pueden ver para saber qué huecos siguen ocupados (lo mismo que ya se ve en los slots).
+      allow read: if conectado();
+
+      allow create: if esAdmin() || (
+        conectado()
+        && request.auth.token.email_verified == true
+        && noBloqueado()
+        && request.resource.data.keys().hasOnly(['uid', 'dianaId', 'inicio', 'fin', 'creado', 'cupo'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.dianaId is string
+        && request.resource.data.inicio is timestamp
+        && request.resource.data.fin is timestamp
+        && request.resource.data.fin > request.resource.data.inicio
+        && request.resource.data.creado == request.time
+        && request.resource.data.fin.toMillis() - request.resource.data.inicio.toMillis() <= reglas().get('maxHoras', 4) * 3600000
+        && (request.resource.data.fin.toMillis() - request.resource.data.inicio.toMillis()) % 900000 == 0
+        && request.resource.data.cupo is int
+        && getAfter(/databases/$(database)/documents/cupo_reservas/$(request.auth.uid + '_' + string(request.resource.data.cupo))).data.reserva == id
+        && getAfter(/databases/$(database)/documents/slots/$(request.resource.data.dianaId + '_' + string(request.resource.data.inicio.toMillis()))).data.get('reserva', '') == id
+        && getAfter(/databases/$(database)/documents/slots/$(request.resource.data.dianaId + '_' + string(request.resource.data.fin.toMillis() - 900000))).data.get('reserva', '') == id
+      );
+
+      allow delete: if esAdmin() || (conectado() && resource.data.uid == request.auth.uid);
+    }
+
+    // Fichas de cupo: «uid_0», «uid_1»… hasta el máximo de reservas activas (settings/reservas.maxActivas).
+    // Una ficha se puede volver a usar cuando su reserva ha terminado o ya no existe.
+    match /cupo_reservas/{id} {
+      function fichaValida() {
+        let d = request.resource.data;
+        let r = getAfter(/databases/$(database)/documents/reservations/$(d.reserva)).data;
+        return conectado()
+          && d.keys().hasOnly(['uid', 'n', 'reserva', 'fin'])
+          && d.uid == request.auth.uid
+          && d.n is int
+          && d.n >= 0
+          && d.n < reglas().get('maxActivas', 3)
+          && id == request.auth.uid + '_' + string(d.n)
+          && d.reserva is string
+          && r.uid == request.auth.uid
+          && r.fin == d.fin
+          && r.cupo == d.n;
+      }
+      allow read: if conectado() && (resource == null || resource.data.uid == request.auth.uid || esAdmin());
+      allow create: if esAdmin() || fichaValida();
+      allow update: if esAdmin() || (fichaValida()
+        && (resource.data.fin < request.time
+            || !exists(/databases/$(database)/documents/reservations/$(resource.data.reserva))));
+      allow delete: if esAdmin() || (conectado() && resource.data.uid == request.auth.uid
+        && (resource.data.fin < request.time
+            || !existsAfter(/databases/$(database)/documents/reservations/$(resource.data.reserva))));
+    }
+
+    match /push_tokens/{token} {
+      allow read: if conectado() && (resource == null || resource.data.uid == request.auth.uid || esAdmin());
+
+      allow create, update: if conectado()
+        && request.resource.data.keys().hasOnly(['uid', 'creado'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.creado == request.time;
+
+      allow delete: if conectado() && (resource.data.uid == request.auth.uid || esAdmin());
+    }
+
+    match /ofertas/{id} {
+      allow read: if conectado() && (resource.data.soloSocios == false || esSocio() || esAdmin());
+      allow write: if esAdmin();
+    }
+
+    match /fotos/{id} {
+      allow read: if conectado();
+      allow write: if esAdmin();
+    }
+
+    match /fotos_g/{id} {
+      allow read: if conectado();
+      allow write: if esAdmin();
+    }
+
+    match /fotos_socios/{id} {
+      allow read: if esSocio() || esAdmin();
+      allow write: if esAdmin();
+    }
+
+    match /fotos_socios_g/{id} {
+      allow read: if esSocio() || esAdmin();
+      allow write: if esAdmin();
+    }
+
+    match /ruleta_config/{id} {
+      allow read: if conectado();
+      allow write: if esAdmin();
+    }
+
+    match /ruleta_versiones/{id} {
+      allow read: if esSocio() || esAdmin() || esStaff();
+      allow write: if esAdmin();
+    }
+
+    match /ruleta_giros/{uid} {
+          // el propio socio canjea su premio con la tarjeta del camarero (el robot comprueba el código)
+      allow update: if conectado() && request.auth.uid == uid
+        && resource.data.get('canjeado', false) != true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['canjeado', 'canjeadoEn', 'canjeP', 'canjeC', 'canjeEstado'])
+        && request.resource.data.canjeado == true
+        && request.resource.data.canjeadoEn == request.time
+        && request.resource.data.canjeEstado == 'pendiente'
+        && request.resource.data.canjeP is string && request.resource.data.canjeP.matches('^[0-9A-F]{32}$')
+        && request.resource.data.canjeC is string && request.resource.data.canjeC.matches('^[0-9A-F]{16}$');
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin() || esStaff());
+
+      allow create: if esSocio()
+        && request.auth.uid == uid
+        && get(/databases/$(database)/documents/ruleta_config/actual).data.activa == true
+        && request.resource.data.keys().hasOnly(['uid', 'giro', 'version'])
+        && request.resource.data.uid == uid
+        && request.resource.data.giro == request.time
+        && request.resource.data.version == get(/databases/$(database)/documents/ruleta_config/actual).data.version;
+
+      allow update: if esAdmin() || (esStaff()
+        && request.resource.data.canjeado == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['canjeado', 'canjeadoEn']));
+
+      allow delete: if esAdmin();
+    }
+
+    match /liga_equipos/{id} {
+      allow read: if puedeLeerLiga();
+      allow write: if puedeEscribirLiga();
+    }
+
+    match /liga_partidos/{id} {
+      allow read: if puedeLeerLiga();
+      allow write: if puedeEscribirLiga();
+    }
+
+    match /liga_locales/{id} {
+      allow read: if puedeLeerLiga();
+      allow write: if puedeEscribirLiga();
+    }
+
+    match /liga_importaciones/{id} {
+      allow read, write: if puedeEscribirLiga();
+    }
+
+    match /liga_config/{id} {
+      allow read: if puedeLeerLiga();
+      allow write: if esAdmin();
+    }
+
+    match /liga_bloqueos/{id} {
+      allow read, write: if esAdmin();
+    }
+
+    match /mis_equipos/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin());
+
+      allow create, update: if conectado()
+        && request.auth.uid == uid
+        && esJugadorOAdmin()
+        && request.resource.data.keys().hasOnly(['equipos'])
+        && request.resource.data.equipos is list
+        && request.resource.data.equipos.size() <= 6;
+
+      allow delete: if conectado() && (request.auth.uid == uid || esAdmin());
+    }
+
+    function fechaHoy() {
+      return request.time.year() * 10000 + request.time.month() * 100 + request.time.day();
+    }
+    function premioDe(id) {
+      return get(/databases/$(database)/documents/premios/$(id)).data;
+    }
+
+    // ---------- Puntos de los socios ----------
+    // Un camarero solo puede cambiar el saldo si en la misma operación deja apuntado el movimiento (socios_mov)
+    // con esos mismos puntos: así ningún cambio de puntos queda sin rastro. El administrador puede corregir libremente.
+    match /socios_puntos/{uid} {
+      function conMovimiento(antes) {
+        let d = request.resource.data;
+        let m = getAfter(/databases/$(database)/documents/socios_mov/$(d.ultimoMov)).data;
+        return d.ultimoMov is string
+          && !exists(/databases/$(database)/documents/socios_mov/$(d.ultimoMov))
+          && m.uid == uid
+          && m.por == request.auth.uid
+          && m.puntos == d.puntos - antes
+          && m.saldo == d.puntos;
+      }
+      allow read: if conectado() && (request.auth.uid == uid || esStaff() || esAdmin());
+
+      allow create: if (esStaff() || esAdmin())
+        && request.resource.data.keys().hasOnly(['puntos', 'total', 'actualizado', 'ultimoMov'])
+        && request.resource.data.puntos is int
+        && request.resource.data.total is int
+        && request.resource.data.puntos >= 0
+        && request.resource.data.total >= 0
+        && request.resource.data.actualizado == request.time
+        && (esAdmin() || (request.resource.data.puntos <= 3000 && conMovimiento(0)));
+
+      allow update: if (esStaff() || esAdmin())
+        && request.resource.data.keys().hasOnly(['puntos', 'total', 'actualizado', 'ultimoMov'])
+        && request.resource.data.puntos is int
+        && request.resource.data.total is int
+        && request.resource.data.puntos >= 0
+        && request.resource.data.total >= 0
+        && request.resource.data.actualizado == request.time
+        && (esAdmin() || (
+             request.resource.data.puntos - resource.data.puntos <= 3000
+             && resource.data.puntos - request.resource.data.puntos <= 3000
+             && conMovimiento(resource.data.puntos)));
+
+      allow delete: if esAdmin();
+    }
+
+    match /socios_mov/{id} {
+      allow read: if conectado() && (resource.data.uid == request.auth.uid || esStaff() || esAdmin());
+
+      allow create: if (esStaff() || esAdmin())
+        && request.resource.data.keys().hasOnly(['uid', 'socioNombre', 'tipo', 'importe', 'puntos', 'saldo', 'por', 'porNombre', 'nota', 'mes', 'creado'])
+        && request.resource.data.uid is string
+        && request.resource.data.tipo in ['compra', 'canje', 'ajuste', 'deshacer']
+        && request.resource.data.puntos is int
+        && (esAdmin() || (request.resource.data.puntos >= -3000 && request.resource.data.puntos <= 3000))
+        && request.resource.data.por == request.auth.uid
+        && request.resource.data.creado == request.time;
+
+      allow update: if false;
+      allow delete: if esAdmin();
+    }
+
+    match /premios/{id} {
+      allow read: if esSocio() || esStaff() || esAdmin();
+      allow write: if esAdmin();
+    }
+
+    match /cupones/{cid} {
+          // el propio socio canjea su regalo gratis con la tarjeta del camarero (el robot comprueba el código)
+      allow update: if conectado() && resource.data.uid == request.auth.uid
+        && resource.data.estado == 'pendiente'
+        && resource.data.coste == 0
+        && resource.data.caduca > request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'canjeadoEn', 'canjeP', 'canjeC', 'canjeEstado'])
+        && request.resource.data.estado == 'canjeado'
+        && request.resource.data.canjeadoEn == request.time
+        && request.resource.data.canjeEstado == 'pendiente'
+        && request.resource.data.canjeP is string && request.resource.data.canjeP.matches('^[0-9A-F]{32}$')
+        && request.resource.data.canjeC is string && request.resource.data.canjeC.matches('^[0-9A-F]{16}$');
+      allow read: if conectado() && (resource.data.uid == request.auth.uid || esStaff() || esAdmin());
+
+      allow create: if esSocio()
+        && request.resource.data.keys().hasOnly(['uid', 'premioId', 'nombre', 'coste', 'estado', 'codigo', 'creado', 'caduca'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.creado == request.time
+        && request.resource.data.premioId is string
+        && exists(/databases/$(database)/documents/premios/$(request.resource.data.premioId))
+        && premioDe(request.resource.data.premioId).activo == true
+        && (premioDe(request.resource.data.premioId).get('para', 'embajadores') == 'socios'
+            || esAdmin()
+            || (exists(/databases/$(database)/documents/embajadores/$(request.auth.uid))
+                && get(/databases/$(database)/documents/embajadores/$(request.auth.uid)).data.activo == true))
+        && request.resource.data.nombre == premioDe(request.resource.data.premioId).nombre
+        && request.resource.data.coste == premioDe(request.resource.data.premioId).coste
+        && request.resource.data.caduca > request.time
+        && request.resource.data.caduca <= request.time + duration.value(premioDe(request.resource.data.premioId).caducaHoras, 'h')
+        && (premioDe(request.resource.data.premioId).coste == 0
+            || (exists(/databases/$(database)/documents/socios_puntos/$(request.auth.uid))
+                && get(/databases/$(database)/documents/socios_puntos/$(request.auth.uid)).data.puntos >= premioDe(request.resource.data.premioId).coste))
+        && (
+             (premioDe(request.resource.data.premioId).limite == 'una'
+               && cid == request.auth.uid + '_' + request.resource.data.premioId)
+          || (premioDe(request.resource.data.premioId).limite == 'dia'
+               && cid == request.auth.uid + '_' + request.resource.data.premioId + '_' + string(fechaHoy()))
+          || (premioDe(request.resource.data.premioId).limite == 'sin'
+               && premioDe(request.resource.data.premioId).coste > 0
+               && cid.matches(request.auth.uid + '_' + request.resource.data.premioId + '_.*'))
+        );
+
+      allow update: if (esStaff() || esAdmin())
+        && resource.data.estado == 'pendiente'
+        && resource.data.caduca > request.time
+        && request.resource.data.estado == 'canjeado'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'canjeadoEn', 'canjeadoPor'])
+        && request.resource.data.canjeadoEn == request.time
+        && request.resource.data.canjeadoPor == request.auth.uid;
+
+      allow delete: if esAdmin() || (conectado() && resource.data.uid == request.auth.uid && resource.data.estado == 'pendiente');
+    }
+
+    match /liga_vinculos/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin());
+      allow write: if esAdmin();
+    }
+
+    match /liga_vinculos_pedidos/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin());
+
+      allow create, update: if esJugadorOAdmin()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['k', 'nombre', 'creado'])
+        && request.resource.data.k is string
+        && request.resource.data.k.size() <= 80
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() <= 80
+        && request.resource.data.creado == request.time;
+
+      allow delete: if conectado() && (request.auth.uid == uid || esAdmin());
+    }
+
+    match /borrados_log/{id} {
+      allow read, create: if esAdmin();
+      allow update, delete: if false;
+    }
+
+    match /cambios_pedidos/{id} {
+      allow read: if conectado() && (resource.data.uid == request.auth.uid || esAdmin());
+
+      allow create: if esJugadorOAdmin()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'equipoKey', 'equipoNombre', 'partidoId', 'cat', 'nivel', 'jornada', 'local', 'visitante', 'diaOriginal', 'horaOriginal', 'tipo', 'diaNuevo', 'horaNueva', 'nota', 'rivalDeAcuerdo', 'capitan', 'estado', 'creado'])
+        && request.resource.data.equipoKey in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('capitanDe', [])
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.tipo in ['mover', 'aplazar', 'ida_vuelta', 'online']
+        && request.resource.data.rivalDeAcuerdo == true
+        && request.resource.data.creado == request.time
+        && request.resource.data.partidoId is string && request.resource.data.partidoId.size() <= 80
+        && request.resource.data.equipoNombre is string && request.resource.data.equipoNombre.size() <= 80
+        && request.resource.data.local is string && request.resource.data.local.size() <= 80
+        && request.resource.data.visitante is string && request.resource.data.visitante.size() <= 80
+        && request.resource.data.diaNuevo is string && request.resource.data.diaNuevo.size() <= 10
+        && request.resource.data.horaNueva is string && request.resource.data.horaNueva.size() <= 5
+        && request.resource.data.nota is string && request.resource.data.nota.size() <= 200
+        && request.resource.data.capitan is string && request.resource.data.capitan.size() <= 60;
+
+      allow update: if esAdmin();
+
+      allow delete: if esAdmin() || (conectado() && resource.data.uid == request.auth.uid && resource.data.estado == 'pendiente');
+    }
+
+    // ---------- Trivial competitivo ----------
+    // Las respuestas correctas solo las ven el administrador y el robot. Cada jugador abre la pregunta (eso pone en marcha
+    // su tiempo) y solo entonces puede leer su texto (trivial_preg). Contesta una sola vez. La respuesta buena de una pregunta
+    // del reto solo se puede ver cuando el reto se ha cerrado (la pregunta pasa a la partida libre). Los puntos los pone el robot.
+    function esAdminORobot() {
+      return conectado() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'robot'];
+    }
+    match /trivial_config/{id} {
+      allow read: if conectado() && (id == 'ajustes' || esAdminORobot());
+      allow write: if esAdmin() || (id == 'robot' && conectado() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'robot');
+    }
+    match /trivial_banco/{id} {
+      allow read, write: if esAdminORobot();
+    }
+    // Texto y opciones de cada pregunta: solo para quien ya la ha abierto.
+    match /trivial_preg/{qid} {
+      allow read: if conectado() && (esAdminORobot()
+        || exists(/databases/$(database)/documents/trivial_aperturas/$(request.auth.uid + '_' + qid)));
+      allow write: if esAdminORobot();
+    }
+    match /trivial_sol/{qid} {
+      allow read: if conectado() && (esAdminORobot()
+        || (exists(/databases/$(database)/documents/trivial_resp/$(request.auth.uid + '_' + qid))
+            && get(/databases/$(database)/documents/trivial_banco/$(qid)).data.estado == 'libre'));
+      allow write: if esAdminORobot();
+    }
+    match /trivial_libre/{cat} {
+      allow read: if conectado();
+      allow write: if esAdminORobot();
+    }
+    match /trivial_retos/{dia} {
+      allow read: if conectado();
+      allow write: if esAdminORobot();
+    }
+    match /trivial_aperturas/{id} {
+      allow read: if conectado() && (id.matches(request.auth.uid + '_.*') || esAdminORobot());
+      allow create: if conectado()
+        && id == request.auth.uid + '_' + request.resource.data.q
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.t == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'q', 'modo', 'dia', 'cat', 't'])
+        && (request.resource.data.modo == 'L'
+              ? (request.resource.data.cat is string && request.resource.data.q in get(/databases/$(database)/documents/trivial_libre/$(request.resource.data.cat)).data.ids)
+              : (request.resource.data.modo == 'R' && request.resource.data.dia is string
+                 && get(/databases/$(database)/documents/trivial_retos/$(request.resource.data.dia)).data.abierto == true
+                 && request.resource.data.q in get(/databases/$(database)/documents/trivial_retos/$(request.resource.data.dia)).data.ids));
+      allow update, delete: if false;
+    }
+    match /trivial_resp/{id} {
+      allow read: if conectado() && (id.matches(request.auth.uid + '_.*') || esAdminORobot());
+      allow create: if conectado()
+        && id == request.auth.uid + '_' + request.resource.data.q
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.t == request.time
+        && request.resource.data.keys().hasOnly(['uid', 'q', 'e', 't', 'nombre'])
+        && request.resource.data.e is int && request.resource.data.e >= -1 && request.resource.data.e <= 3
+        && request.resource.data.nombre == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nombre
+        && exists(/databases/$(database)/documents/trivial_aperturas/$(id))
+        && request.time <= get(/databases/$(database)/documents/trivial_aperturas/$(id)).data.t + duration.value(get(/databases/$(database)/documents/trivial_config/ajustes).data.seg + 5, 's');
+      allow update, delete: if false;
+    }
+    match /trivial_puntos/{uid} {
+      allow read: if conectado();
+      allow write: if esAdminORobot();
+    }
+    match /trivial_ranking/{id} {
+      allow read: if conectado();
+      allow write: if esAdminORobot();
+    }
+    match /trivial_ganadores/{id} {
+      allow read: if conectado();
+      allow write: if esAdminORobot();
+    }
+
+    // ---------- Universitarios: facultad, sello de estudiante y de qué QR viene cada persona ----------
+    // Va aparte del documento de usuario, que no se toca. El sello 🎓 solo se lo puede poner a sí mismo quien tiene
+    // un correo VERIFICADO de la lista de «Universitarios y promociones» (panel de administrador); tú lo puedes poner a mano.
+    match /perfil_extra/{uid} {
+      function correoUniversitario() {
+        return request.auth.token.email_verified == true
+          && request.auth.token.email.split('@').size() == 2
+          && request.auth.token.email.split('@')[1].lower() in get(/databases/$(database)/documents/settings/universitarios).data.dominios;
+      }
+      function perfilValido(d) {
+        return d.keys().hasOnly(['facultad', 'universitario', 'origen', 'creado', 'actualizado'])
+          && d.actualizado == request.time
+          && (!('facultad' in d) || (d.facultad is string && d.facultad.size() <= 60))
+          && (!('universitario' in d) || d.universitario is bool)
+          && (!('origen' in d) || (d.origen is string && d.origen.matches('^[a-z0-9_-]{0,30}$')));
+      }
+
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin() || esRobot());
+
+      allow create: if esAdmin() || (conectado() && request.auth.uid == uid
+        && perfilValido(request.resource.data)
+        && request.resource.data.creado == request.time
+        && (request.resource.data.get('universitario', false) != true || correoUniversitario()));
+
+      allow update: if esAdmin() || (conectado() && request.auth.uid == uid
+        && perfilValido(request.resource.data)
+        && request.resource.data.creado == resource.data.creado
+        && request.resource.data.get('origen', '') == resource.data.get('origen', '')
+        && (request.resource.data.get('universitario', false) != true
+            || resource.data.get('universitario', false) == true
+            || correoUniversitario()));
+
+      allow delete: if esAdmin() || (conectado() && request.auth.uid == uid);
+    }
+
+    // ---------- Contador de números de socio (para que nunca se repitan) ----------
+    match /contadores/{id} {
+      allow read: if conectado();
+      allow create, delete: if esAdmin();
+      allow update: if esAdmin() || (id == 'socios' && conectado()
+        && request.resource.data.keys().hasOnly(['ultimo'])
+        && request.resource.data.ultimo == resource.data.ultimo + 1
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('socio', false) != true
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('socio', false) == true
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('socioNum', 0) == request.resource.data.ultimo);
+    }
+
+    // ---------- Embajadores: quién invitó a cada persona ----------
+    // Lo crea el propio invitado (cuenta de menos de 3 días, contando desde su alta protegida, que no se puede rehacer).
+    // Solo una vez: la invitación ya no la puede borrar la persona (la borra el robot si se elimina la cuenta).
+    // Los puntos los da el robot cuando viene al bar.
+    match /invitaciones/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin()
+        || resource.data.ref == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('socioNum', -1));
+      allow create: if conectado() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['ref', 'premiado', 'creado'])
+        && request.resource.data.ref is int && request.resource.data.ref > 0
+        && request.resource.data.premiado == false
+        && request.resource.data.creado == request.time
+        && request.resource.data.ref != get(/databases/$(database)/documents/users/$(uid)).data.get('socioNum', -1)
+        && get(cuenta(uid)).data.alta > request.time - duration.value(3, 'd');
+      allow update, delete: if esAdmin();
+    }
+    match /embajadores/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin() || esStaff());
+      allow write: if esAdmin();
+    }
+    match /embajadores_solicitudes/{uid} {
+      allow read: if conectado() && (request.auth.uid == uid || esAdmin());
+      allow create: if conectado() && request.auth.uid == uid
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasOnly(['nombre', 'facultad', 'instagram', 'motivo', 'estado', 'creado'])
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.creado == request.time
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 80
+        && request.resource.data.facultad is string && request.resource.data.facultad.size() <= 60
+        && request.resource.data.instagram is string && request.resource.data.instagram.size() <= 40
+        && request.resource.data.motivo is string && request.resource.data.motivo.size() <= 400;
+      allow update: if esAdmin();
+      allow delete: if esAdmin() || (conectado() && request.auth.uid == uid);
+    }
+
+    // ---------- Tarjetas NFC de los camareros y validaciones de consumición ----------
+    // El cliente guarda el código que da la tarjeta; el robot comprueba que es auténtico y no repetido.
+    match /validaciones/{id} {
+      allow read: if conectado() && (resource.data.uid == request.auth.uid || esAdmin());
+      allow create: if conectado() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'p', 'c', 'via', 'estado', 'creado'])
+        && request.resource.data.p is string && request.resource.data.p.matches('^[0-9A-Fa-f]{32}$')
+        && request.resource.data.c is string && request.resource.data.c.matches('^[0-9A-Fa-f]{16}$')
+        && request.resource.data.via in ['nfc', 'enlace']
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.creado == request.time;
+      allow update, delete: if esAdmin();
+    }
+    match /tarjetas/{id} {
+      allow read: if esAdmin();
+      allow write: if esAdmin();
+    }
+    match /tarjetas_altas/{id} {
+      allow read: if esAdmin();
+      allow create: if esAdmin()
+        && request.resource.data.keys().hasOnly(['camarero', 'camareroNombre', 'p', 'c', 'estado', 'creado'])
+        && request.resource.data.estado == 'pendiente';
+      allow update, delete: if esAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

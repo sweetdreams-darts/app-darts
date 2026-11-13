@@ -101,15 +101,22 @@ export async function asegurarContador(db, usuarios) {
   });
 }
 
-// Administrador: hace socio a una persona. Si ya tuvo número, recupera el suyo; si no, el siguiente del contador.
+// Administrador: hace socio a una persona. Si ya tuvo número (en su ficha o en su cuenta protegida), recupera el suyo;
+// si no, el siguiente del contador. El número queda apuntado también en la cuenta protegida.
 export async function hacerSocio(db, uid, usuarios) {
   return runTransaction(db, async (tx) => {
-    const c = await tx.get(ref(db, "contadores", "socios")), u = await tx.get(ref(db, "users", uid));
+    const c = await tx.get(ref(db, "contadores", "socios")), u = await tx.get(ref(db, "users", uid)), cu = await tx.get(ref(db, "cuentas", uid));
     const d = u.exists() ? u.data() : {};
-    if (d.socioNum) { tx.update(ref(db, "users", uid), { socio: true, socioDesde: serverTimestamp() }); return d.socioNum; }
+    const antiguo = d.socioNum || (cu.exists() ? Number(cu.data().socioNum) || 0 : 0);
+    if (antiguo) {
+      tx.update(ref(db, "users", uid), { socio: true, socioNum: antiguo, socioDesde: serverTimestamp() });
+      tx.set(ref(db, "cuentas", uid), { socioNum: antiguo }, { merge: true });
+      return antiguo;
+    }
     const n = Math.max(c.exists() ? Number(c.data().ultimo) || 0 : 0, maxNum(usuarios)) + 1;
     tx.set(ref(db, "contadores", "socios"), { ultimo: n });
     tx.update(ref(db, "users", uid), { socio: true, socioNum: n, socioDesde: serverTimestamp() });
+    tx.set(ref(db, "cuentas", uid), { socioNum: n }, { merge: true });
     return n;
   });
 }

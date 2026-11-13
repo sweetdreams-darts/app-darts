@@ -293,9 +293,19 @@ async function cargarFicha(user) {
   if (!snap.exists()) {
     const nombre = (user.displayName || user.email.split("@")[0]).slice(0, 60);
     await setDoc(ref, { nombre: nombre, email: user.email, role: "user", creado: serverTimestamp() });
+    await crearCuenta(user.uid);
     snap = await getDoc(ref);
   }
   return snap.data();
+}
+
+// Cuenta protegida (fecha de alta, bloqueo y número de socio): la persona solo puede crearla, nunca cambiarla ni borrarla.
+// Si ya existe (por ejemplo, porque borró su ficha y la ha vuelto a crear), se queda como estaba.
+async function crearCuenta(uid) {
+  try {
+    const c = doc(db, "cuentas", uid);
+    if (!(await getDoc(c)).exists()) await setDoc(c, { alta: serverTimestamp() });
+  } catch (e) {}
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -325,6 +335,7 @@ $("form").addEventListener("submit", async (ev) => {
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       await updateProfile(cred.user, { displayName: nombre });
       await setDoc(doc(db, "users", cred.user.uid), { nombre: nombre, email: cred.user.email, role: "user", creado: serverTimestamp(), acepto: serverTimestamp() });
+      await crearCuenta(cred.user.uid);
       sendEmailVerification(cred.user).catch(() => {});
       registrando = false;
       mostrar(cred.user, { nombre: nombre, role: "user" });
@@ -396,6 +407,7 @@ $("borrarOk").addEventListener("click", async () => {
         await b.commit();
       }
       await deleteDoc(d.ref);
+      if (Number.isInteger(x.cupo)) { try { await deleteDoc(doc(db, "cupo_reservas", u.uid + "_" + x.cupo)); } catch (e) {} }
     }
     try { await deleteDoc(doc(db, "perfil_extra", u.uid)); } catch (e) {}
     await deleteDoc(doc(db, "users", u.uid));

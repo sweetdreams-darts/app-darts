@@ -185,7 +185,7 @@ $("aGuardar").onclick = async () => {
       const d = x.exists() ? x.data() : { puntos: 0, total: 0 };
       saldo = d.puntos + p;
       if (saldo < 0) throw new Error("El socio solo tiene " + d.puntos + " puntos.");
-      tx.set(refS, { puntos: saldo, total: p > 0 ? d.total + p : d.total, actualizado: serverTimestamp() });
+      tx.set(refS, { puntos: saldo, total: p > 0 ? d.total + p : d.total, actualizado: serverTimestamp(), ultimoMov: refM.id });
       tx.set(refM, { uid: uid, socioNombre: nombre, tipo: "ajuste", importe: 0, puntos: p, saldo: saldo, por: yo.uid, porNombre: yo.nombre, nota: nota, mes: mesDe(Date.now()), creado: serverTimestamp() });
     });
     msg("✔ Hecho: " + nombre + " tiene ahora " + saldo + " puntos.");
