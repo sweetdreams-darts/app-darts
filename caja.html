@@ -131,7 +131,7 @@ async function sumarPuntos(uid, nombre, importe, puntos) {
     const s = await tx.get(refS);
     const d = s.exists() ? s.data() : { puntos: 0, total: 0 };
     saldo = d.puntos + puntos;
-    tx.set(refS, { puntos: saldo, total: d.total + puntos, actualizado: serverTimestamp() });
+    tx.set(refS, { puntos: saldo, total: d.total + puntos, actualizado: serverTimestamp(), ultimoMov: refM.id });
     tx.set(refM, datosMov("compra", importe, puntos, saldo, "", uid, nombre));
   });
   return { saldo: saldo, movId: refM.id };
@@ -157,7 +157,7 @@ async function canjearCupon(c) {
     if (d.puntos < coste) throw new Error("Le faltan " + (coste - d.puntos) + " puntos para este canje.");
     saldo = d.puntos - coste;
     tx.update(refC, { estado: "canjeado", canjeadoEn: serverTimestamp(), canjeadoPor: yo.uid });
-    if (coste > 0) tx.set(refS, { puntos: saldo, total: d.total, actualizado: serverTimestamp() });
+    if (coste > 0) tx.set(refS, { puntos: saldo, total: d.total, actualizado: serverTimestamp(), ultimoMov: refM.id });
         tx.set(refM, datosMov("canje", 0, coste ? -coste : 0, saldo, cu.data().nombre, c.uid, c.socioNombre));
   });
   return saldo;
@@ -176,7 +176,7 @@ async function deshacerUltima() {
       const d = s.exists() ? s.data() : { puntos: 0, total: 0 };
       if (d.puntos < u.puntos) throw new Error("Ya ha gastado esos puntos. Que lo corrija el administrador.");
       saldo = d.puntos - u.puntos;
-      tx.set(refS, { puntos: saldo, total: Math.max(0, d.total - u.puntos), actualizado: serverTimestamp() });
+      tx.set(refS, { puntos: saldo, total: Math.max(0, d.total - u.puntos), actualizado: serverTimestamp(), ultimoMov: refM.id });
       tx.set(refM, datosMov("deshacer", -u.importe, -u.puntos, saldo, "Deshace la compra de " + eur(u.importe) + " €", u.uid, u.nombre));
     });
     ultima = null;

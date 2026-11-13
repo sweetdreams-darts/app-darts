@@ -94,7 +94,7 @@ window.addEventListener("error", function (e) {
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, query, where, orderBy, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch, collection, query, where, orderBy, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { asegurarContador, hacerSocio } from "./socios.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
@@ -242,7 +242,14 @@ $("fSocioBtn").onclick = async () => {
   $("fSocioBtn").disabled = true;
   try {
     if (hacer) { const n = await hacerSocio(db, u.id, usuarios); u.socio = true; u.socioNum = n; u.socioDesde = { toMillis: () => Date.now() }; msg("✔ Ya es socio nº " + numSocio(n) + "."); }
-    else { await updateDoc(doc(db, "users", u.id), { socio: false }); u.socio = false; msg("✔ Ya no es socio."); }
+    else {
+      // en su cuenta protegida queda apuntado su número: así no vuelve a hacerse socio solo aunque borre su ficha
+      const b = writeBatch(db);
+      b.update(doc(db, "users", u.id), { socio: false });
+      if (u.socioNum) b.set(doc(db, "cuentas", u.id), { socioNum: u.socioNum }, { merge: true });
+      await b.commit();
+      u.socio = false; msg("✔ Ya no es socio.");
+    }
     pintarFicha();
   } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
   $("fSocioBtn").disabled = false;
@@ -250,7 +257,13 @@ $("fSocioBtn").onclick = async () => {
 $("fBloqueo").onclick = async () => {
   const u = actual, bloquear = !u.bloqueado;
   if (!confirm(bloquear ? "¿Bloquear las reservas de " + u.nombre + "? No podrá reservar hasta que se lo permitas." : "¿Permitir de nuevo las reservas de " + u.nombre + "?")) return;
-  try { await updateDoc(doc(db, "users", u.id), { bloqueado: bloquear }); u.bloqueado = bloquear; msg(bloquear ? "✔ Reservas bloqueadas." : "✔ Ya puede reservar."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+  try {
+    // el bloqueo se guarda también en su cuenta protegida, que la persona no puede borrar
+    const b = writeBatch(db);
+    b.update(doc(db, "users", u.id), { bloqueado: bloquear });
+    b.set(doc(db, "cuentas", u.id), { bloqueado: bloquear }, { merge: true });
+    await b.commit();
+    u.bloqueado = bloquear; msg(bloquear ? "✔ Reservas bloqueadas." : "✔ Ya puede reservar."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
 };
 $("fSello").onclick = async () => {
   const p = perfiles.get(actual.id) || {}, poner = p.universitario !== true;

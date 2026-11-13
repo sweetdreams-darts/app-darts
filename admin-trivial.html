@@ -52,8 +52,8 @@ label.op input{width:20px;height:20px;margin:0}
   <button id="cargar">Cargar preguntas</button>
 
   <h2>Preguntas del trivial con amigos</h2>
-  <p class="peq">Copia a la competición las preguntas del trivial con amigos (las de <b>preguntas.js</b>). El trivial con amigos las sigue teniendo igual. Las que ya estén copiadas no se repiten. Dardos y Bar y copas entran en «Dardos y bar».</p>
-  <button id="cargarAmigos" class="sec">Copiar las preguntas del trivial con amigos</button>
+  <p class="peq">Las preguntas del trivial con amigos (las de <b>preguntas.js</b>) son públicas: cualquiera puede ver sus respuestas en el código de la app. Por eso ya no se copian a la competición. Si alguna vez las copiaste, este botón quita del reto diario las que todavía estaban guardadas para él y las pasa a la partida libre (que tiene su propio ranking, sin premios).</p>
+  <button id="cargarAmigos" class="sec">Quitar del reto las preguntas del trivial con amigos</button>
 </div>
 <script>
 window.addEventListener("error", function (e) {
@@ -171,19 +171,38 @@ $("cargar").onclick = async () => {
   try { lista = JSON.parse($("texto").value.trim()); } catch (e) { $("msg").textContent = "El bloque no está bien copiado: asegúrate de pegarlo entero, desde [ hasta ]."; return; }
   if (await cargarLista(lista)) $("texto").value = "";
 };
+// Las preguntas de preguntas.js son públicas (sus respuestas están en el código): las que estén guardadas para el reto pasan a la partida libre.
 $("cargarAmigos").onclick = async () => {
   try {
     const { BANCO } = await import("./preguntas.js");
     const lista = desdeAmigos(BANCO);
-    if (!confirm("¿Copiar las " + lista.length + " preguntas del trivial con amigos a la competición?")) return;
-    await cargarLista(lista);
-  } catch (e) { $("msg").textContent = "No se han podido leer las preguntas del trivial con amigos: " + (e.code || e.message); }
+    if (!confirm("¿Quitar del reto diario las preguntas del trivial con amigos? Las que estén guardadas para el reto pasarán a la partida libre.")) return;
+    $("cargarAmigos").disabled = true;
+    $("msg").textContent = "Buscando…";
+    const ids = [...new Set(lista.map((x) => idPregunta(x.p)))];
+    let movidas = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const trozo = ids.slice(i, i + 100);
+      const docs = await Promise.all(trozo.map((id) => getDoc(doc(db, "trivial_banco", id))));
+      const enReserva = docs.filter((d) => d.exists() && d.data().estado === "reserva");
+      if (!enReserva.length) continue;
+      const b = writeBatch(db);
+      enReserva.forEach((d) => b.update(d.ref, { estado: "libre" }));
+      await b.commit();
+      const porCat = {};
+      enReserva.forEach((d) => (porCat[d.data().cat] = porCat[d.data().cat] || []).push(d.id));
+      for (const cat in porCat) await setDoc(doc(db, "trivial_libre", cat), { cat: cat, ids: arrayUnion(...porCat[cat]) }, { merge: true });
+      movidas += enReserva.length;
+    }
+    $("msg").textContent = movidas ? "✔ " + movidas + " preguntas públicas quitadas del reto: ahora están en la partida libre." : "✔ No había ninguna pregunta del trivial con amigos guardada para el reto.";
+    await cargarTodo();
+  } catch (e) { $("msg").textContent = "No se ha podido hacer: " + (e.code || e.message); }
+  $("cargarAmigos").disabled = false;
 };
 async function cargarLista(lista) {
   const { buenas, errores } = preparar(lista, Number($("porcLibre").value), Math.random);
   if (!buenas.length) { $("msg").textContent = "No hay preguntas válidas. " + errores.slice(0, 3).join(" "); return false; }
   $("cargar").disabled = true;
-  $("cargarAmigos").disabled = true;
   $("msg").textContent = "Cargando…";
   try {
     let nuevas = 0, repetidas = 0;
@@ -197,11 +216,13 @@ async function cargarLista(lista) {
       frescas.forEach((q) => {
         b.set(doc(db, "trivial_banco", q.id), { p: q.p, ops: q.ops, c: q.c, cat: q.cat, estado: q.estado });
         b.set(doc(db, "trivial_sol", q.id), { c: q.c });
+        // texto y opciones aparte: el jugador solo los puede leer cuando abre la pregunta
+        b.set(doc(db, "trivial_preg", q.id), { p: q.p, ops: q.ops, cat: q.cat });
       });
       await b.commit();
       const porCat = {};
       frescas.filter((q) => q.estado === "libre").forEach((q) => (porCat[q.cat] = porCat[q.cat] || []).push(q));
-      for (const cat in porCat) await setDoc(doc(db, "trivial_libre", cat), { cat: cat, ids: arrayUnion(...porCat[cat].map((q) => q.id)), preguntas: arrayUnion(...porCat[cat].map((q) => ({ id: q.id, p: q.p, ops: q.ops }))) }, { merge: true });
+      for (const cat in porCat) await setDoc(doc(db, "trivial_libre", cat), { cat: cat, ids: arrayUnion(...porCat[cat].map((q) => q.id)) }, { merge: true });
       await setDoc(doc(db, "trivial_config", "ajustes"), { cats: arrayUnion(...[...new Set(frescas.map((q) => q.cat))]) }, { merge: true });
       nuevas += frescas.length;
     }
@@ -209,7 +230,6 @@ async function cargarLista(lista) {
     await cargarTodo();
   } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); }
   $("cargar").disabled = false;
-  $("cargarAmigos").disabled = false;
   return true;
 }
 async function cargarTodo() {

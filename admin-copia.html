@@ -117,8 +117,8 @@ function mostrarUltima(ms, docs) {
 
 $("descargar").onclick = async () => {
   const grupos = [];
-  if ($("cUsers").checked) grupos.push("users", "perfil_extra", "contadores", "invitaciones", "embajadores", "embajadores_solicitudes", "validaciones", "tarjetas");
-  if ($("cReservas").checked) grupos.push("reservations", "dartboards", "settings");
+  if ($("cUsers").checked) grupos.push("users", "cuentas", "perfil_extra", "contadores", "invitaciones", "embajadores", "embajadores_solicitudes", "validaciones", "tarjetas");
+  if ($("cReservas").checked) grupos.push("reservations", "cupo_reservas", "dartboards", "settings");
   if ($("cLiga").checked) grupos.push("liga_equipos", "liga_partidos", "liga_locales", "liga_config", "liga_bloqueos", "liga_importaciones");
   if ($("cOfertas").checked) grupos.push("ofertas", "ruleta_config", "ruleta_versiones", "ruleta_giros");
   if ($("cImagenes").checked) grupos.push("fotos", "fotos_socios");

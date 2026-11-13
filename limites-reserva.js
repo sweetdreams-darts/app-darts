@@ -44,15 +44,16 @@ function recortarFin() {
 onAuthStateChanged(auth, async (u) => {
   if (!u) return;
   try {
-    const [f, s, r] = await Promise.all([
+    const [f, s, r, cu] = await Promise.all([
       getDoc(doc(db, "users", u.uid)),
       getDoc(doc(db, "settings", "reservas")),
-      getDocs(query(collection(db, "reservations"), where("uid", "==", u.uid)))
+      getDocs(query(collection(db, "reservations"), where("uid", "==", u.uid))),
+      getDoc(doc(db, "cuentas", u.uid)).catch(() => null)
     ]);
     const ficha = f.exists() ? f.data() : {};
     const c = s.exists() ? s.data() : {};
     lim.admin = ficha.role === "admin";
-    lim.bloqueado = ficha.bloqueado === true;
+    lim.bloqueado = ficha.bloqueado === true || !!(cu && cu.exists() && cu.data().bloqueado === true);
     lim.maxActivas = Number(c.maxActivas) > 0 ? Number(c.maxActivas) : 3;
     lim.maxHoras = Number(c.maxHoras) > 0 ? Number(c.maxHoras) : 4;
     const ahora = Date.now();
@@ -60,7 +61,7 @@ onAuthStateChanged(auth, async (u) => {
     lim.listo = true;
     if (lim.bloqueado && !lim.admin) aviso(motivoDeBloqueo(lim, 0, 0));
     recortarFin();
-  } catch (e) { /* si algo falla, no se aplican límites en pantalla (las reglas del servidor siguen mandando) */ }
+  } catch (e) { /* si algo falla, no se aplican límites en pantalla (las reglas del servidor siguen mandando: bloqueo, máximo de reservas activas y duración) */ }
 });
 
 document.addEventListener("click", (e) => {
