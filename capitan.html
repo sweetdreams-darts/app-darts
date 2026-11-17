@@ -160,11 +160,36 @@ function tramosLibres(dianaId, dia, ocupados, ahoraMs) {
   if (a !== null) out.push([a, fin]);
   return out;
 }
+// Apertura y cierre del bar ese día (en milisegundos), según el horario de «Reglas de reserva» y las vísperas de festivo.
+// Si cierra a una hora menor que la de apertura (por ejemplo, a las 03:00), es de madrugada del día siguiente.
+// Devuelve null si ese día el bar está cerrado.
+function aperturaDe(dia, horario, visperas) {
+  if (!horario || !horario.dias) return null;
+  const [y, mo, d] = dia.split("-").map(Number), sem = new Date(y, mo - 1, d).getDay();
+  const base = horario.dias[sem];
+  if (!base || !base.abre || !base.cierra) return null;
+  const min = (t) => { const [h, m] = String(t).split(":").map(Number); return h * 60 + (m || 0); };
+  // el cierre de víspera solo cuenta si es más tarde que el normal (contando la madrugada como el día siguiente)
+  const tarde = (t) => (min(t) <= min(base.abre) ? min(t) + 1440 : min(t));
+  let cierra = base.cierra;
+  if (horario.vispera && horario.vispera.cierra && (visperas || []).includes(dia) && tarde(horario.vispera.cierra) > tarde(base.cierra)) cierra = horario.vispera.cierra;
+  const abreMs = aMs(dia, Math.floor(min(base.abre) / 60), min(base.abre) % 60);
+  return [abreMs, aMs(dia, 0, 0) + tarde(cierra) * 60000];
+}
+// Horas de inicio de una partida ese día, cada media hora: desde que abre el bar hasta la última a la que da tiempo
+// a terminarla antes del cierre. Sin horario guardado, de 17:30 a 22:30 como antes.
+function horasDelDia(dia, cat, nivel) {
+  const ab = aperturaDe(dia, horarioBar, visperasBar), out = [];
+  if (!ab) { if (horarioBar && horarioBar.dias) return out; for (let m = 17 * 60 + 30; m <= 22 * 60 + 30; m += 30) out.push(aMs(dia, Math.floor(m / 60), m % 60)); return out; }
+  const media = 30 * 60000;
+  for (let t = Math.ceil(ab[0] / media) * media; t + duracion(cat, nivel) <= ab[1]; t += media) out.push(t);
+  return out;
+}
 // Horas de inicio posibles para una partida de ese tipo y cuántas dianas quedan libres en cada una.
 function huecosPara(cat, nivel, dia, dianas, ocupados, ahoraMs) {
   const out = [];
-    for (let m = 17 * 60 + 30; m <= 22 * 60 + 30; m += 30) {
-    const p = aMs(dia, Math.floor(m / 60), m % 60), iv = intervaloPara(cat, p, nivel);
+  for (const p of horasDelDia(dia, cat, nivel)) {
+    const iv = intervaloPara(cat, p, nivel);
     if (iv[0] < ahoraMs) continue;
     const libres = elegibles(cat, dianas).filter((d) => libreEn(d.id, iv, ocupados));
     out.push({ hora: hhmm(p), libres: libres.map((d) => d.nombre) });
@@ -192,12 +217,28 @@ function partidosDe(equipos, partidos, cambios, hoy) {
   }
   return out.sort((a, b) => a.dia.localeCompare(b.dia) || a.hora.localeCompare(b.hora) || a.id.localeCompare(b.id));
 }
-// Lista de huecos de hora para el formulario: de 19:00 a 22:30, y siempre incluye la hora de ahora.
-function horasFormulario(horaActual) {
-  const o = [];
-  for (let m = 17 * 60 + 30; m <= 22 * 60 + 30; m += 30) o.push(pad(Math.floor(m / 60)) + ":" + pad(m % 60));
-  if (horaActual && !o.includes(horaActual)) o.push(horaActual);
-  return o.sort();
+// Lista de horas para el formulario: todo el horario del bar ese día (ver horasDelDia), y siempre incluye la hora de ahora.
+// Las horas de madrugada (después de las 00:00) van al final, en su orden.
+function horasFormulario(dia, cat, nivel, horaActual) {
+  const ms = horasDelDia(dia, cat, nivel), o = ms.map((t) => hhmm(t));
+  if (horaActual && !o.includes(horaActual)) {
+    const [h, m] = horaActual.split(":").map(Number), t = aMs(dia, h, m) + (ms.length && aMs(dia, h, m) < ms[0] - 6 * 3600000 ? 86400000 : 0);
+    const i = ms.findIndex((x) => x > t);
+    o.splice(i < 0 ? o.length : i, 0, horaActual);
+  }
+  return o;
+}
+// La jornada del bar acaba a las 6:00: una partida a las 00:30 del «lunes» del formulario es, en el calendario, la del martes.
+// Se guarda siempre con su fecha real (como el resto de la app), y al revés para enseñarla en el formulario.
+const fechaReal = (dia, hora) => (hora && hora < "06:00" ? iso(new Date(aMs(dia, 36, 0))) : dia);
+const diaDeJornada = (dia, hora) => (hora && hora < "06:00" ? iso(new Date(aMs(dia, -12, 0))) : dia);
+// Rellena el desplegable de horas para el día elegido, manteniendo la hora elegida si sigue existiendo.
+function pintarHorasForm(elegida) {
+  const sel = $("fHora"), dia = $("fFecha").value || hoy;
+  sel.innerHTML = "";
+  horasFormulario(dia, itemForm.cat, itemForm.nivel, dia === diaDeJornada(itemForm.dia, itemForm.hora) ? itemForm.hora : "").forEach((h) => sel.add(new Option(h, h)));
+  if (!sel.options.length) sel.add(new Option("Ese día el bar está cerrado", ""));
+  if (elegida && [...sel.options].some((o) => o.value === elegida)) sel.value = elegida;
 }
 function mensajeCambio(s) {
   const liga = s.cat === "parejas" ? "Parejas nivel " + s.nivel : "Liga online equipos, nivel " + s.nivel;
@@ -224,6 +265,7 @@ function validarSolicitud(s) {
 }
 // </logica>
 
+let horarioBar = null, visperasBar = [];
 let ficha = null, uid = "", dianas = [], ocupados = new Set(), diaSel = "", hoy = "", cancelar = null, partidos = [], cambios = new Map(), pedidos = [], itemForm = null, ocupadosForm = new Set(), pedidosEnviados = [];
 
 function pintarDias() {
@@ -320,11 +362,9 @@ function abrirForm(p) {
   $("opOnline").classList.toggle("oculto", !op.online);
   const primera = ["mover", "aplazar", "ida_vuelta", "online"].find((t) => ({ mover: op.mover, aplazar: op.aplazar, ida_vuelta: op.ida, online: op.online })[t]) || "mover";
   document.querySelector('input[name="tipoCambio"][value="' + primera + '"]').checked = true;
-  $("fFecha").value = p.dia < hoy ? hoy : p.dia;
+  $("fFecha").value = diaDeJornada(p.dia, p.hora) < hoy ? hoy : diaDeJornada(p.dia, p.hora);
   $("fFecha").min = hoy;
-  $("fHora").innerHTML = "";
-  horasFormulario(p.hora).forEach((h) => $("fHora").add(new Option(h, h)));
-  $("fHora").value = p.hora;
+  pintarHorasForm(p.hora);
   $("fRival").checked = false;
   $("fNota").value = "";
   $("fInfo").textContent = "";
@@ -363,10 +403,11 @@ async function mostrarTipo() {
 }
 async function comprobarForm() {
   if (!itemForm) return;
-  const dia = $("fFecha").value, hora = $("fHora").value;
-  if (!dia || !hora) { $("fDisp").textContent = ""; return; }
+  const hora = $("fHora").value, jornada = $("fFecha").value, dia = fechaReal(jornada, hora);
+  if (!jornada || !hora) { $("fDisp").textContent = ""; return; }
   try {
-    const a = new Date(aMs(dia, 6, 0)), b = new Date(aMs(dia, 30, 0));
+    // huecos de toda la jornada del bar elegida (de 6:00 a 6:00 del día siguiente)
+    const a = new Date(aMs(jornada, 6, 0)), b = new Date(aMs(jornada, 30, 0));
     const s = await getDocs(query(collection(db, "slots"), where("inicio", ">=", Timestamp.fromDate(a)), where("inicio", "<", Timestamp.fromDate(b))));
     ocupadosForm = new Set(s.docs.map((d) => d.id));
     const [h, m] = hora.split(":").map(Number), iv = intervaloPara(itemForm.cat, aMs(dia, h, m), itemForm.nivel);
@@ -374,14 +415,14 @@ async function comprobarForm() {
     $("fDisp").textContent = libres.length ? "✔ A esa hora hay " + libres.length + (libres.length === 1 ? " diana libre" : " dianas libres") + ": " + libres.map((d) => d.nombre).join(", ") + "." : "⚠ A esa hora no hay ninguna diana libre. Puedes pedirlo igualmente y el bar mirará cómo encajarlo, o prueba otra hora.";
   } catch (e) { $("fDisp").textContent = ""; }
 }
-$("fFecha").onchange = comprobarForm;
+$("fFecha").onchange = () => { if (itemForm) pintarHorasForm($("fHora").value); comprobarForm(); };
 $("fHora").onchange = comprobarForm;
 document.querySelectorAll('input[name="tipoCambio"]').forEach((r) => (r.onchange = mostrarTipo));
 $("fCancelar").onclick = () => { $("cap-form").classList.add("oculto"); itemForm = null; };
 $("fEnviar").onclick = async () => {
   if (!itemForm) return;
   const tipo = document.querySelector('input[name="tipoCambio"]:checked').value;
-  const s = { uid: uid, equipoKey: itemForm.equipoKey, equipoNombre: itemForm.equipoNombre, partidoId: itemForm.id, cat: itemForm.cat, nivel: itemForm.nivel, jornada: itemForm.jornada || 0, local: itemForm.local, visitante: itemForm.visitante, diaOriginal: itemForm.diaOriginal, horaOriginal: itemForm.horaOriginal, tipo: tipo, diaNuevo: tipo === "mover" ? $("fFecha").value : "", horaNueva: tipo === "mover" ? $("fHora").value : "", nota: $("fNota").value.trim(), rivalDeAcuerdo: $("fRival").checked, capitan: ficha.nombre || "" };
+  const s = { uid: uid, equipoKey: itemForm.equipoKey, equipoNombre: itemForm.equipoNombre, partidoId: itemForm.id, cat: itemForm.cat, nivel: itemForm.nivel, jornada: itemForm.jornada || 0, local: itemForm.local, visitante: itemForm.visitante, diaOriginal: itemForm.diaOriginal, horaOriginal: itemForm.horaOriginal, tipo: tipo, diaNuevo: tipo === "mover" ? fechaReal($("fFecha").value, $("fHora").value) : "", horaNueva: tipo === "mover" ? $("fHora").value : "", nota: $("fNota").value.trim(), rivalDeAcuerdo: $("fRival").checked, capitan: ficha.nombre || "" };
   const err = validarSolicitud(Object.assign({ hoy: hoy }, s));
   if (err) { $("fInfo").textContent = err; return; }
   $("fEnviar").disabled = true;
@@ -455,6 +496,12 @@ onAuthStateChanged(auth, async (u) => {
     diaSel = hoy;
     if (equipos.length) { const [c0, n0] = equipos[0].split("|"); $("tipoH").value = c0 + "|" + (Number(n0) >= 1 && Number(n0) <= 5 ? 1 : 6); }
     dianas = (await getDocs(query(collection(db, "dartboards"), orderBy("orden")))).docs.map((d) => Object.assign({ id: d.id }, d.data())).filter((x) => x.activa);
+    // horario del bar (Reglas de reserva) y vísperas de festivo: para ofrecer todas las horas desde la apertura hasta el cierre
+    try {
+      const [h, v] = await Promise.all([getDoc(doc(db, "settings", "horario")), getDoc(doc(db, "settings", "visperas"))]);
+      horarioBar = h.exists() ? h.data() : null;
+      visperasBar = v.exists() ? v.data().fechas || [] : [];
+    } catch (e) { horarioBar = null; }
     const pares = [...new Set(equipos.map((k) => k.split("|").slice(0, 2).join("|")))];
     const trozos = await Promise.all(pares.map((k) => { const [c, n] = k.split("|"); return getDocs(query(collection(db, "liga_partidos"), where("categoria", "==", c), where("nivel", "==", Number(n)))); }));
     partidos = trozos.flatMap((t) => t.docs.map((d) => Object.assign({ id: d.id }, d.data())));
