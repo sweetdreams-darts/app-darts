@@ -91,6 +91,7 @@ input,button{width:100%;box-sizing:border-box;padding:13px;font-size:1rem;margin
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, addDoc, updateDoc, collection, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { ajustesInvitar, estadoInvitacion } from "./embajadores.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -255,15 +256,16 @@ async function empezar(u) {
       ver("vYa"); return;
     }
   } catch (e) {}
-  // si le invitó un embajador y aún no ha venido, aviso para el camarero con la consumición mínima
+  // si le invitó un embajador (primera visita o visitas siguientes), aviso para el camarero: de quién es la visita y la consumición mínima
   try {
     const inv = await getDoc(doc(db, "invitaciones", u.uid));
-    if (inv.exists() && inv.data().premiado !== true) {
-      const ci = await getDoc(doc(db, "settings", "invitaciones"));
-      const d = ci.exists() ? ci.data() : {};
-      if (d.activo !== false) {
-        const min = typeof d.minimo === "number" ? d.minimo : 4.5;
-        for (const id of ["minimo", "minimo2"]) { $(id).textContent = "🍹 Camarero: valida solo si ha consumido " + min.toFixed(2).replace(".", ",") + " € o más"; $(id).classList.remove("oculto"); }
+    if (inv.exists()) {
+      const [ci, yo] = await Promise.all([getDoc(doc(db, "settings", "invitaciones")), getDoc(doc(db, "users", u.uid))]);
+      const cfg = ajustesInvitar(ci.exists() ? ci.data() : null), est = estadoInvitacion(inv.data(), cfg);
+      if (est.activa) {
+        const nombre = yo.exists() ? String(yo.data().nombre || "").split(" ")[0] : "";
+        const txt = "🍹 Camarero: visita de " + (nombre || "este cliente") + (est.embajador ? ", invitado por " + est.embajador : "") + ". Valida solo si ha consumido " + cfg.minimo.toFixed(2).replace(".", ",") + " € o más";
+        for (const id of ["minimo", "minimo2"]) { $(id).textContent = txt; $(id).classList.remove("oculto"); }
       }
     }
   } catch (e) {}
