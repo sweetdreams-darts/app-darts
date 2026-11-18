@@ -51,7 +51,7 @@ window.addEventListener("error", function (e) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, deleteDoc, query, where, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-import { configDe, idCupon, codigoCupon, estadoCupon, textoMovimiento, faltan, mesDe, fechaUTC } from "./puntos.js";
+import { configDe, idCupon, codigoCupon, estadoCupon, textoMovimiento, faltan, mesDe, fechaCanje } from "./puntos.js";
 import { montarInvitar } from "./socios.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
@@ -74,14 +74,14 @@ function motivoNo(p) {
   const propios = cupones.filter((c) => c.premioId === p.id);
   if (propios.some((c) => estadoCupon(c, Date.now()) === "pendiente")) return "Ya lo tienes activo";
   if (p.limite === "una" && propios.length) return "Ya lo has usado";
-  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaUTC(Date.now())))) return "Ya lo has pedido hoy";
+  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaCanje(Date.now())))) return "Ya lo has pedido hoy";
   if (faltan(p.coste, saldo) > 0) return "Te faltan " + faltan(p.coste, saldo) + " puntos";
   return "";
 }
 
 function pintar() {
   $("saldo").textContent = String(saldo);
-  $("norma").textContent = "Por cada 1 € que gastes en el bar ganas " + (cfg.puntosPorEuro === 1 ? "1 punto" : cfg.puntosPorEuro + " puntos") + ". Enseña tu carné al pagar.";
+  $("norma").textContent = "Ganas puntos por cada amigo que invitas con tu enlace y viene al bar. Canjéalos por premios en la barra.";
   const act = cupones.filter((c) => estadoCupon(c, Date.now()) === "pendiente");
   $("activosCaja").classList.toggle("oculto", !act.length);
   const a = $("activos");
