@@ -40,6 +40,10 @@ button.mal{background:#ff8787;color:#14213d}
   <div id="solicitudes"></div>
   <h2>Embajadores</h2>
   <div id="lista"></div>
+  <h2>🏆 Ranking del mes y ganadores</h2>
+  <p class="peq">El robot calcula el ranking cada día y cada vez que un embajador gana puntos. Al empezar un mes, apunta al ganador del anterior con el premio que hayas puesto en los ajustes y le avisa. Márcalo como entregado cuando se lo des.</p>
+  <div id="rankAdm"></div>
+  <div id="ganadores"></div>
   <h2>Por facultad</h2>
   <p class="peq">Amigos que han venido gracias a los embajadores de cada facultad.</p>
   <div id="porFac"></div>
@@ -60,6 +64,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/fireba
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { hacerSocio, montarAjustesInvitar } from "./socios.js";
+import { montarRanking, nombreMes } from "./embajadores.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -173,6 +178,27 @@ async function cargar() {
   try { perfiles = new Map((await lee("perfil_extra")).map((p) => [p.id, p])); } catch (e) {}
   pintar();
 }
+// Ganadores de cada mes: con su premio y si ya se le ha entregado.
+async function pintarGanadores() {
+  const c = $("ganadores");
+  c.innerHTML = "";
+  const s = await getDocs(collection(db, "embajadores_ganadores"));
+  const l = s.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => b.id.localeCompare(a.id));
+  if (!l.length) { c.append(Object.assign(document.createElement("p"), { className: "peq", textContent: "Todavía no hay ganadores: el primero sale cuando termine el primer mes." })); return; }
+  l.forEach((g) => {
+    const card = document.createElement("div"); card.className = "card";
+    const t = document.createElement("strong"); t.textContent = "🏆 " + nombreMes(g.mes) + " " + g.mes.slice(0, 4) + ": " + g.n + " (" + g.amigos + " amigos)";
+    const sm = document.createElement("small"); sm.textContent = g.premio ? "Premio: " + g.premio : "Sin premio";
+    card.append(t, document.createElement("br"), sm);
+    if (g.premio) {
+      const b = document.createElement("button"); b.type = "button";
+      b.textContent = g.entregado ? "✔ Premio entregado (pulsa para deshacer)" : "Marcar premio como entregado";
+      b.onclick = async () => { try { await updateDoc(doc(db, "embajadores_ganadores", g.id), { entregado: !g.entregado }); await pintarGanadores(); } catch (e) { $("msg").textContent = "Error: " + (e.code || e.message); } };
+      card.append(b);
+    }
+    c.append(card);
+  });
+}
 onAuthStateChanged(auth, async (u) => {
   $("panel").classList.add("oculto");
   if (!u) { $("estado").innerHTML = 'Primero inicia sesión en la <a href="./">app</a>.'; return; }
@@ -181,6 +207,8 @@ onAuthStateChanged(auth, async (u) => {
     if (!yo.exists() || yo.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
     await cargar();
     await montarAjustesInvitar(db, $("ajustes"));
+    await montarRanking(db, $("rankAdm"), "");
+    await pintarGanadores();
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }

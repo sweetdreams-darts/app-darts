@@ -19,6 +19,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/fireba
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { montarSolicitud } from "./socios.js";
+import { montarRanking } from "./embajadores.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -32,6 +33,10 @@ const db = getFirestore(app);
 onAuthStateChanged(auth, (u) => {
   if (!u) { document.getElementById("caja").innerHTML = '<p>Primero inicia sesión en la <a href="./">app</a>.</p>'; return; }
   montarSolicitud(db, u.uid, document.getElementById("caja"));
+  // el ranking del mes, para que se vea lo que ganan los embajadores
+  let rk = document.getElementById("rankEmb");
+  if (!rk) { rk = document.createElement("div"); rk.id = "rankEmb"; rk.className = "zona"; document.getElementById("caja").after(rk); }
+  montarRanking(db, rk, u.uid);
 });
 </script>
 </main></body></html>

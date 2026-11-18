@@ -2,7 +2,7 @@
 # También comprueba las tarjetas NFC de los camareros, da los puntos a los embajadores cuando viene un amigo suyo,
 # mantiene la cuenta protegida de cada persona (cuentas/{uid}: alta, bloqueo y número de socio)
 # y, una vez por jornada, borra todos los datos de las cuentas que ya no existen en Firebase Authentication.
-import json, os, re, time
+import json, os, random, re, time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import requests
@@ -262,15 +262,52 @@ def mes_de(ms):
 
 
 # ---------------- trae a un amigo ----------------
+# Niveles de los embajadores por amigos traídos (los que han venido y han dado puntos), con sus puntos extra por defecto.
+NIVELES = [("bronce", 3, "🥉 Bronce", 25), ("plata", 10, "🥈 Plata", 50), ("oro", 25, "🥇 Oro", 100), ("diamante", 50, "💎 Diamante", 250)]
+MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def entero(v, defecto=0):
+    if not v: return defecto
+    if "integerValue" in v: return int(v["integerValue"])
+    if "doubleValue" in v: return int(v["doubleValue"])
+    return defecto
+
+
 def ajustes_invitar():
-    cfg = {"activo": True, "puntos": 100, "maxMes": 0, "minimo": 4.5}
+    cfg = {"activo": True, "puntos": 100, "maxMes": 0, "minimo": 4.5, "premioMes": "",
+           "bonus": {n: b for n, _, _, b in NIVELES}, "campana": None}
     d = leer("settings/invitaciones")
     f = (d or {}).get("fields", {})
     if "activo" in f: cfg["activo"] = f["activo"].get("booleanValue", True)
     if "puntos" in f: cfg["puntos"] = int(f["puntos"].get("integerValue", 100))
     if "maxMes" in f: cfg["maxMes"] = int(f["maxMes"].get("integerValue", 0))
     if "minimo" in f: cfg["minimo"] = float(f["minimo"].get("doubleValue", f["minimo"].get("integerValue", 4.5)))
+    if "premioMes" in f: cfg["premioMes"] = f["premioMes"].get("stringValue", "")
+    niv = f.get("niveles", {}).get("mapValue", {}).get("fields", {})
+    for n in cfg["bonus"]:
+        if n in niv: cfg["bonus"][n] = entero(niv[n], cfg["bonus"][n])
+    c = f.get("campana", {}).get("mapValue", {}).get("fields", {})
+    if c.get("activa", {}).get("booleanValue") is True:
+        hasta = c.get("hasta", {}).get("stringValue", "")
+        hoy = local(int(time.time() * 1000)).strftime("%Y-%m-%d")
+        if hasta and hasta >= hoy:
+            cfg["campana"] = {"multiplicador": max(1, entero(c.get("multiplicador"), 2)), "hasta": hasta, "id": c.get("id", {}).get("stringValue", "")}
     return cfg
+
+
+def puntos_por_amigo(cfg):
+    """Puntos que gana un embajador por amigo (multiplicados si hay campaña de puntos dobles activa)."""
+    return cfg["puntos"] * (cfg["campana"]["multiplicador"] if cfg["campana"] else 1)
+
+
+def fecha_corta(dia):
+    """«2026-11-30» → «30 de noviembre»."""
+    try:
+        y, m, d = (int(x) for x in dia.split("-"))
+        return f"{d} de {MESES_LARGOS[m - 1]}"
+    except Exception:
+        return dia
 
 
 def revisar_invitaciones(ultima):
@@ -341,7 +378,7 @@ def premiar_uno(uid, inv, cfg, ahora, mes):
             escribir([cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": 0, "motivo": "tope del mes", "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes})])
             print("Embajadores: tope del mes para el socio", num)
             return
-    pts = cfg["puntos"]
+    pts = puntos_por_amigo(cfg)
     sp = leer(f"socios_puntos/{socio}")
     saldo = (int(campo(sp, "puntos", "integerValue") or 0) if sp else 0) + pts
     mov = {"uid": socio, "tipo": "ajuste", "importe": 0, "puntos": pts, "saldo": saldo, "por": "robot", "porNombre": "Embajadores", "nota": "has invitado a " + nombre, "mes": mes, "creado": {"ms": ahora}}
@@ -352,8 +389,216 @@ def premiar_uno(uid, inv, cfg, ahora, mes):
         cambiar(f"invitaciones/{uid}", {"premiado": True, "puntos": pts, "refUid": socio, "premiadoEn": {"ms": ahora}, "premiadoMes": mes}),
     ])
     for t in tokens_de(socio):
-        enviar(t, "🎉 Tu amigo ha venido", f"{nombre} ha venido a Sweet Dreams: +{pts} puntos para ti.", "invitar-" + uid, APP + "mis-puntos.html")
+        enviar(t, "🎉 Tu amigo ha venido", f"{nombre} ha venido a Sweet Dreams: +{pts} puntos para ti.", "invitar-" + uid, APP)
     print(f"Embajadores: +{pts} puntos para el socio {num} por {nombre}")
+    try:
+        subir_nivel(socio, cfg, ahora, mes)
+    except Exception as e:
+        print("Embajadores: no se ha podido revisar el nivel:", e)
+    try:
+        calcular_ranking()
+    except Exception as e:
+        print("Embajadores: no se ha podido actualizar el ranking:", e)
+
+
+def amigos_de(socio):
+    """Amigos que un embajador ha traído al bar (invitaciones que le dieron puntos)."""
+    return sum(1 for d in consulta("invitaciones", [("refUid", "EQUAL", {"stringValue": socio})]) if int(campo(d, "puntos", "integerValue") or 0) > 0)
+
+
+def subir_nivel(socio, cfg, ahora, mes):
+    """Si el embajador llega a un nivel nuevo (Bronce, Plata, Oro, Diamante), se lo apunta y le da sus puntos extra (una sola vez)."""
+    n = amigos_de(socio)
+    emb = leer(f"embajadores/{socio}")
+    actual = campo(emb or {}, "nivel") or ""
+    orden = [x[0] for x in NIVELES]
+    alcanzado = [x for x in NIVELES if n >= x[1]]
+    if not alcanzado:
+        return
+    clave, _, nombre, _ = alcanzado[-1]
+    if actual in orden and orden.index(actual) >= orden.index(clave):
+        return
+    extra = cfg["bonus"].get(clave, 0)
+    writes = [cambiar(f"embajadores/{socio}", {"nivel": clave, "nivelEn": {"ms": ahora}})]
+    if extra > 0:
+        sp = leer(f"socios_puntos/{socio}")
+        saldo = (int(campo(sp, "puntos", "integerValue") or 0) if sp else 0) + extra
+        mov = {"uid": socio, "tipo": "ajuste", "importe": 0, "puntos": extra, "saldo": saldo, "por": "robot", "porNombre": "Embajadores",
+               "nota": "¡nivel " + nombre.split(" ", 1)[1] + "!", "mes": mes, "creado": {"ms": ahora}}
+        writes = [
+            {"update": {"name": f"{RAIZ}/socios_mov/nivel_{socio}_{clave}", "fields": {k: valor(v) for k, v in mov.items()}}, "currentDocument": {"exists": False}},
+            {"update": {"name": f"{RAIZ}/socios_puntos/{socio}", "fields": {"actualizado": valor({"ms": ahora})}}, "updateMask": {"fieldPaths": ["actualizado"]},
+             "updateTransforms": [{"fieldPath": "puntos", "increment": {"integerValue": str(extra)}}, {"fieldPath": "total", "increment": {"integerValue": str(extra)}}]},
+        ] + writes
+    escribir(writes)
+    for t in tokens_de(socio):
+        enviar(t, f"{nombre.split(' ')[0]} ¡Subes a nivel {nombre.split(' ', 1)[1]}!", f"Ya has traído {n} amigos." + (f" Te regalamos {extra} puntos extra." if extra > 0 else ""), "nivel-" + clave, APP)
+    print(f"Embajadores: el socio {socio} sube a {clave} (+{extra} puntos)")
+
+
+def calcular_ranking(mes=None):
+    """Ranking de embajadores de un mes (por amigos traídos) y total de puntos repartidos. Lo enseña la app a los socios."""
+    ahora = int(time.time() * 1000)
+    mes = mes or mes_de(ahora)
+    por = {}
+    for d in consulta("invitaciones", [("premiadoMes", "EQUAL", {"stringValue": mes})]):
+        pts, ref = int(campo(d, "puntos", "integerValue") or 0), campo(d, "refUid")
+        if pts > 0 and ref:
+            x = por.setdefault(ref, {"amigos": 0, "puntos": 0, "ultimo": 0})
+            x["amigos"] += 1
+            x["puntos"] += pts
+            x["ultimo"] = max(x["ultimo"], ms_de(campo(d, "premiadoEn", "timestampValue")) if campo(d, "premiadoEn", "timestampValue") else 0)
+    fichas = leer_varios([f"users/{u}" for u in por] + [f"embajadores/{u}" for u in por]) if por else {}
+    lista = []
+    for u, x in por.items():
+        if f"users/{u}" not in fichas:
+            continue   # cuenta borrada: no sale en el ranking
+        lista.append({"uid": u, "n": nombre_corto(campo(fichas.get(f"users/{u}", {}), "nombre") or ""), "amigos": x["amigos"], "puntos": x["puntos"],
+                      "nivel": campo(fichas.get(f"embajadores/{u}", {}), "nivel") or "", "ultimo": x["ultimo"]})
+    # más amigos primero; a igualdad, quien llegó antes a esa cifra
+    lista.sort(key=lambda e: (-e["amigos"], e["ultimo"], e["n"]))
+    lista = lista[:20]
+    total_pts, total_amigos = sum(x["puntos"] for x in por.values()), sum(x["amigos"] for x in por.values())
+    def mapa(e):
+        return {"mapValue": {"fields": {"uid": valor(e["uid"]), "n": valor(e["n"]), "amigos": valor(e["amigos"]), "puntos": valor(e["puntos"]), "nivel": valor(e["nivel"])}}}
+    escribir([{"update": {"name": f"{RAIZ}/embajadores_ranking/actual", "fields": {
+        "mes": valor(mes), "lista": {"arrayValue": {"values": [mapa(e) for e in lista]}} if lista else {"arrayValue": {}},
+        "totalPuntos": valor(total_pts), "totalAmigos": valor(total_amigos), "actualizado": valor({"ms": ahora})}}}])
+    return lista
+
+
+def cerrar_mes_embajadores():
+    """Al empezar un mes nuevo, apunta al mejor embajador del mes anterior (con su premio) y le avisa."""
+    rk = leer("embajadores_ranking/actual")
+    mes_ant = campo(rk or {}, "mes")
+    ahora = int(time.time() * 1000)
+    if not mes_ant or mes_ant == mes_de(ahora):
+        return
+    lista = calcular_ranking(mes_ant)   # con los datos definitivos del mes que se cierra
+    if lista and not leer(f"embajadores_ganadores/{mes_ant}"):
+        g, premio = lista[0], ajustes_invitar()["premioMes"]
+        escribir([{"update": {"name": f"{RAIZ}/embajadores_ganadores/{mes_ant}", "fields": {
+            "mes": valor(mes_ant), "uid": valor(g["uid"]), "n": valor(g["n"]), "amigos": valor(g["amigos"]), "premio": valor(premio),
+            "entregado": valor(False), "cerrado": valor({"ms": ahora})}}}])
+        y, m = mes_ant.split("-")
+        for t in tokens_de(g["uid"]):
+            enviar(t, "🏆 ¡Mejor embajador del mes!", f"Has sido el embajador que más amigos ha traído en {MESES_LARGOS[int(m) - 1]}: {g['amigos']}."
+                   + (f" Tu premio: {premio}. Pásate por la barra." if premio else " ¡Enhorabuena!"), "ganador-" + mes_ant, APP)
+        print(f"Embajadores: ganador de {mes_ant}: {g['n']} ({g['amigos']} amigos)")
+    calcular_ranking()
+
+
+def revisar_invitados_nuevos(ultima):
+    """Cuando alguien se registra con el enlace de un embajador: guarda su nombre corto (para que el embajador lo vea en su lista)
+    y avisa al embajador al momento."""
+    mayor = ultima
+    cfg = None
+    for d in consulta("invitaciones", [("creado", "GREATER_THAN", {"timestampValue": iso(ultima)})], "creado"):
+        mayor = max(mayor, ms_de(campo(d, "creado", "timestampValue")) + 1)
+        uid, num = id_de(d), int(campo(d, "ref", "integerValue") or 0)
+        try:
+            amigo = leer(f"users/{uid}")
+            nombre = nombre_corto(campo(amigo, "nombre") if amigo else "")
+            quien = consulta("users", [("socioNum", "EQUAL", {"integerValue": str(num)})]) if num else []
+            cambios = {"nombre": nombre}
+            if quien and id_de(quien[0]) != uid:
+                cambios["refUid"] = id_de(quien[0])
+            escribir([cambiar(f"invitaciones/{uid}", cambios)])
+            if "refUid" in cambios:
+                emb = leer(f"embajadores/{cambios['refUid']}")
+                if emb and campo(emb, "activo", "booleanValue") is True:
+                    cfg = cfg or ajustes_invitar()
+                    for t in tokens_de(cambios["refUid"]):
+                        enviar(t, "👋 Nuevo amigo registrado", f"{nombre} se ha registrado con tu enlace. Cuando venga al bar, te llevas {puntos_por_amigo(cfg)} puntos.", "registro-" + uid, APP)
+            print("Embajadores: nuevo invitado registrado:", nombre)
+        except Exception as e:
+            print("Embajadores: no se ha podido avisar del invitado", uid, "-", e)
+    return mayor
+
+
+def recordar_invitados():
+    """Una vez: si un invitado lleva una semana registrado y no ha venido, se lo recuerda a su embajador."""
+    ahora = int(time.time() * 1000)
+    for d in consulta("invitaciones", [("premiado", "EQUAL", {"booleanValue": False})]):
+        if campo(d, "recordado", "booleanValue") or not campo(d, "refUid") or not campo(d, "creado", "timestampValue"):
+            continue
+        dias = (ahora - ms_de(campo(d, "creado", "timestampValue"))) / 864e5
+        if dias < 7 or dias > 60:
+            continue
+        nombre = campo(d, "nombre") or "Tu amigo"
+        for t in tokens_de(campo(d, "refUid")):
+            enviar(t, "⏳ ¡Recuérdaselo!", f"{nombre} se registró con tu enlace hace una semana y aún no ha venido. Si viene, te llevas tus puntos.", "recuerdo-inv-" + id_de(d), APP)
+        escribir([cambiar(f"invitaciones/{id_de(d)}", {"recordado": True})])
+
+
+def anunciar_campana():
+    """Cuando el administrador activa una campaña de puntos dobles, se avisa a todos los embajadores activos (una vez por campaña)."""
+    cfg = ajustes_invitar()
+    c = cfg["campana"]
+    if not c or not c["id"] or not cfg["activo"]:
+        return
+    if campo(leer("avisos_estado/campana") or {}, "id") == c["id"]:
+        return
+    pts = puntos_por_amigo(cfg)
+    for e in consulta("embajadores", [("activo", "EQUAL", {"booleanValue": True})]):
+        for t in tokens_de(id_de(e)):
+            enviar(t, f"🔥 ¡Puntos x{c['multiplicador']}!", f"Hasta el {fecha_corta(c['hasta'])}, cada amigo que traigas al bar vale {pts} puntos. ¡Comparte tu enlace!", "campana-" + c["id"], APP)
+    escribir([{"update": {"name": f"{RAIZ}/avisos_estado/campana", "fields": {"id": valor(c["id"])}}}])
+    print("Embajadores: campaña anunciada:", c)
+
+
+# ---------------- cumpleaños de los socios ----------------
+def ajustes_cumple():
+    f = (leer("settings/cumple") or {}).get("fields", {})
+    return {"activo": f.get("activo", {}).get("booleanValue") is True, "premio": f.get("premio", {}).get("stringValue", "").strip(),
+            "dias": max(1, entero(f.get("dias"), 7))}
+
+
+def regalos_cumple():
+    """Cada jornada: a los socios que cumplen años hoy les crea su regalo de cumpleaños (uno por año) y les felicita."""
+    cfg = ajustes_cumple()
+    if not cfg["activo"] or not cfg["premio"]:
+        return 0
+    ahora = int(time.time() * 1000)
+    hoy = local(ahora - 6 * 3600000)   # la jornada del bar empieza a las 6:00
+    bisiesto = hoy.year % 4 == 0 and (hoy.year % 100 != 0 or hoy.year % 400 == 0)
+    dias_hoy = {hoy.strftime("%m-%d")} | ({"02-29"} if hoy.strftime("%m-%d") == "02-28" and not bisiesto else set())
+    cumplen = [(id_de(d), campo(d, "nacimiento")) for d in listar("perfil_extra", ["nacimiento"]) if (campo(d, "nacimiento") or "")[5:] in dias_hoy]
+    if not cumplen:
+        return 0
+    fichas = leer_varios([f"users/{u}" for u, _ in cumplen])
+    hechos = 0
+    for uid, _ in cumplen:
+        u = fichas.get(f"users/{uid}")
+        if not u or campo(u, "socio", "booleanValue") is not True:
+            continue
+        cid = f"{uid}_cumple_{hoy.year}"
+        if leer(f"cupones/{cid}"):
+            continue
+        codigo = "".join(random.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(4))
+        datos = {"uid": uid, "premioId": "cumple", "nombre": "🎂 " + cfg["premio"], "coste": 0, "estado": "pendiente", "codigo": codigo,
+                 "creado": {"ms": ahora}, "caduca": {"ms": ahora + cfg["dias"] * 86400000}}
+        escribir([{"update": {"name": f"{RAIZ}/cupones/{cid}", "fields": {k: valor(v) for k, v in datos.items()}}, "currentDocument": {"exists": False}}])
+        nombre = (campo(u, "nombre") or "").split(" ")[0]
+        for t in tokens_de(uid):
+            enviar(t, "🎂 ¡Feliz cumpleaños" + (", " + nombre if nombre else "") + "!", f"Tu regalo de cumpleaños: {cfg['premio']}. Lo tienes en «Mis regalos»: enséñalo en la barra.", "cumple-" + cid, APP + "regalos.html")
+        hechos += 1
+    print(f"Cumpleaños: {hechos} regalo(s) creado(s)")
+    return hechos
+
+
+def tareas_diarias():
+    """Una vez por jornada: regalos de cumpleaños, recordatorios de invitados, ranking de embajadores y ganador del mes."""
+    ahora = int(time.time() * 1000)
+    hoy = local(ahora - 6 * 3600000).strftime("%Y-%m-%d")
+    if campo(leer("avisos_estado/diario") or {}, "dia") == hoy:
+        return
+    for nombre, tarea in (("cumpleaños", regalos_cumple), ("recordatorios de invitados", recordar_invitados), ("mes de embajadores", cerrar_mes_embajadores), ("ranking", calcular_ranking)):
+        try:
+            tarea()
+        except Exception as e:
+            print(f"Error en la tarea diaria ({nombre}):", e)
+    escribir([{"update": {"name": f"{RAIZ}/avisos_estado/diario", "fields": {"dia": valor(hoy)}}}])
 
 
 # ---------------- tarjetas NFC de los camareros ----------------
@@ -662,6 +907,14 @@ def main():
         limpiar_cuentas_borradas()
     except Exception as e:
         print("Error en la limpieza diaria:", e)
+    try:
+        tareas_diarias()
+    except Exception as e:
+        print("Error en las tareas diarias:", e)
+    ultima_reg = leer_marca("avisos_estado/invitados")
+    if ultima_reg is None:   # la primera vez se empieza desde ahora
+        ultima_reg = int(time.time() * 1000)
+        escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitados", "fields": {"ultimaMs": valor(ultima_reg)}}}])
     while True:
         print(local(int(time.time() * 1000)).strftime("%H:%M"), "revisando reservas, usuarios nuevos e invitaciones…")
         try:
@@ -680,6 +933,14 @@ def main():
                         escribir([{"update": {"name": f"{RAIZ}/{ruta}", "fields": {"ultimaMs": valor(nueva_m)}}}])
                 except Exception as e:
                     print("Error revisando", col + ":", e)
+            try:
+                nueva_reg = revisar_invitados_nuevos(ultima_reg)
+                if nueva_reg != ultima_reg:
+                    ultima_reg = nueva_reg
+                    escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitados", "fields": {"ultimaMs": valor(ultima_reg)}}}])
+                anunciar_campana()
+            except Exception as e:
+                print("Error revisando embajadores:", e)
             nueva_inv = revisar_invitaciones(ultima_inv)
             if nueva_inv != ultima_inv:
                 ultima_inv = nueva_inv
