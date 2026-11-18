@@ -114,6 +114,7 @@ service cloud.firestore {
     }
 
     // ---------- Reservas ----------
+    // De momento, solo los jugadores oficiales de la liga (y el administrador) pueden reservar dianas.
     // Cada reserva se guarda junto con sus huecos de 15 minutos (slots) y una de las «fichas de cupo» de la persona
     // (cupo_reservas). Hay tantas fichas como reservas activas se permiten, así que nadie puede tener más.
     // Un hueco cuya reserva ya no existe queda libre: cualquiera lo puede volver a reservar.
@@ -122,6 +123,7 @@ service cloud.firestore {
         let d = request.resource.data;
         let r = getAfter(/databases/$(database)/documents/reservations/$(d.reserva)).data;
         return conectado()
+          && esJugadorOAdmin()
           && noBloqueado()
           && request.auth.token.email_verified == true
           && d.keys().hasOnly(['dianaId', 'inicio', 'uid', 'tipo', 'reserva'])
@@ -166,6 +168,7 @@ service cloud.firestore {
 
       allow create: if esAdmin() || (
         conectado()
+        && esJugadorOAdmin()
         && request.auth.token.email_verified == true
         && noBloqueado()
         && request.resource.data.keys().hasOnly(['uid', 'dianaId', 'inicio', 'fin', 'creado', 'cupo'])
@@ -587,7 +590,8 @@ service cloud.firestore {
           && request.auth.token.email.split('@')[1].lower() in get(/databases/$(database)/documents/settings/universitarios).data.dominios;
       }
       function perfilValido(d) {
-        return d.keys().hasOnly(['facultad', 'universitario', 'origen', 'creado', 'actualizado'])
+        return d.keys().hasOnly(['facultad', 'universitario', 'origen', 'creado', 'actualizado', 'nacimiento'])
+          && (!('nacimiento' in d) || (d.nacimiento is string && d.nacimiento.matches('^(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')))
           && d.actualizado == request.time
           && (!('facultad' in d) || (d.facultad is string && d.facultad.size() <= 60))
           && (!('universitario' in d) || d.universitario is bool)
@@ -605,11 +609,14 @@ service cloud.firestore {
         && perfilValido(request.resource.data)
         && request.resource.data.creado == resource.data.creado
         && request.resource.data.get('origen', '') == resource.data.get('origen', '')
+        // la fecha de nacimiento se pone una sola vez; para corregirla, el administrador
+        && (!('nacimiento' in resource.data) || request.resource.data.get('nacimiento', '') == resource.data.nacimiento)
         && (request.resource.data.get('universitario', false) != true
             || resource.data.get('universitario', false) == true
             || correoUniversitario()));
 
-      allow delete: if esAdmin() || (conectado() && request.auth.uid == uid);
+      // quien ya ha puesto su cumpleaños no puede borrar su perfil para cambiarlo (al borrar la cuenta, lo borra el robot)
+      allow delete: if esAdmin() || (conectado() && request.auth.uid == uid && !('nacimiento' in resource.data));
     }
 
     // ---------- Contador de números de socio (para que nunca se repitan) ----------
@@ -642,6 +649,15 @@ service cloud.firestore {
     }
     match /embajadores/{uid} {
       allow read: if conectado() && (request.auth.uid == uid || esAdmin() || esStaff());
+      allow write: if esAdmin();
+    }
+    // Ranking del mes y ganadores: los escribe el robot. Los ven los socios (para picarse) y el administrador.
+    match /embajadores_ranking/{id} {
+      allow read: if esSocio() || esAdmin() || esStaff();
+      allow write: if esAdmin();
+    }
+    match /embajadores_ganadores/{id} {
+      allow read: if esSocio() || esAdmin() || esStaff();
       allow write: if esAdmin();
     }
     match /embajadores_solicitudes/{uid} {

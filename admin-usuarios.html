@@ -73,6 +73,12 @@ button:disabled{opacity:.5}
     <a class="persona" href="admin-reservas.html"><small>Ver y gestionar reservas ›</small></a>
   </div>
   <div class="card">
+    <h2>🎂 Cumpleaños</h2>
+    <div id="fCumple"></div>
+    <input id="fNac" type="date">
+    <button id="fNacBtn" class="sec">Guardar cumpleaños</button>
+  </div>
+  <div class="card">
     <h2>Universitario</h2>
     <div id="fUni"></div>
     <button id="fSello" class="sec"></button>
@@ -211,6 +217,10 @@ async function pintarFicha() {
   getDocs(query(collection(db, "reservations"), where("uid", "==", u.id))).then((x) => { const ahora = Date.now(); dr.lastChild.textContent = String(x.docs.filter((d) => ms(d.data().inicio) >= ahora).length); }).catch(() => { dr.lastChild.textContent = "—"; });
   $("fBloqueo").textContent = u.bloqueado ? "Permitir reservas de nuevo" : "Bloquear reservas";
   $("fBloqueo").classList.toggle("oculto", u.role === "robot" || u.role === "admin");
+  // cumpleaños (lo pone el socio una vez; aquí se puede corregir)
+  const cu = $("fCumple"); cu.innerHTML = "";
+  cu.append(el("small", p.nacimiento ? "Nació el " + p.nacimiento.split("-").reverse().join("/") + ". El socio no puede cambiarlo; si se equivocó, corrígelo aquí." : "Todavía no ha puesto su fecha de nacimiento. Puedes ponérsela tú si te la dice."));
+  $("fNac").value = p.nacimiento || "";
   // universitario
   const un = $("fUni"); un.innerHTML = "";
   un.append(el("small", p.universitario === true ? "Tiene el sello 🎓 de estudiante." : "No tiene el sello 🎓. Se activa solo con el correo de la universidad; aquí puedes ponérselo si te enseña su carné."));
@@ -264,6 +274,11 @@ $("fBloqueo").onclick = async () => {
     b.set(doc(db, "cuentas", u.id), { bloqueado: bloquear }, { merge: true });
     await b.commit();
     u.bloqueado = bloquear; msg(bloquear ? "✔ Reservas bloqueadas." : "✔ Ya puede reservar."); pintarFicha(); } catch (e) { msg("No se pudo cambiar: " + (e.code || e.message)); }
+};
+$("fNacBtn").onclick = async () => {
+  const v = $("fNac").value;
+  if (!/^(19|20)\d{2}-\d{2}-\d{2}$/.test(v)) { msg("Elige una fecha de nacimiento válida."); return; }
+  try { await guardarPerfil({ nacimiento: v }); msg("✔ Cumpleaños guardado."); pintarFicha(); } catch (e) { msg("No se pudo guardar: " + (e.code || e.message)); }
 };
 $("fSello").onclick = async () => {
   const p = perfiles.get(actual.id) || {}, poner = p.universitario !== true;

@@ -217,6 +217,8 @@ onAuthStateChanged(auth, async (u) => {
     ]);
     dianas = d.docs.map((x) => ({ id: x.id, ...x.data() })).filter((x) => x.activa);
     esAdmin = f.exists() && f.data().role === "admin";
+    // de momento, solo los jugadores oficiales de la liga (y el administrador) pueden reservar dianas
+    if (!f.exists() || !["player", "admin"].includes(f.data().role)) { $("estado").innerHTML = 'De momento, las reservas de dianas son solo para los jugadores oficiales de la liga. <a href="./">Volver al inicio</a>'; return; }
     // los mismos valores por defecto que las reglas de Firebase y limites-reserva.js
     cfg = { min: r.data().minAntelacionMin, max: r.data().maxDiasAntelacion, tramo: r.data().tramoMin,
       maxActivas: Number(r.data().maxActivas) > 0 ? Number(r.data().maxActivas) : 3, maxHoras: Number(r.data().maxHoras) > 0 ? Number(r.data().maxHoras) : 4 };

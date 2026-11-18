@@ -43,6 +43,16 @@ input,select,textarea,button{box-sizing:border-box;min-width:0;max-width:100%}
   </div>
   <button id="guardarCfg">Guardar</button>
 
+  <h2>🎂 Regalo de cumpleaños</h2>
+  <p style="margin-top:0;opacity:.85">Cada socio pone una vez su fecha de nacimiento en su inicio. El día de su cumpleaños le aparece este regalo en «Mis regalos» (con un aviso en el móvil) y se canjea en la caja como cualquier regalo. Los textos de la app se cambian solos con lo que escribas aquí.</p>
+  <label style="display:flex;gap:10px;align-items:center"><input id="kAct" type="checkbox" style="width:auto"> Regalo de cumpleaños activo</label>
+  <label for="kPre">Regalo<small>Se lee así: «El día de tu cumpleaños te regalamos …». Por ejemplo: un chupito, una caña, un cóctel.</small></label>
+  <input id="kPre" type="text" maxlength="80" placeholder="un chupito">
+  <label for="kDias">Días para canjearlo (desde el día del cumpleaños)</label>
+  <input id="kDias" type="number" min="1" max="60" inputmode="numeric">
+  <p id="kVista" style="opacity:.85"></p>
+  <button id="guardarCumple">Guardar</button>
+
   <h2>Premios y combos</h2>
   <p style="margin-top:0;opacity:.85"><b>Para embajadores:</b> los canjean con sus puntos en «Mis puntos y premios». <b>Para todos los socios:</b> son regalos gratis (0 puntos) que ven en «Mis regalos» y en su inicio; los socios no ganan puntos, así que no les pongas precio.</p>
   <div id="lista"></div>
@@ -130,6 +140,23 @@ $("guardarCfg").onclick = async () => {
   const d = { puntosPorEuro: Number($("cPpe").value), maxImporte: Number($("cMax").value), deshacerSeg: Number($("cUndo").value) };
   if (!(d.puntosPorEuro > 0) || !(d.maxImporte > 0) || !(d.deshacerSeg >= 10)) { msg("Revisa los números: deben ser mayores que 0 (los segundos, al menos 10)."); return; }
   try { await setDoc(doc(db, "settings", "puntos"), d, { merge: true }); msg("✔ Guardado. Se aplica al momento."); } catch (e) { msg("Error: " + (e.code || e.message)); }
+};
+
+// Regalo de cumpleaños (settings/cumple): lo crea el robot de avisos el día del cumpleaños de cada socio.
+async function cargarCumple() {
+  const c = await getDoc(doc(db, "settings", "cumple")), d = c.exists() ? c.data() : {};
+  $("kAct").checked = d.activo === true;
+  $("kPre").value = d.premio || "";
+  $("kDias").value = String(Number(d.dias) >= 1 ? d.dias : 7);
+  vistaCumple();
+}
+function vistaCumple() { $("kVista").textContent = $("kPre").value.trim() ? "Los socios verán: «El día de tu cumpleaños te regalamos " + $("kPre").value.trim() + ". 🎂»" : ""; }
+$("kPre").oninput = vistaCumple;
+$("guardarCumple").onclick = async () => {
+  const d = { activo: $("kAct").checked, premio: $("kPre").value.trim().slice(0, 80), dias: Number($("kDias").value) };
+  if (d.activo && !d.premio) { msg("Escribe cuál es el regalo de cumpleaños."); return; }
+  if (!Number.isInteger(d.dias) || d.dias < 1 || d.dias > 60) { msg("Los días para canjearlo deben estar entre 1 y 60."); return; }
+  try { await setDoc(doc(db, "settings", "cumple"), d); msg("✔ Regalo de cumpleaños guardado."); } catch (e) { msg("Error: " + (e.code || e.message)); }
 };
 
 function limpiarForm() {
@@ -221,6 +248,7 @@ onAuthStateChanged(auth, async (u) => {
     if (!m.exists() || m.data().role !== "admin") { $("estado").textContent = "No tienes permiso para ver esta página."; return; }
     yo = { uid: u.uid, nombre: m.data().nombre || "Administrador" };
     await cargarCfg();
+    await cargarCumple();
     await cargarPremios();
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");

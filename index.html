@@ -91,7 +91,7 @@ button.enlace{margin-top:6px;padding:8px;font-weight:400}
     </div>
 
     <div class="tiles">
-      <a class="tile t-rosa grande" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
+      <a id="tileDardos" class="tile t-rosa grande oculto" href="dardos.html"><span class="emoji">🎯</span><strong>Universo Dardos</strong><small>Reservas, liga y torneos</small></a>
       <a id="tileCarne" class="tile t-violeta grande oculto" href="carne.html"><span class="emoji">🪪</span><strong>Mi carné de socio</strong><small>Tu código para el bar</small></a>
       <a id="tilePuntos" class="tile t-amarillo grande oculto" href="mis-puntos.html"><span class="emoji">⭐</span><strong>Mis puntos y premios</strong><small>Tu saldo, combos y cupones</small></a>
       <a class="tile t-amarillo" href="ofertas.html"><span class="emoji">🎁</span><strong>Ofertas</strong><small>Promos y ofertas para socios</small></a>
@@ -131,6 +131,7 @@ import { proximos, etiquetaNivel, cuando, fechaLarga, mapsDe, norm } from "./pro
 import { montar as montarHoy } from "./hoy-sd.js";
 import { autoSocio } from "./socios.js";
 import { montarUni } from "./universitarios.js";
+import { montarCumple } from "./cumple.js";
   
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
@@ -268,6 +269,8 @@ function mostrar(user, ficha) {
   $("avisoVerif").classList.toggle("oculto", puede);
   $("vEmail").textContent = user.email;
   $("tileAdmin").classList.toggle("oculto", ficha.role !== "admin");
+  // Universo Dardos (reservas, liga y torneos): de momento, solo para los jugadores oficiales y el administrador
+  $("tileDardos").classList.toggle("oculto", ficha.role !== "player" && ficha.role !== "admin");
   $("tileStaff").classList.toggle("oculto", ficha.role !== "staff" && ficha.role !== "admin");
   $("borrar").classList.toggle("oculto", ficha.role === "admin");
   $("boxBorrar").classList.add("oculto");
@@ -283,7 +286,7 @@ function mostrar(user, ficha) {
   vista("vistaUsuario");
   cargarProximo(user, ficha);
   montarHoy(db, ficha);
-  autoSocio(db, user, ficha);
+  autoSocio(db, user, ficha).then(() => montarCumple(db, user, ficha));
   montarUni(db, user, ficha);
 }
 

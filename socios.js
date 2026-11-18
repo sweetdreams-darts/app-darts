@@ -3,6 +3,7 @@
 // y el botón «Validar mi consumición» (tarjeta NFC del camarero).
 import { doc, getDoc, getDocs, setDoc, collection, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { estadoCupon, fechaCanje } from "./puntos.js";
+import { ajustesInvitar, montarPanel, montarDetalle, NIVELES, puntosPorAmigo, campanaActiva } from "./embajadores.js";
 
 // <logica>
 const maxNum = (usuarios) => Math.max(0, ...(usuarios || []).map((u) => Number(u.socioNum) || 0));
@@ -28,20 +29,8 @@ function regalosDe(premios, cupones, ahora) {
   });
   return { activos, libres };
 }
-// Embajadores: ajustes por defecto, el enlace de cada embajador y el número que trae un enlace.
-const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0, minimo: 4.5 };
-const APP = "https://sweetdreams-darts.github.io/app-darts/";
-function ajustesInvitar(d) {
-  const c = Object.assign({}, INVITAR);
-  if (d && typeof d.activo === "boolean") c.activo = d.activo;
-  if (d && typeof d.abierto === "boolean") c.abierto = d.abierto;
-  if (d && Number.isInteger(d.puntos) && d.puntos >= 0) c.puntos = d.puntos;
-  if (d && Number.isInteger(d.maxMes) && d.maxMes >= 0) c.maxMes = d.maxMes;
-  if (d && typeof d.minimo === "number" && d.minimo >= 0 && d.minimo <= 100) c.minimo = d.minimo;
-  return c;
-}
+// Embajadores: los ajustes del programa y el enlace de cada embajador están en embajadores.js.
 const euros = (n) => Number(n).toFixed(2).replace(".", ",") + " €";
-const enlaceInvitar = (n) => APP + "?ref=" + numSocio(n) + "&o=embajador";
 const FACULTADES_SOCIOS = ["Ciencias", "Medicina", "Enfermería", "Derecho", "Filosofía y Letras", "Educación y Trabajo Social", "Económicas y Empresariales", "Comercio", "Ingenierías Industriales", "Telecomunicación", "Arquitectura", "Agrarias (Palencia)", "Otra universidad"];
 function refDeURL(search) {
   const r = new URLSearchParams(search || "").get("ref");
@@ -266,9 +255,17 @@ async function pintarEmbajador(db, user, ficha) {
     let tile = document.getElementById("tileEmbajador");
     const quitar = () => { if (tile) tile.remove(); };
     if (!ficha || ficha.socio !== true) { puntos.classList.add("oculto"); quitar(); return; }
-    const [emb, sol, c] = await Promise.all([getDoc(ref(db, "embajadores", user.uid)), getDoc(ref(db, "embajadores_solicitudes", user.uid)), getDoc(ref(db, "settings", "invitaciones"))]);
-    if (emb.exists() && emb.data().activo === true) { puntos.classList.remove("oculto"); quitar(); return; }
+    const [emb, sol, c, rk] = await Promise.all([getDoc(ref(db, "embajadores", user.uid)), getDoc(ref(db, "embajadores_solicitudes", user.uid)), getDoc(ref(db, "settings", "invitaciones")), getDoc(ref(db, "embajadores_ranking", "actual")).catch(() => null)]);
+    if (emb.exists() && emb.data().activo === true) {
+      // embajador activo: el panel grande arriba del todo (puntos, enlace, QR, invitados, nivel y ranking)
+      quitar();
+      let hecho = false;
+      try { hecho = await montarPanel(db, user, ficha); } catch (e) {}
+      puntos.classList.toggle("oculto", hecho);
+      return;
+    }
     puntos.classList.add("oculto");
+    { const p = document.getElementById("panelEmb"); if (p) p.remove(); }
     const cfg = ajustesInvitar(c.exists() ? c.data() : null), estado = sol.exists() ? sol.data().estado : "";
     if (estado === "rechazado" || (!estado && (!cfg.activo || !cfg.abierto))) { quitar(); return; }
     if (!tile) {
@@ -279,7 +276,11 @@ async function pintarEmbajador(db, user, ficha) {
     tile.innerHTML = "";
     const e = document.createElement("span"), st = document.createElement("strong"), sm = document.createElement("small");
     e.className = "emoji"; e.textContent = "👑"; st.textContent = "¿Quieres ser embajador?";
-    sm.textContent = estado === "pendiente" ? "Tu solicitud está en revisión" : "Invita a tu gente y llévate recompensas";
+    const total = rk && rk.exists() ? Number(rk.data().totalPuntos) || 0 : 0, camp = campanaActiva(cfg);
+    sm.textContent = estado === "pendiente" ? "Tu solicitud está en revisión"
+      : camp ? "🔥 Ahora cada amigo vale " + puntosPorAmigo(cfg) + " puntos. ¡Apúntate!"
+      : total > 0 ? "Este mes nuestros embajadores ya han ganado " + total + " puntos. ¿Te apuntas?"
+      : "Invita a tu gente y llévate premios por cada amigo que venga";
     tile.append(e, st, sm);
   } catch (e) {}
 }
@@ -314,7 +315,8 @@ async function pintarAvisos(db, user, ficha) {
     const caja = document.createElement("div"); caja.id = "avisosCaja"; caja.className = "avisos-c";
     const p = (t, c) => { const e = document.createElement("p"); e.textContent = t; if (c) e.className = c; return e; };
     const lista = document.createElement("ul");
-    ["⏰ Un aviso un rato antes de que empiece tu reserva de diana, para que no se te pase."].concat(emb ? ["🎉 Cuando venga al bar un amigo que has invitado."] : []).forEach((t) => { const li = document.createElement("li"); li.textContent = t; lista.append(li); });
+    (["player", "admin"].includes(ficha.role) ? ["⏰ Un aviso un rato antes de que empiece tu reserva de diana, para que no se te pase."] : ["🎂 Tu regalo el día de tu cumpleaños.", "🎁 Ofertas y regalos nuevos para socios."])
+      .concat(emb ? ["👋 Cuando un amigo se registre con tu enlace.", "🎉 Cuando venga al bar un amigo que has invitado, y cuando subas de nivel."] : []).forEach((t) => { const li = document.createElement("li"); li.textContent = t; lista.append(li); });
     const fila = document.createElement("div"); fila.className = "a-fila";
     const no = document.createElement("button"); no.type = "button"; no.className = "a-no"; no.textContent = "Ahora no";
     no.onclick = () => { try { localStorage.setItem("sd_avisos_luego", String(Date.now())); } catch (e) {} caja.remove(); };
@@ -393,37 +395,9 @@ export async function autoSocio(db, user, ficha) {
 // Solo para embajadores activos: su enlace y sus cifras (a los demás no se les enseña nada).
 export async function montarInvitar(db, uid, caja) {
   if (!caja) return;
-  const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
   try {
-    const [yo, c, emb, sol, uni] = await Promise.all([getDoc(ref(db, "users", uid)), getDoc(ref(db, "settings", "invitaciones")), getDoc(ref(db, "embajadores", uid)), getDoc(ref(db, "embajadores_solicitudes", uid)), getDoc(ref(db, "settings", "universitarios")).catch(() => null)]);
-    const cfg = ajustesInvitar(c.exists() ? c.data() : null), num = yo.exists() ? yo.data().socioNum : 0;
-    caja.innerHTML = "";
-    caja.className = "";
-    if (!cfg.activo) return;
-    if (emb.exists() && emb.data().activo === true && num) {
-      const link = enlaceInvitar(num);
-      caja.className = "zona";
-      caja.append(el("h2", "👑 Eres embajador de Sweet Dreams"), el("p", "Pasa tu enlace a tu gente. Por cada amigo que se registre con él y venga al bar (consumiendo " + euros(cfg.minimo) + " o más), te llevas " + cfg.puntos + " puntos" + (cfg.maxMes ? " (hasta " + cfg.maxMes + " al mes)." : ".")));
-      const texto = "Te invito a la app de Sweet Dreams: reserva diana, juega al trivial y gana premios. Regístrate con mi enlace: " + link;
-      const compartir = el("button", "Compartir mi enlace", "pri");
-      compartir.type = "button";
-      compartir.onclick = async () => {
-        if (navigator.share) { try { await navigator.share({ title: "Sweet Dreams", text: texto }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
-        location.href = "https://wa.me/?text=" + encodeURIComponent(texto);
-      };
-      const copiar = el("button", "Copiar el enlace");
-      copiar.type = "button";
-      copiar.onclick = async () => { try { await navigator.clipboard.writeText(link); copiar.textContent = "✔ Enlace copiado"; } catch (e) { copiar.textContent = link; } };
-      const estado = el("small", "");
-      caja.append(compartir, copiar, estado);
-      try {
-        const s = await getDocs(query(collection(db, "invitaciones"), where("ref", "==", num)));
-        const l = s.docs.map((d) => d.data()), vinieron = l.filter((x) => x.premiado === true && (x.puntos || 0) > 0), esperando = l.filter((x) => x.premiado !== true).length;
-        const ganados = vinieron.reduce((t, x) => t + (x.puntos || 0), 0);
-        estado.textContent = l.length ? "Registrados con tu enlace: " + l.length + " · han venido: " + vinieron.length + (esperando ? " · aún no han venido: " + esperando : "") + " · puntos ganados: " + ganados : "Todavía no se ha registrado nadie con tu enlace.";
-      } catch (e) {}
-      return;
-    }
+    const yo = await getDoc(ref(db, "users", uid));
+    await montarDetalle(db, uid, yo.exists() ? yo.data().socioNum : 0, caja);
   } catch (e) { caja.innerHTML = ""; caja.className = ""; }
 }
 
@@ -468,27 +442,41 @@ export async function montarSolicitud(db, uid, caja) {
 export async function montarAjustesInvitar(db, caja) {
   if (!caja) return;
   const el = (tag, txt, cls) => { const e = document.createElement(tag); if (txt) e.textContent = txt; if (cls) e.className = cls; return e; };
+  const num = (valor, paso) => { const i = document.createElement("input"); i.type = "number"; i.min = "0"; i.step = paso || "1"; i.inputMode = paso ? "decimal" : "numeric"; i.value = String(valor); return i; };
+  const chk = (texto, marcado) => { const l = el("label", "", "chk"), i = document.createElement("input"); i.type = "checkbox"; i.checked = marcado; l.append(i, el("span", texto)); return [l, i]; };
   const c = await getDoc(ref(db, "settings", "invitaciones"));
   const cfg = ajustesInvitar(c.exists() ? c.data() : null);
   caja.innerHTML = "";
-  caja.append(el("h2", "Ajustes del programa"), el("p", "Cada embajador tiene un enlace en «Mis puntos». Cuando un amigo se registra con él y viene al bar (una compra de la consumición mínima o más en la caja, o una validación con la tarjeta del camarero), el embajador recibe estos puntos y un aviso en el móvil. Canjear un cupón gratis no cuenta."));
-  const chk = el("label", "", "chk"), act = document.createElement("input");
-  act.type = "checkbox"; act.checked = cfg.activo; chk.append(act, el("span", "Programa activo (los embajadores ganan puntos)"));
-  const chk2 = el("label", "", "chk"), abi = document.createElement("input");
-  abi.type = "checkbox"; abi.checked = cfg.abierto; chk2.append(abi, el("span", "Aceptar solicitudes nuevas (a los socios que no son embajadores les sale «¿Quieres ser embajador?» en el inicio)"));
-  const l1 = el("label", "Puntos para quien invita"), p = document.createElement("input");
-  p.type = "number"; p.min = "0"; p.inputMode = "numeric"; p.value = String(cfg.puntos);
-  const l2 = el("label", "Máximo de amigos premiados por embajador y mes (0 = sin límite)"), m = document.createElement("input");
-  m.type = "number"; m.min = "0"; m.inputMode = "numeric"; m.value = String(cfg.maxMes);
-  const l3 = el("label", "Consumición mínima del amigo para que cuente (€)"), mi = document.createElement("input");
-  mi.type = "number"; mi.min = "0"; mi.step = "0.5"; mi.inputMode = "decimal"; mi.value = String(cfg.minimo);
+  caja.append(el("h2", "Ajustes del programa"), el("p", "Cada embajador tiene su panel en el inicio con su enlace, su QR, sus invitados, su nivel y el ranking. Cuando un amigo se registra con su enlace y viene al bar (una compra de la consumición mínima o más en la caja, o una validación con la tarjeta del camarero), el embajador recibe estos puntos y un aviso en el móvil. Canjear un cupón gratis no cuenta."));
+  const [l1, act] = chk("Programa activo (los embajadores ganan puntos)", cfg.activo);
+  const [l2, abi] = chk("Aceptar solicitudes nuevas (a los socios que no son embajadores les sale «¿Quieres ser embajador?» en el inicio)", cfg.abierto);
+  const p = num(cfg.puntos), m = num(cfg.maxMes), mi = num(cfg.minimo, "0.5");
+  const pm = document.createElement("input"); pm.type = "text"; pm.maxLength = 80; pm.placeholder = "Ej.: una cena para dos (vacío = sin premio)"; pm.value = cfg.premioMes;
+  caja.append(l1, l2, el("label", "Puntos por cada amigo que viene"), p, el("label", "Máximo de amigos premiados por embajador y mes (0 = sin límite)"), m,
+    el("label", "Consumición mínima del amigo para que cuente (€)"), mi, el("label", "🏆 Premio para el mejor embajador del mes (el que más amigos trae)"), pm);
+  caja.append(el("h2", "🏅 Niveles"), el("p", "Al llegar a cada nivel, el embajador recibe estos puntos de regalo (una sola vez) y un aviso. 0 = sin regalo."));
+  const niv = {};
+  NIVELES.forEach((n) => { niv[n.k] = num(cfg.niveles[n.k]); caja.append(el("label", n.ico + " " + n.nom + " (" + n.min + " amigos)"), niv[n.k]); });
+  const cp = cfg.campana || { activa: false, multiplicador: 2, hasta: "", id: "" };
+  caja.append(el("h2", "🔥 Campaña de puntos dobles"), el("p", "Mientras esté activa, cada amigo vale más puntos. Al activarla, los embajadores reciben un aviso en el móvil."));
+  const [l3, ca] = chk("Campaña activa", cp.activa);
+  const mu = document.createElement("select"); [2, 3].forEach((x) => mu.add(new Option("x" + x + " (puntos " + (x === 2 ? "dobles" : "triples") + ")", x))); mu.value = String(cp.multiplicador);
+  const ha = document.createElement("input"); ha.type = "date"; ha.value = cp.hasta;
+  caja.append(l3, el("label", "Multiplicador"), mu, el("label", "Hasta el día (incluido)"), ha);
   const b = el("button", "Guardar"), r = el("small", "");
   b.type = "button";
   b.onclick = async () => {
-    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value), minimo: Math.round(Number(String(mi.value).replace(",", ".")) * 100) / 100 };
+    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value), minimo: Math.round(Number(String(mi.value).replace(",", ".")) * 100) / 100, premioMes: pm.value.trim().slice(0, 80), niveles: {} };
+    NIVELES.forEach((n) => { d.niveles[n.k] = Number(niv[n.k].value); });
     if (!Number.isInteger(d.puntos) || d.puntos < 0 || d.puntos > 5000 || !Number.isInteger(d.maxMes) || d.maxMes < 0 || d.maxMes > 100) { r.textContent = "Revisa los números: enteros, 0 o más (puntos hasta 5000, amigos hasta 100)."; return; }
     if (!(d.minimo >= 0 && d.minimo <= 100)) { r.textContent = "La consumición mínima debe estar entre 0 y 100 €."; return; }
-    try { await setDoc(ref(db, "settings", "invitaciones"), d); r.textContent = "✔ Guardado."; } catch (e) { r.textContent = "Error: " + (e.code || e.message); }
+    if (NIVELES.some((n) => !Number.isInteger(d.niveles[n.k]) || d.niveles[n.k] < 0 || d.niveles[n.k] > 5000)) { r.textContent = "Los puntos de los niveles deben ser enteros entre 0 y 5000."; return; }
+    if (ca.checked && !ha.value) { r.textContent = "Pon hasta qué día dura la campaña."; return; }
+    // cada vez que se activa o se cambia la campaña, cambia su identificador: así el robot avisa a los embajadores una vez
+    const nueva = { activa: ca.checked, multiplicador: Number(mu.value), hasta: ha.value };
+    const igual = cp.activa === nueva.activa && cp.multiplicador === nueva.multiplicador && cp.hasta === nueva.hasta;
+    d.campana = Object.assign(nueva, { id: igual ? cp.id : String(Date.now()) });
+    try { await setDoc(ref(db, "settings", "invitaciones"), d); Object.assign(cp, d.campana); r.textContent = "✔ Guardado." + (nueva.activa && !igual ? " Los embajadores recibirán el aviso de la campaña en un minuto o dos." : ""); } catch (e) { r.textContent = "Error: " + (e.code || e.message); }
   };
-  caja.append(chk, chk2, l1, p, l2, m, l3, mi, b, r);
+  caja.append(b, r);
 }

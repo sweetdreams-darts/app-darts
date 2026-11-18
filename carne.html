@@ -28,6 +28,8 @@ main{width:100%;max-width:420px}
     <p class="nombre" id="nombre"></p>
     <p class="num" id="num"></p>
     <p class="desde" id="desde"></p>
+    <p class="desde" id="emb"></p>
+    <p class="desde" id="cumple"></p>
     <div id="qr"></div>
     <p class="nota">Enseña este código en el bar.</p>
   </div>
@@ -36,6 +38,8 @@ main{width:100%;max-width:420px}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import { NIVELES } from "./embajadores.js";
+import { lineaCumple } from "./cumple.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -66,6 +70,12 @@ onAuthStateChanged(auth, async (u) => {
       $("qr").style.color = "#000";
       $("qr").textContent = "Nº " + String(f.socioNum || 0).padStart(4, "0");
     }
+    // embajador: su insignia y su nivel; y su cumpleaños, si lo ha puesto
+    try {
+      const e = await getDoc(doc(db, "embajadores", u.uid));
+      if (e.exists() && e.data().activo === true) { const n = NIVELES.find((x) => x.k === e.data().nivel); $("emb").textContent = "👑 Embajador" + (n ? " · " + n.ico + " " + n.nom : ""); }
+    } catch (e) {}
+    $("cumple").textContent = await lineaCumple(db, u.uid);
     $("estado").textContent = "";
     $("panel").classList.remove("oculto");
   } catch (e) { $("estado").textContent = "Error: " + (e.code || e.message); }

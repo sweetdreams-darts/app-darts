@@ -49,6 +49,8 @@ onAuthStateChanged(auth, async (u) => {
     const rol = yo.exists() ? yo.data().role : "user";
     const puede = u.emailVerified || rol === "admin";
     const liga = ["player", "admin"].includes(rol);
+    // de momento, Universo Dardos (reservas, liga y torneos) es solo para los jugadores oficiales
+    if (!liga) { $("estado").innerHTML = 'Universo Dardos es, de momento, solo para los jugadores oficiales de la liga. <a href="./">Volver al inicio</a>'; return; }
     const capitan = liga && (rol === "admin" || ((yo.exists() && yo.data().capitanDe) || []).length > 0);
     $("tReservar").classList.toggle("bloq", !puede);
     $("tMis").classList.toggle("bloq", !puede);
