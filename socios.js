@@ -3,7 +3,7 @@
 // y el botón «Validar mi consumición» (tarjeta NFC del camarero).
 import { doc, getDoc, getDocs, setDoc, collection, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import { estadoCupon, fechaCanje } from "./puntos.js";
-import { ajustesInvitar, montarPanel, montarDetalle, NIVELES, puntosPorAmigo, campanaActiva } from "./embajadores.js";
+import { ajustesInvitar, montarPanel, montarDetalle, NIVELES, puntosPorAmigo, puntosPorVisita, campanaActiva, estadoInvitacion, jornadaDe } from "./embajadores.js";
 
 // <logica>
 const maxNum = (usuarios) => Math.max(0, ...(usuarios || []).map((u) => Number(u.socioNum) || 0));
@@ -201,49 +201,65 @@ async function pintarVentajas(db, user, ficha) {
 }
 
 // Tarjeta para quien entró con el enlace de un embajador: qué tiene que hacer para que cuente su invitación.
+// Tarjeta de quien vino con el enlace de un embajador: antes de su primera visita, cómo validarla; después, cada día que vuelva
+// puede validar su visita (una vez por jornada) mientras duren los meses del programa, y su embajador gana puntos.
 async function pintarInvitado(db, user, ficha) {
   try {
     const tiles = document.querySelector(".tiles");
     if (!tiles || !user || !user.uid) return;
     const inv = await getDoc(ref(db, "invitaciones", user.uid));
     let caja = document.getElementById("invitadoCaja");
-    if (!inv.exists() || inv.data().premiado === true) { if (caja) caja.remove(); return; }
-    const [c, n] = await Promise.all([getDoc(ref(db, "settings", "invitaciones")), getDoc(ref(db, "settings", "nfc")).catch(() => null)]);
-    const cfg = ajustesInvitar(c.exists() ? c.data() : null);
-    if (!cfg.activo) { if (caja) caja.remove(); return; }
-    const nfc = !!(n && n.exists() && n.data().activo === true), socio = !!(ficha && ficha.socio === true);
+    if (!inv.exists()) { if (caja) caja.remove(); return; }
+    const c = await getDoc(ref(db, "settings", "invitaciones"));
+    const cfg = ajustesInvitar(c.exists() ? c.data() : null), est = estadoInvitacion(inv.data(), cfg);
+    if (!est.activa) { if (caja) caja.remove(); return; }
+    // ¿ya ha validado hoy? (una vez por jornada; la jornada del bar acaba a las 6:00)
+    let hoy = false;
+    try {
+      const vs = await getDocs(query(collection(db, "validaciones"), where("uid", "==", user.uid)));
+      hoy = vs.docs.some((d) => ["valida", "pendiente"].includes(d.data().estado) && d.data().creado && d.data().creado.toMillis && jornadaDe(d.data().creado.toMillis()) === jornadaDe(Date.now()));
+    } catch (e) {}
+    const socio = !!(ficha && ficha.socio === true), quien = est.embajador || "tu embajador";
     if (!document.getElementById("estiloInvitado")) {
       const st = document.createElement("style");
       st.id = "estiloInvitado";
-      st.textContent = ".invitado{margin:0 0 12px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,225,77,.75);background:linear-gradient(150deg,rgba(255,225,77,.12),rgba(255,43,214,.10));box-shadow:0 0 16px rgba(255,225,77,.18)}" +
-        ".invitado .i-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.9rem;color:#ffe14d;margin:0 0 4px}.invitado p{margin:5px 0;font-size:.88rem}" +
+      st.textContent = ".invitado{margin:0 0 12px;padding:14px;border-radius:18px;border:1.5px solid rgba(255,225,77,.85);background:linear-gradient(150deg,rgba(255,225,77,.16),rgba(255,43,214,.12));box-shadow:0 0 18px rgba(255,225,77,.22)}" +
+        ".invitado .i-tit{font-family:'Bungee','Rubik',sans-serif;font-size:.92rem;color:#ffe14d;margin:0 0 4px}.invitado p{margin:6px 0;font-size:.9rem}" +
         ".invitado ol{margin:6px 0 0;padding-left:0;list-style:none}.invitado li{margin:7px 0;font-size:.88rem;display:flex;gap:8px}.invitado li b{flex:none}" +
-        ".invitado .i-btn{display:block;margin-top:10px;padding:12px;border-radius:12px;text-align:center;font-weight:800;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)}" +
-        ".invitado .i-formas{margin:2px 0 0 26px;padding-left:18px;font-size:.86rem}.invitado .i-formas li{display:list-item;margin:4px 0}" +
-        ".invitado .i-fila{display:flex;gap:8px}.invitado .i-fila .i-btn{flex:1}.invitado .i-btn.i-sec{background:transparent;color:#fff!important;border:1px solid rgba(255,255,255,.35)}";
+        ".invitado .i-btn{display:block;margin-top:10px;padding:14px;border-radius:14px;text-align:center;font-weight:800;font-size:1rem;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff)}" +
+        ".invitado .i-sec{display:block;margin-top:8px;padding:10px;border-radius:12px;text-align:center;font-weight:700;text-decoration:none;color:#fff!important;border:1px solid rgba(255,255,255,.35)}" +
+        ".invitado .i-num{display:flex;align-items:baseline;justify-content:center;gap:8px;margin:6px 0}.invitado .i-num b{font-family:'Bungee','Rubik',sans-serif;font-size:2.2rem;color:#ffe14d}" +
+        ".invitado .i-hoy{margin-top:10px;padding:12px;border-radius:14px;text-align:center;font-weight:800;background:rgba(93,255,154,.15);border:1.5px solid #5dff9a;color:#5dff9a}" +
+        ".invitado .i-min{font-size:.8rem;opacity:.85;text-align:center}";
       document.head.appendChild(st);
     }
     if (!caja) { caja = document.createElement("div"); caja.id = "invitadoCaja"; tiles.parentNode.insertBefore(caja, tiles); }
     caja.className = "invitado";
     caja.innerHTML = "";
     const p = (t, cl) => { const e = document.createElement("p"); e.textContent = t; if (cl) e.className = cl; return e; };
-    caja.append(p("👑 TE HA INVITADO UN EMBAJADOR", "i-tit"), p("Para que cuente tu invitación, solo tienes que venir:"));
-    const ol = document.createElement("ol");
-    const paso = (hecho, txt) => { const li = document.createElement("li"), b = document.createElement("b"), t = document.createElement("span"); b.textContent = hecho ? "✔" : "○"; t.textContent = txt; li.append(b, t); ol.append(li); };
-    paso(socio, socio ? "Ya eres socio nº " + numSocio(ficha.socioNum) + "." : "Verifica tu correo (te hemos mandado un enlace): así te haces socio y tienes tu carné.");
-    paso(false, "Pide en la barra algo de " + euros(cfg.minimo) + " o más (un cachi, por ejemplo).");
-    paso(false, "Al pagar, valida tu visita de una de estas 3 formas:");
-    caja.append(ol);
-    const formas = document.createElement("ul"); formas.className = "i-formas";
-    ["📲 Pulsa «Validar mi visita» y el camarero acercará su tarjeta a tu móvil.", "🪪 Enséñale tu carné de socio.", "🔢 O dile tu número de socio" + (socio ? " (" + numSocio(ficha.socioNum) + ")." : ".")].forEach((t) => { const li = document.createElement("li"); li.textContent = t; formas.append(li); });
-    caja.append(formas);
-    if (socio) {
-      const fila = document.createElement("div"); fila.className = "i-fila";
-      const v = document.createElement("a"); v.className = "i-btn"; v.href = "validar.html"; v.textContent = "📲 Validar mi visita";
-      const c = document.createElement("a"); c.className = "i-btn i-sec"; c.href = "carne.html"; c.textContent = "🪪 Ver mi carné";
-      fila.append(v, c); caja.append(fila);
-      const b = document.getElementById("btnValidar"); if (b) b.remove();
+    const a = (txt, href, cl) => { const e = document.createElement("a"); e.className = cl; e.href = href; e.textContent = txt; return e; };
+    caja.append(p("👑 VIENES DE PARTE DE " + quien.toUpperCase(), "i-tit"));
+    if (est.primera) {
+      caja.append(p("Ven al bar, pide algo de " + euros(cfg.minimo) + " o más y valida tu visita: así " + quien + " gana puntos. ¡Y cada vez que vuelvas, también!"));
+      const ol = document.createElement("ol");
+      const paso = (hecho, txt) => { const li = document.createElement("li"), b = document.createElement("b"), t = document.createElement("span"); b.textContent = hecho ? "✔" : "○"; t.textContent = txt; li.append(b, t); ol.append(li); };
+      if (!socio) paso(false, "Verifica tu correo (te hemos mandado un enlace): así te haces socio y tienes tu carné con sus ventajas.");
+      paso(false, "Pide en la barra algo de " + euros(cfg.minimo) + " o más.");
+      paso(false, "Pulsa «Validar mi visita» y el camarero acercará su tarjeta a tu móvil (o enséñale tu carné).");
+      caja.append(ol);
+    } else {
+      const n = document.createElement("div"); n.className = "i-num";
+      const b = document.createElement("b"); b.textContent = String(est.visitas);
+      const s2 = document.createElement("span"); s2.textContent = est.visitas === 1 ? "visita" : "visitas";
+      n.append(b, s2); caja.append(n);
+      caja.append(p("Cada día que vengas y valides tu visita, " + quien + " gana puntos. ¡Gracias por volver! 🙌" + (est.finMs ? " (Hasta el " + new Date(est.finMs).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) + ".)" : "")));
     }
+    if (hoy) caja.append(p("✔ Visita de hoy validada · vuelve mañana", "i-hoy"));
+    else {
+      caja.append(a(est.primera ? "📲 Validar mi visita" : "📲 Validar mi visita de hoy", "validar.html", "i-btn"));
+      caja.append(p("🍹 Una vez al día, al pedir algo de " + euros(cfg.minimo) + " o más.", "i-min"));
+    }
+    if (socio) caja.append(a("🪪 Ver mi carné", "carne.html", "i-sec"));
   } catch (e) {}
 }
 
@@ -339,34 +355,11 @@ async function pintarAvisos(db, user, ficha) {
   } catch (e) {}
 }
 
-// Botón «Validar mi consumición» en el inicio (solo socios y solo si lo has activado en «Tarjetas de camareros»).
-async function pintarBotonValidar(db) {
-  try {
-    if (document.getElementById("btnValidar") || document.querySelector("#invitadoCaja .i-btn[href='validar.html']")) return;
-    const c = await getDoc(ref(db, "settings", "nfc"));
-    const tiles = document.querySelector(".tiles");
-    if (!c.exists() || c.data().activo !== true || !tiles || document.getElementById("btnValidar")) return;
-    if (!document.getElementById("estiloValidar")) {
-      const st = document.createElement("style");
-      st.id = "estiloValidar";
-      st.textContent = ".btn-validar{display:block;margin:0 0 12px;padding:16px;border-radius:18px;text-align:center;text-decoration:none;color:#0a0612!important;background:linear-gradient(135deg,#5dff9a,#19f2ff);box-shadow:0 0 18px rgba(25,242,255,.35)}" +
-        ".btn-validar b{display:block;font-family:'Bungee','Rubik',sans-serif;font-size:1.05rem}.btn-validar small{display:block;font-size:.8rem;margin-top:2px;opacity:.85}";
-      document.head.appendChild(st);
-    }
-    const a = document.createElement("a");
-    a.id = "btnValidar"; a.href = "validar.html"; a.className = "btn-validar";
-    const b = document.createElement("b"); b.textContent = "📲 Validar mi consumición";
-    const sm = document.createElement("small"); sm.textContent = "Púlsalo al pedir y el camarero acercará su tarjeta";
-    a.append(b, sm);
-    tiles.parentNode.insertBefore(a, tiles);
-  } catch (e) {}
-}
-
 // Inicio: si la persona ya verificó su correo y nunca fue socia, se hace socia sola.
 export async function autoSocio(db, user, ficha) {
   try {
     if (user && user.uid) { await registrarInvitacion(db, user, ficha); await pintarInvitado(db, user, ficha); await pintarEmbajador(db, user, ficha); await pintarVentajas(db, user, ficha); }
-    if (ficha && ficha.socio === true) { pintarBotonValidar(db); pintarAvisos(db, user, ficha); }
+    if (ficha && ficha.socio === true) pintarAvisos(db, user, ficha);
     if (!puedeAutoSocio(user, ficha)) return 0;
     if (typeof user.getIdToken === "function") await user.getIdToken(true);
     const n = await runTransaction(db, async (tx) => {
@@ -385,7 +378,6 @@ export async function autoSocio(db, user, ficha) {
     await pintarInvitado(db, user, ficha);
     await pintarEmbajador(db, user, ficha);
     await pintarVentajas(db, user, ficha);
-    pintarBotonValidar(db);
     pintarAvisos(db, user, ficha);
     return n;
   } catch (e) { return 0; }   // sin reglas publicadas, sin conexión o sin contador: no pasa nada
@@ -450,10 +442,12 @@ export async function montarAjustesInvitar(db, caja) {
   caja.append(el("h2", "Ajustes del programa"), el("p", "Cada embajador tiene su panel en el inicio con su enlace, su QR, sus invitados, su nivel y el ranking. Cuando un amigo se registra con su enlace y viene al bar (una compra de la consumición mínima o más en la caja, o una validación con la tarjeta del camarero), el embajador recibe estos puntos y un aviso en el móvil. Canjear un cupón gratis no cuenta."));
   const [l1, act] = chk("Programa activo (los embajadores ganan puntos)", cfg.activo);
   const [l2, abi] = chk("Aceptar solicitudes nuevas (a los socios que no son embajadores les sale «¿Quieres ser embajador?» en el inicio)", cfg.abierto);
-  const p = num(cfg.puntos), m = num(cfg.maxMes), mi = num(cfg.minimo, "0.5");
+  const p = num(cfg.puntos), m = num(cfg.maxMes), mi = num(cfg.minimo, "0.5"), pv = num(cfg.puntosVisita), mv = num(cfg.maxVisitasMes), me = num(cfg.mesesVisitas);
   const pm = document.createElement("input"); pm.type = "text"; pm.maxLength = 80; pm.placeholder = "Ej.: una cena para dos (vacío = sin premio)"; pm.value = cfg.premioMes;
-  caja.append(l1, l2, el("label", "Puntos por cada amigo que viene"), p, el("label", "Máximo de amigos premiados por embajador y mes (0 = sin límite)"), m,
+  caja.append(l1, l2, el("label", "Puntos por la primera visita de cada amigo"), p, el("label", "Máximo de amigos nuevos premiados por embajador y mes (0 = sin límite)"), m,
     el("label", "Consumición mínima del amigo para que cuente (€)"), mi, el("label", "🏆 Premio para el mejor embajador del mes (el que más amigos trae)"), pm);
+  caja.append(el("h2", "🔁 Cuando el amigo vuelve"), el("p", "Después de su primera visita, el amigo puede validar su visita una vez al día. Cada visita validada (o cada compra de la consumición mínima apuntada en la caja) da estos puntos a su embajador."),
+    el("label", "Puntos por cada visita siguiente (0 = solo cuenta la primera)"), pv, el("label", "Máximo de visitas premiadas por amigo y mes (0 = sin límite)"), mv, el("label", "Durante cuántos meses desde que el amigo se registra (0 = siempre)"), me);
   caja.append(el("h2", "🏅 Niveles"), el("p", "Al llegar a cada nivel, el embajador recibe estos puntos de regalo (una sola vez) y un aviso. 0 = sin regalo."));
   const niv = {};
   NIVELES.forEach((n) => { niv[n.k] = num(cfg.niveles[n.k]); caja.append(el("label", n.ico + " " + n.nom + " (" + n.min + " amigos)"), niv[n.k]); });
@@ -466,10 +460,11 @@ export async function montarAjustesInvitar(db, caja) {
   const b = el("button", "Guardar"), r = el("small", "");
   b.type = "button";
   b.onclick = async () => {
-    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value), minimo: Math.round(Number(String(mi.value).replace(",", ".")) * 100) / 100, premioMes: pm.value.trim().slice(0, 80), niveles: {} };
+    const d = { activo: act.checked, abierto: abi.checked, puntos: Number(p.value), maxMes: Number(m.value), minimo: Math.round(Number(String(mi.value).replace(",", ".")) * 100) / 100, premioMes: pm.value.trim().slice(0, 80), niveles: {}, puntosVisita: Number(pv.value), maxVisitasMes: Number(mv.value), mesesVisitas: Number(me.value) };
     NIVELES.forEach((n) => { d.niveles[n.k] = Number(niv[n.k].value); });
     if (!Number.isInteger(d.puntos) || d.puntos < 0 || d.puntos > 5000 || !Number.isInteger(d.maxMes) || d.maxMes < 0 || d.maxMes > 100) { r.textContent = "Revisa los números: enteros, 0 o más (puntos hasta 5000, amigos hasta 100)."; return; }
     if (!(d.minimo >= 0 && d.minimo <= 100)) { r.textContent = "La consumición mínima debe estar entre 0 y 100 €."; return; }
+    if (![d.puntosVisita, d.maxVisitasMes, d.mesesVisitas].every((x) => Number.isInteger(x) && x >= 0) || d.puntosVisita > 5000 || d.maxVisitasMes > 31 || d.mesesVisitas > 36) { r.textContent = "Revisa las visitas: enteros, 0 o más (puntos hasta 5000, visitas al mes hasta 31, meses hasta 36)."; return; }
     if (NIVELES.some((n) => !Number.isInteger(d.niveles[n.k]) || d.niveles[n.k] < 0 || d.niveles[n.k] > 5000)) { r.textContent = "Los puntos de los niveles deben ser enteros entre 0 y 5000."; return; }
     if (ca.checked && !ha.value) { r.textContent = "Pon hasta qué día dura la campaña."; return; }
     // cada vez que se activa o se cambia la campaña, cambia su identificador: así el robot avisa a los embajadores una vez

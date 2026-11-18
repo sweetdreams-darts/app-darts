@@ -13,7 +13,7 @@ export const NIVELES = [
   { k: "oro", min: 25, nom: "Oro", ico: "🥇", bonus: 100 },
   { k: "diamante", min: 50, nom: "Diamante", ico: "💎", bonus: 250 },
 ];
-const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0, minimo: 4.5, premioMes: "", niveles: {}, campana: null };
+const INVITAR = { activo: true, abierto: true, puntos: 100, maxMes: 0, minimo: 4.5, premioMes: "", niveles: {}, campana: null, puntosVisita: 30, maxVisitasMes: 0, mesesVisitas: 4 };
 // Ajustes del programa (settings/invitaciones), con valores por defecto si falta algo.
 export function ajustesInvitar(d) {
   const c = Object.assign({}, INVITAR, { niveles: {} });
@@ -23,6 +23,8 @@ export function ajustesInvitar(d) {
   if (d && Number.isInteger(d.maxMes) && d.maxMes >= 0) c.maxMes = d.maxMes;
   if (d && typeof d.minimo === "number" && d.minimo >= 0 && d.minimo <= 100) c.minimo = d.minimo;
   if (d && typeof d.premioMes === "string") c.premioMes = d.premioMes.trim();
+  // visitas siguientes del mismo amigo: puntos por visita, máximo al mes (0 = sin límite) y durante cuántos meses (0 = siempre)
+  for (const k of ["puntosVisita", "maxVisitasMes", "mesesVisitas"]) if (d && Number.isInteger(d[k]) && d[k] >= 0) c[k] = d[k];
   NIVELES.forEach((n) => { const v = d && d.niveles ? d.niveles[n.k] : undefined; c.niveles[n.k] = Number.isInteger(v) && v >= 0 ? v : n.bonus; });
   if (d && d.campana && typeof d.campana === "object") c.campana = { activa: d.campana.activa === true, multiplicador: Number(d.campana.multiplicador) >= 2 ? Number(d.campana.multiplicador) : 2, hasta: String(d.campana.hasta || ""), id: String(d.campana.id || "") };
   return c;
@@ -34,6 +36,20 @@ export function campanaActiva(cfg, ahora) {
   return c && c.activa && c.hasta && c.hasta >= hoyIso(ahora) ? c : null;
 }
 export const puntosPorAmigo = (cfg, ahora) => cfg.puntos * (campanaActiva(cfg, ahora) ? campanaActiva(cfg, ahora).multiplicador : 1);
+export const puntosPorVisita = (cfg, ahora) => cfg.puntosVisita * (campanaActiva(cfg, ahora) ? campanaActiva(cfg, ahora).multiplicador : 1);
+// Día de la jornada del bar (acaba a las 6:00), como el robot.
+export const jornadaDe = (ms) => hoyIso((ms || Date.now()) - 6 * 3600000);
+// Estado de la invitación de una persona: si su tarjeta tiene que salir, si aún no ha hecho la primera visita,
+// cuántas visitas lleva y hasta cuándo cuentan.
+export function estadoInvitacion(inv, cfg, ahora) {
+  ahora = ahora || Date.now();
+  if (!inv || !cfg || !cfg.activo) return { activa: false };
+  const primera = inv.premiado !== true;
+  const creado = inv.creado && inv.creado.toMillis ? inv.creado.toMillis() : ahora;
+  const finMs = cfg.mesesVisitas ? creado + cfg.mesesVisitas * 30.5 * 864e5 : 0;
+  const repite = !primera && (inv.puntos || 0) > 0 && cfg.puntosVisita > 0 && (!finMs || ahora < finMs);
+  return { activa: primera || repite, primera: primera, visitas: primera ? 0 : 1 + (inv.visitas || 0), finMs: finMs, embajador: inv.refNombre || "" };
+}
 // Nivel alcanzado con esos amigos (o null) y el siguiente por alcanzar (o null si ya es Diamante).
 export function nivelDe(amigos) { return NIVELES.filter((n) => amigos >= n.min).pop() || null; }
 export function siguienteNivel(amigos) { return NIVELES.find((n) => amigos < n.min) || null; }
@@ -45,10 +61,13 @@ export function proximoPremio(premios, saldo) {
   if (falta) return { premio: falta, faltan: falta.coste - saldo, alcanzado: l.filter((p) => p.coste <= saldo).pop() || null };
   return { premio: l[l.length - 1], faltan: 0, alcanzado: l[l.length - 1] };
 }
-// Resumen de las invitaciones de un embajador.
-export function resumenInvitados(invs) {
-  const vinieron = invs.filter((x) => x.premiado === true && (x.puntos || 0) > 0);
-  return { registrados: invs.length, vinieron: vinieron.length, esperando: invs.filter((x) => x.premiado !== true).length, ganados: vinieron.reduce((t, x) => t + (x.puntos || 0), 0) };
+// Resumen de las invitaciones de un embajador (también las visitas siguientes de sus amigos).
+export function resumenInvitados(invs, ahora) {
+  const vinieron = invs.filter((x) => x.premiado === true && (x.puntos || 0) > 0), mes = hoyIso(ahora).slice(0, 7);
+  const visitasMes = invs.reduce((t, x) => t + (x.visitasMesK === mes ? x.visitasMesN || 0 : 0), 0);
+  const puntosVisitas = invs.reduce((t, x) => t + (x.puntosVisitas || 0), 0);
+  return { registrados: invs.length, vinieron: vinieron.length, esperando: invs.filter((x) => x.premiado !== true).length, visitasMes: visitasMes,
+    ganados: vinieron.reduce((t, x) => t + (x.puntos || 0), 0) + puntosVisitas };
 }
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 export const nombreMes = (mes) => (mes ? MESES[Number(mes.slice(5, 7)) - 1] : "");
@@ -187,6 +206,7 @@ export async function montarPanel(db, user, ficha) {
   const nums = el("div", "", "e-nums");
   [[r.registrados, "registrados"], [r.vinieron, "han venido"], [r.esperando, "por venir"]].forEach(([n, t]) => { const x = el("div"); x.append(el("b", String(n)), el("span", t)); nums.append(x); });
   caja.append(nums);
+  if (d.cfg.puntosVisita > 0) caja.append(el("p", r.visitasMes ? "🔁 Tus amigos han vuelto " + r.visitasMes + (r.visitasMes === 1 ? " vez" : " veces") + " este mes (+" + puntosPorVisita(d.cfg) + " por cada vuelta)" : "🔁 Cada vez que un amigo vuelva al bar, +" + puntosPorVisita(d.cfg) + " puntos más para ti", "e-meta"));
   if (sig) caja.append(el("p", "Te " + (sig.min - r.vinieron === 1 ? "falta 1 amigo" : "faltan " + (sig.min - r.vinieron) + " amigos") + " para " + sig.ico + " " + sig.nom + (d.cfg.niveles[sig.k] ? " (+" + d.cfg.niveles[sig.k] + " puntos de regalo)" : ""), "e-meta"));
   if (d.ranking && d.ranking.lista) {
     const pos = d.ranking.lista.findIndex((x) => x.uid === user.uid);
@@ -216,7 +236,8 @@ export async function montarDetalle(db, uid, num, caja) {
   estilos();
   const r = resumenInvitados(d.invs);
   const top = el("div", "", "emb");
-  top.append(el("div", "👑 TU ENLACE DE EMBAJADOR", "e-cab"), el("p", "Por cada amigo que se registre con tu enlace y venga al bar (consumiendo " + d.cfg.minimo.toFixed(2).replace(".", ",") + " € o más), te llevas " + puntosPorAmigo(d.cfg) + " puntos" + (d.cfg.maxMes ? " (hasta " + d.cfg.maxMes + " amigos al mes)." : ".")));
+  top.append(el("div", "👑 TU ENLACE DE EMBAJADOR", "e-cab"), el("p", "Por cada amigo que se registre con tu enlace y venga al bar (consumiendo " + d.cfg.minimo.toFixed(2).replace(".", ",") + " € o más), te llevas " + puntosPorAmigo(d.cfg) + " puntos" + (d.cfg.maxMes ? " (hasta " + d.cfg.maxMes + " amigos al mes)." : ".")
+    + (d.cfg.puntosVisita > 0 ? " Y cada vez que vuelva y valide su visita (una vez al día" + (d.cfg.mesesVisitas ? ", durante " + d.cfg.mesesVisitas + (d.cfg.mesesVisitas === 1 ? " mes" : " meses") : "") + "), " + puntosPorVisita(d.cfg) + " puntos más." : "")));
   const camp = campanaActiva(d.cfg);
   if (camp) top.append(el("div", "🔥 ¡PUNTOS x" + camp.multiplicador + " hasta el " + fechaCorta(camp.hasta) + "!", "e-camp"));
   top.append(botonesCompartir(enlaceInvitar(num), d.cfg));
@@ -228,11 +249,11 @@ export async function montarDetalle(db, uid, num, caja) {
   caja.append(niv);
   // invitados
   const li = el("div", "", "zona emb-lista");
-  li.append(el("h2", "👥 Tus invitados"), el("p", r.registrados ? r.registrados + " registrados · " + r.vinieron + " han venido · " + r.esperando + " por venir · " + r.ganados + " puntos ganados" : "Todavía no se ha registrado nadie con tu enlace. ¡Compártelo!", "peq"));
+  li.append(el("h2", "👥 Tus invitados"), el("p", r.registrados ? r.registrados + " registrados · " + r.vinieron + " han venido · " + r.esperando + " por venir" + (r.visitasMes ? " · 🔁 " + r.visitasMes + " visitas este mes" : "") + " · " + r.ganados + " puntos ganados" : "Todavía no se ha registrado nadie con tu enlace. ¡Compártelo!", "peq"));
   d.invs.sort((a, b) => ms(b.creado) - ms(a.creado)).forEach((x) => {
     const f = el("div", "", "e-inv"), izq = el("div");
     izq.append(el("strong", x.nombre || "Amigo"), el("small", " · " + (ms(x.creado) ? new Date(ms(x.creado)).toLocaleDateString("es-ES", { day: "numeric", month: "short" }) : "")));
-    f.append(izq, el("span", x.premiado === true ? ((x.puntos || 0) > 0 ? "✔ Vino · +" + x.puntos : "✖ No cuenta") : "⏳ Por venir"));
+    f.append(izq, el("span", x.premiado === true ? ((x.puntos || 0) > 0 ? "✔ Vino · +" + x.puntos + (x.visitas ? " · 🔁 " + x.visitas + (x.visitas === 1 ? " vuelta" : " vueltas") + " +" + (x.puntosVisitas || 0) : "") : "✖ No cuenta") : "⏳ Por venir"));
     li.append(f);
   });
   if (r.esperando) li.append(el("p", "💡 Escribe a los que aún no han venido: en cuanto pasen por el bar, los puntos son tuyos.", "peq"));

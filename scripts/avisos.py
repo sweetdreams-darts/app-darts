@@ -275,7 +275,7 @@ def entero(v, defecto=0):
 
 
 def ajustes_invitar():
-    cfg = {"activo": True, "puntos": 100, "maxMes": 0, "minimo": 4.5, "premioMes": "",
+    cfg = {"activo": True, "puntos": 100, "maxMes": 0, "minimo": 4.5, "premioMes": "", "puntosVisita": 30, "maxVisitasMes": 0, "mesesVisitas": 4,
            "bonus": {n: b for n, _, _, b in NIVELES}, "campana": None}
     d = leer("settings/invitaciones")
     f = (d or {}).get("fields", {})
@@ -284,6 +284,8 @@ def ajustes_invitar():
     if "maxMes" in f: cfg["maxMes"] = int(f["maxMes"].get("integerValue", 0))
     if "minimo" in f: cfg["minimo"] = float(f["minimo"].get("doubleValue", f["minimo"].get("integerValue", 4.5)))
     if "premioMes" in f: cfg["premioMes"] = f["premioMes"].get("stringValue", "")
+    for k in ("puntosVisita", "maxVisitasMes", "mesesVisitas"):
+        if k in f: cfg[k] = max(0, entero(f[k], cfg[k]))
     niv = f.get("niveles", {}).get("mapValue", {}).get("fields", {})
     for n in cfg["bonus"]:
         if n in niv: cfg["bonus"][n] = entero(niv[n], cfg["bonus"][n])
@@ -316,40 +318,106 @@ def revisar_invitaciones(ultima):
     hasta = int(time.time() * 1000) - 120000
     if hasta <= ultima:
         return ultima
-    mayor, uids, minimo = ultima, [], None
+    mayor, visitas, minimo = ultima, [], None
     for d in consulta("socios_mov", [("creado", "GREATER_THAN", {"timestampValue": iso(ultima)}), ("creado", "LESS_THAN_OR_EQUAL", {"timestampValue": iso(hasta)})], "creado"):
-        mayor = max(mayor, ms_de(campo(d, "creado", "timestampValue")) + 1)
+        cuando = ms_de(campo(d, "creado", "timestampValue"))
+        mayor = max(mayor, cuando + 1)
         u = campo(d, "uid")
-        if campo(d, "tipo") != "compra" or not u or u in uids:
+        if campo(d, "tipo") != "compra" or not u:
             continue   # canjear un cupón (aunque sea el regalo gratis) no cuenta
         if minimo is None:
             minimo = ajustes_invitar()["minimo"]
         importe = float(campo(d, "importe", "doubleValue") or campo(d, "importe", "integerValue") or 0)
         if importe + 1e-9 >= minimo:
-            uids.append(u)
-    premiar_invitados(uids)
+            visitas.append((u, cuando))
+    premiar_invitados(visitas)
     return mayor
 
 
-def premiar_invitados(uids):
-    """Para cada persona que acaba de venir al bar: si la invitó un embajador activo y aún no se le premió, le da sus puntos."""
-    if not uids:
+def jornada_de(ms):
+    """Día de la jornada del bar (acaba a las 6:00): «2026-11-18»."""
+    return local(ms - 6 * 3600000).strftime("%Y-%m-%d")
+
+
+def premiar_invitados(visitas):
+    """Para cada visita al bar de una persona invitada por un embajador (una compra de la consumición mínima en la caja
+    o una validación con la tarjeta del camarero): la primera vez el embajador gana los puntos de la primera visita;
+    después, los puntos de cada visita siguiente (una por jornada, durante los meses configurados).
+    «visitas» es una lista de (uid, momento en ms); también vale una lista de uids (momento = ahora)."""
+    ahora = int(time.time() * 1000)
+    eventos, vistos = [], set()
+    for v in visitas or []:
+        uid, cuando = (v, ahora) if isinstance(v, str) else v
+        clave = (uid, jornada_de(cuando))
+        if clave not in vistos:
+            vistos.add(clave)
+            eventos.append((uid, cuando))
+    if not eventos:
         return
-    invs = leer_varios([f"invitaciones/{u}" for u in uids])
-    pendientes = [u for u in uids if f"invitaciones/{u}" in invs and campo(invs[f"invitaciones/{u}"], "premiado", "booleanValue") is not True]
-    if not pendientes:
+    invs = leer_varios(sorted({f"invitaciones/{u}" for u, _ in eventos}))
+    eventos = [(u, c) for u, c in eventos if f"invitaciones/{u}" in invs]
+    if not eventos:
         return
     cfg = ajustes_invitar()
     if not cfg["activo"]:
         return
-    ahora = int(time.time() * 1000)
     mes = mes_de(ahora)
-    for uid in pendientes:
-        # cada invitación por separado: si una falla, las demás siguen (y el robot no se queda atascado)
+    primeras = set()
+    for uid, cuando in sorted(eventos, key=lambda x: x[1]):
+        inv = invs[f"invitaciones/{uid}"]
+        # cada visita por separado: si una falla, las demás siguen (y el robot no se queda atascado)
         try:
-            premiar_uno(uid, invs[f"invitaciones/{uid}"], cfg, ahora, mes)
+            if campo(inv, "premiado", "booleanValue") is not True:
+                if uid not in primeras:
+                    premiar_uno(uid, inv, cfg, ahora, mes)
+                    primeras.add(uid)
+            else:
+                premiar_visita(uid, inv, cfg, cuando)
         except Exception as e:
-            print("Embajadores: no se ha podido atender la invitación de", uid, "-", e)
+            print("Embajadores: no se ha podido atender la visita de", uid, "-", e)
+
+
+def premiar_visita(uid, inv, cfg, cuando):
+    """Visita de un amigo que ya vino alguna vez: el embajador gana los puntos de «cada visita siguiente»
+    (una vez por jornada y solo durante los meses configurados desde que el amigo se registró)."""
+    pts_base = cfg["puntosVisita"]
+    socio = campo(inv, "refUid")
+    if pts_base <= 0 or not socio or int(campo(inv, "puntos", "integerValue") or 0) <= 0:
+        return   # sin puntos por visita, o la primera visita no contó (por ejemplo, porque no era embajador activo)
+    creado = campo(inv, "creado", "timestampValue")
+    if cfg["mesesVisitas"] and creado and cuando - ms_de(creado) > cfg["mesesVisitas"] * 30.5 * 864e5:
+        return   # ya han pasado los meses en los que sus visitas dan puntos
+    jornada = jornada_de(cuando)
+    primera = campo(inv, "premiadoEn", "timestampValue")
+    if primera and jornada_de(ms_de(primera)) == jornada:
+        return   # el mismo día de su primera visita ya cobró
+    mes_visita = jornada[:7]
+    n_mes = int(campo(inv, "visitasMesN", "integerValue") or 0) if campo(inv, "visitasMesK") == mes_visita else 0
+    if cfg["maxVisitasMes"] and n_mes >= cfg["maxVisitasMes"]:
+        return
+    if leer(f"socios_mov/visita_{uid}_{jornada}"):
+        return   # esa jornada ya se premió
+    emb = leer(f"embajadores/{socio}")
+    if not emb or campo(emb, "activo", "booleanValue") is not True:
+        return
+    pts = pts_base * (cfg["campana"]["multiplicador"] if cfg["campana"] else 1)
+    ahora = int(time.time() * 1000)
+    nombre = campo(inv, "nombre") or nombre_corto(campo(leer(f"users/{uid}") or {}, "nombre") or "")
+    sp = leer(f"socios_puntos/{socio}")
+    saldo = (int(campo(sp, "puntos", "integerValue") or 0) if sp else 0) + pts
+    mov = {"uid": socio, "tipo": "ajuste", "importe": 0, "puntos": pts, "saldo": saldo, "por": "robot", "porNombre": "Embajadores",
+           "nota": nombre + " ha vuelto", "mes": mes_de(ahora), "creado": {"ms": ahora}}
+    visitas = int(campo(inv, "visitas", "integerValue") or 0) + 1
+    escribir([
+        {"update": {"name": f"{RAIZ}/socios_mov/visita_{uid}_{jornada}", "fields": {k: valor(v) for k, v in mov.items()}}, "currentDocument": {"exists": False}},
+        {"update": {"name": f"{RAIZ}/socios_puntos/{socio}", "fields": {"actualizado": valor({"ms": ahora})}}, "updateMask": {"fieldPaths": ["actualizado"]},
+         "updateTransforms": [{"fieldPath": "puntos", "increment": {"integerValue": str(pts)}}, {"fieldPath": "total", "increment": {"integerValue": str(pts)}}]},
+        cambiar(f"invitaciones/{uid}", {"visitas": visitas, "puntosVisitas": int(campo(inv, "puntosVisitas", "integerValue") or 0) + pts,
+                                        "visitasMesK": mes_visita, "visitasMesN": n_mes + 1, "ultimaVisita": jornada}),
+    ])
+    for t in tokens_de(socio):
+        enviar(t, "🔁 Tu amigo ha vuelto", f"{nombre} ha vuelto hoy a Sweet Dreams: +{pts} puntos para ti.", "visita-" + uid + "-" + jornada, APP)
+    print(f"Embajadores: +{pts} puntos para {socio} por la visita de {nombre} ({jornada})")
 
 
 def premiar_uno(uid, inv, cfg, ahora, mes):
@@ -503,6 +571,7 @@ def revisar_invitados_nuevos(ultima):
             cambios = {"nombre": nombre}
             if quien and id_de(quien[0]) != uid:
                 cambios["refUid"] = id_de(quien[0])
+                cambios["refNombre"] = nombre_corto(campo(quien[0], "nombre") or "")
             escribir([cambiar(f"invitaciones/{uid}", cambios)])
             if "refUid" in cambios:
                 emb = leer(f"embajadores/{cambios['refUid']}")
@@ -514,6 +583,17 @@ def revisar_invitados_nuevos(ultima):
         except Exception as e:
             print("Embajadores: no se ha podido avisar del invitado", uid, "-", e)
     return mayor
+
+
+def rellenar_ref_nombres():
+    """Invitaciones antiguas sin el nombre de quien invitó: se lo pone (lo enseña la tarjeta del invitado)."""
+    writes = []
+    for d in listar("invitaciones", ["refUid", "refNombre"]):
+        if campo(d, "refUid") and not campo(d, "refNombre"):
+            u = leer(f"users/{campo(d, 'refUid')}")
+            if u:
+                writes.append(cambiar(f"invitaciones/{id_de(d)}", {"refNombre": nombre_corto(campo(u, "nombre") or "")}))
+    escribir(writes)
 
 
 def recordar_invitados():
@@ -593,7 +673,7 @@ def tareas_diarias():
     hoy = local(ahora - 6 * 3600000).strftime("%Y-%m-%d")
     if campo(leer("avisos_estado/diario") or {}, "dia") == hoy:
         return
-    for nombre, tarea in (("cumpleaños", regalos_cumple), ("recordatorios de invitados", recordar_invitados), ("mes de embajadores", cerrar_mes_embajadores), ("ranking", calcular_ranking)):
+    for nombre, tarea in (("cumpleaños", regalos_cumple), ("recordatorios de invitados", recordar_invitados), ("nombres de embajadores", rellenar_ref_nombres), ("mes de embajadores", cerrar_mes_embajadores), ("ranking", calcular_ranking)):
         try:
             tarea()
         except Exception as e:
@@ -693,8 +773,8 @@ def revisar_tarjetas():
                      if jornada(x) == jornada(d)]
         estado = "repetida_hoy" if recientes else "valida"
         marcar(tipo, d, estado, {"tarjeta": uid_t, "ctr": ctr, "camarero": campo(t, "camarero") or "", "camareroNombre": campo(t, "nombre") or ""})
-        if estado == "valida" and cli not in validos:
-            validos.append(cli)
+        if estado == "valida":
+            validos.append((cli, ms_de(campo(d, "creado", "timestampValue"))))
     premiar_invitados(validos)
     # canjes de la ruleta con un código de tarjeta que no vale: aviso a los administradores
     MOTIVOS = {"falsa": "código falso", "desconocida": "tarjeta no dada de alta", "baja": "tarjeta dada de baja", "repetida": "toque ya usado"}
