@@ -45,6 +45,12 @@ export function fechaUTC(ms) {
   return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
 }
 
+// Día de los regalos «una vez al día»: cambia a las 04:00 UTC (las 05:00 en invierno y las 06:00 en verano en España),
+// siempre con el bar ya cerrado. Así no se puede pedir dos veces la misma noche. Las reglas de Firebase cuentan igual (fechaHoy).
+export function fechaCanje(ms) {
+  return fechaUTC(ms - 4 * 3600000);
+}
+
 export function mesDe(ms) {
   const d = new Date(ms);
   return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -54,7 +60,7 @@ export function mesDe(ms) {
 //   "una" → solo una vez en la vida · "dia" → una vez al día · "sin" → las veces que quiera (cuesta puntos)
 export function idCupon(uid, premioId, limite, ms, aleatorio) {
   if (limite === "una") return uid + "_" + premioId;
-  if (limite === "dia") return uid + "_" + premioId + "_" + fechaUTC(ms);
+  if (limite === "dia") return uid + "_" + premioId + "_" + fechaCanje(ms);
   return uid + "_" + premioId + "_" + aleatorio;
 }
 

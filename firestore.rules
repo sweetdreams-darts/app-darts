@@ -328,8 +328,11 @@ service cloud.firestore {
       allow delete: if conectado() && (request.auth.uid == uid || esAdmin());
     }
 
+    // Día de los regalos «una vez al día»: cambia a las 04:00 UTC (05:00 en invierno y 06:00 en verano en España),
+    // con el bar ya cerrado (igual que fechaCanje en puntos.js).
     function fechaHoy() {
-      return request.time.year() * 10000 + request.time.month() * 100 + request.time.day();
+      let t = request.time - duration.value(4, 'h');
+      return t.year() * 10000 + t.month() * 100 + t.day();
     }
     function premioDe(id) {
       return get(/databases/$(database)/documents/premios/$(id)).data;

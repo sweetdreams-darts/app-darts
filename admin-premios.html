@@ -32,12 +32,15 @@ input,select,textarea,button{box-sizing:border-box;min-width:0;max-width:100%}
 <div id="panel" class="oculto">
 
   <h2>Cómo se ganan los puntos</h2>
+  <p style="margin-top:0;opacity:.85">Los puntos ya no se ganan por euros gastados: solo los embajadores ganan puntos, por cada amigo invitado que viene al bar (los puntos por amigo se cambian en «Embajadores»). La caja solo apunta las compras.</p>
+  <div class="oculto">
   <label for="cPpe">Puntos por cada 1 € gastado<small>Por ejemplo, 1 = un punto por euro. Se redondea hacia abajo.</small></label>
   <input id="cPpe" type="number" min="0.1" step="0.1" inputmode="decimal">
   <label for="cMax">Importe máximo por cobro (€)<small>Protege de errores al teclear. Por encima, se suma desde este panel.</small></label>
   <input id="cMax" type="number" min="1" inputmode="numeric">
   <label for="cUndo">Segundos para deshacer una suma</label>
   <input id="cUndo" type="number" min="10" inputmode="numeric">
+  </div>
   <button id="guardarCfg">Guardar</button>
 
   <h2>Premios y combos</h2>

@@ -46,7 +46,7 @@ window.addEventListener("error", function (e) {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { getFirestore, doc, collection, getDoc, getDocs, setDoc, updateDoc, query, where, onSnapshot, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-import { idCupon, codigoCupon, estadoCupon, fechaUTC } from "./puntos.js";
+import { idCupon, codigoCupon, estadoCupon, fechaCanje } from "./puntos.js";
 const app = initializeApp({
   apiKey: "AIzaSyByyLDyO2f0AYGtzVgdL006DRT2AE0n7kw",
   authDomain: "sweet-dreams-darts.firebaseapp.com",
@@ -68,7 +68,7 @@ function motivoNo(p, cupones, ahora) {
   const propios = cupones.filter((c) => c.premioId === p.id);
   if (propios.some((c) => estadoCupon(c, ahora) === "pendiente")) return "Ya lo tienes activado";
   if (p.limite === "una" && propios.length) return "Ya lo has usado";
-  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaUTC(ahora)))) return "Ya lo has pedido hoy";
+  if (p.limite === "dia" && propios.some((c) => c.id.endsWith("_" + fechaCanje(ahora)))) return "Ya lo has pedido hoy";
   return "";
 }
 function pcDe(url) {

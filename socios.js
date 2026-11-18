@@ -2,7 +2,7 @@
 // de quien verifica su correo con su bienvenida, el programa de embajadores (invitan amigos y ganan puntos)
 // y el botón «Validar mi consumición» (tarjeta NFC del camarero).
 import { doc, getDoc, getDocs, setDoc, collection, query, where, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
-import { estadoCupon, fechaUTC } from "./puntos.js";
+import { estadoCupon, fechaCanje } from "./puntos.js";
 
 // <logica>
 const maxNum = (usuarios) => Math.max(0, ...(usuarios || []).map((u) => Number(u.socioNum) || 0));
@@ -23,7 +23,7 @@ function regalosDe(premios, cupones, ahora) {
     const propios = (cupones || []).filter((c) => c.premioId === p.id);
     if (propios.some((c) => estadoCupon(c, ahora) === "pendiente")) return false;
     if (p.limite === "una" && propios.length) return false;
-    if (p.limite === "dia" && propios.some((c) => String(c.id || "").endsWith("_" + fechaUTC(ahora)))) return false;
+    if (p.limite === "dia" && propios.some((c) => String(c.id || "").endsWith("_" + fechaCanje(ahora)))) return false;
     return true;
   });
   return { activos, libres };

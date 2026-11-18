@@ -131,7 +131,7 @@ function pasa(u, perfil, filtro, texto, ahora) {
   return !t || ((u.nombre || "") + " " + (u.email || "")).toLowerCase().includes(t);
 }
 function confirmarRol(u, nuevo) {
-  if (nuevo === "staff") return "¿Hacer camarero a " + u.nombre + "? Podrá comprobar carnés de socio, sumar puntos y canjear premios.";
+  if (nuevo === "staff") return "¿Hacer camarero a " + u.nombre + "? Podrá comprobar carnés de socio, apuntar compras y canjear premios.";
   if (u.role === "staff") return "¿Quitar el rol de camarero a " + u.nombre + (nuevo === "player" ? " y darle acceso a la Zona Liga?" : "?");
   return (nuevo === "player" ? "¿Dar acceso a la Zona Liga a " : "¿Quitar el acceso a la Zona Liga a ") + u.nombre + "?";
 }
