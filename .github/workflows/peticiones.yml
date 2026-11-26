@@ -1,5 +1,10 @@
 name: Peticiones del administrador
 
+# GitHub debería lanzar este robot con el horario de abajo, pero en la práctica solo lo hace 3 o 4 veces al día.
+# Por eso cada vuelta dura unos 55 minutos (mira si hay petición cada minuto) y, al terminar, lanza ella misma la
+# siguiente: así el robot está siempre encendido. El horario se queda solo de respaldo, por si la cadena se corta.
+# Para pararlo: en la pestaña Actions, cancela la vuelta en curso (el horario lo volverá a arrancar más tarde)
+# o desactiva el workflow (Peticiones del administrador → ··· → Disable workflow).
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -11,17 +16,41 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write   # para lanzar la siguiente vuelta
 
 jobs:
   atender:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 70
     steps:
+      - name: Anotar la hora de inicio
+        run: echo "INICIO=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install google-auth requests pdfplumber
-      - run: python scripts/peticiones.py
+      - name: Robot (mira cada minuto durante 55 minutos)
+        timeout-minutes: 66
         env:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: |
+          # Cada pasada dura como mucho 8 minutos (buscar las clasificaciones tarda un rato).
+          # Si fallan 5 seguidas, algo va mal de verdad: se para y no se lanza la siguiente vuelta.
+          fallos=0
+          while true; do
+            if timeout 480 python scripts/peticiones.py; then
+              fallos=0
+            else
+              fallos=$((fallos + 1))
+              echo "::warning::La pasada ha fallado (vez $fallos de 5)"
+              if [ "$fallos" -ge 5 ]; then exit 1; fi
+            fi
+            if [ $(( $(date +%s) - INICIO + 60 )) -gt 3300 ]; then break; fi
+            sleep 60
+          done
+      - name: Lanzar la siguiente vuelta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run peticiones.yml --ref main

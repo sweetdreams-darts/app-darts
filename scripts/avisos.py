@@ -3,7 +3,7 @@
 # mantiene la cuenta protegida de cada persona (cuentas/{uid}: alta, bloqueo y número de socio)
 # y, una vez por jornada, borra todos los datos de las cuentas que ya no existen en Firebase Authentication.
 import json, os, random, re, time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import requests
 import google.auth.transport.requests
@@ -913,6 +913,66 @@ def recordatorios():
             json={"fields": {"recordado": {"booleanValue": True}}})
         print("Recordatorio enviado:", cuerpo)
 
+# ---------------- horario del bar: con el bar cerrado se mira cada 5 minutos, para gastar menos lecturas ----------------
+ESPERA_ABIERTO, ESPERA_CERRADO = 60, 300   # segundos entre revisiones
+MARGEN_HORARIO = 30   # minutos: se mira cada minuto desde media hora antes de abrir hasta media hora después de cerrar
+
+
+def de_valor(v):
+    """Pasa un valor de Firestore (REST) a Python."""
+    if "mapValue" in v:
+        return {k: de_valor(x) for k, x in v["mapValue"].get("fields", {}).items()}
+    if "arrayValue" in v:
+        return [de_valor(x) for x in v["arrayValue"].get("values", [])]
+    for t in ("stringValue", "integerValue", "doubleValue", "booleanValue", "timestampValue"):
+        if t in v:
+            return v[t]
+    return None
+
+
+def leer_horario():
+    """Horario del bar («Reglas de reserva») y vísperas de festivo. (None, []) si no hay horario o no se puede leer."""
+    try:
+        h, v = leer("settings/horario"), leer("settings/visperas")
+    except Exception as e:
+        print("No se ha podido leer el horario del bar:", e)
+        return None, []
+    if not h:
+        return None, []
+    horario = {k: de_valor(x) for k, x in h.get("fields", {}).items()}
+    fechas = de_valor((v or {}).get("fields", {}).get("fechas", {"nullValue": None}))
+    return horario, fechas if isinstance(fechas, list) else []
+
+
+def bar_abierto(ms, horario, visperas):
+    """True si a esa hora el bar está abierto (con el margen a cada lado) o si no se sabe el horario.
+    Igual que en la app: «dias» va de 0 (domingo) a 6, y si cierra a una hora menor que la de apertura es de madrugada."""
+    if not horario or not isinstance(horario.get("dias"), (dict, list)):
+        return True
+    dias, ahora = horario["dias"], local(ms)
+    minutos = lambda t: int(str(t).split(":")[0]) * 60 + int((str(t).split(":") + ["0"])[1] or 0)
+    try:
+        for atras in (1, 0):   # la madrugada es del día anterior
+            d = (ahora - timedelta(days=atras)).date()
+            sem = (d.weekday() + 1) % 7
+            base = dias.get(str(sem)) if isinstance(dias, dict) else (dias[sem] if sem < len(dias) else None)
+            if not isinstance(base, dict) or not base.get("abre") or not base.get("cierra"):
+                continue   # ese día cierra
+            abre = minutos(base["abre"])
+            tarde = lambda t: minutos(t) + (1440 if minutos(t) <= abre else 0)
+            cierra = tarde(base["cierra"])
+            v = horario.get("vispera")
+            if isinstance(v, dict) and v.get("cierra") and d.isoformat() in visperas:
+                cierra = max(cierra, tarde(v["cierra"]))
+            medianoche = datetime(d.year, d.month, d.day, tzinfo=MADRID)
+            if medianoche + timedelta(minutes=abre - MARGEN_HORARIO) <= ahora <= medianoche + timedelta(minutes=cierra + MARGEN_HORARIO):
+                return True
+    except (ValueError, TypeError, AttributeError, IndexError) as e:
+        print("El horario del bar tiene un formato raro; se mira cada minuto:", e)
+        return True
+    return False
+
+
 # ---------------- avisos al administrador: solicitudes de capitanes, embajadores y vínculos de la liga ----------------
 def dia_bonito(dia):
     """«2026-11-16» → «lun 16 nov»."""
@@ -995,6 +1055,10 @@ def main():
     if ultima_reg is None:   # la primera vez se empieza desde ahora
         ultima_reg = int(time.time() * 1000)
         escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitados", "fields": {"ultimaMs": valor(ultima_reg)}}}])
+    horario, visperas = leer_horario()
+    if not horario:
+        print("Sin horario del bar: se mira cada minuto")
+    abierto_antes = None
     while True:
         print(local(int(time.time() * 1000)).strftime("%H:%M"), "revisando reservas, usuarios nuevos e invitaciones…")
         try:
@@ -1027,9 +1091,14 @@ def main():
                 escribir([{"update": {"name": f"{RAIZ}/avisos_estado/invitaciones", "fields": {"ultimaMs": valor(ultima_inv)}}}])
         except Exception as e:
             print("Error en la revisión:", e)
-        if time.time() - t0 + 60 > DURACION:
+        abierto = bar_abierto(int(time.time() * 1000), horario, visperas)
+        if abierto != abierto_antes:
+            print("Bar abierto: se mira cada minuto" if abierto else "Bar cerrado: se mira cada 5 minutos")
+            abierto_antes = abierto
+        espera = ESPERA_ABIERTO if abierto else ESPERA_CERRADO
+        if time.time() - t0 + espera > DURACION:
             break
-        time.sleep(60)
+        time.sleep(espera)
     print("Fin de la ejecución")
 
 
