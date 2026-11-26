@@ -1,5 +1,10 @@
 name: Avisos
 
+# GitHub debería lanzar este robot con el horario de abajo, pero en la práctica solo lo hace 3 o 4 veces al día.
+# Por eso cada vuelta dura unos 55 minutos y, al terminar, lanza ella misma la siguiente: así el robot está
+# siempre encendido. El horario se queda solo de respaldo, por si la cadena se corta.
+# Para pararlo: en la pestaña Actions, cancela la vuelta en curso (el horario lo volverá a arrancar más tarde)
+# o desactiva el workflow (Avisos → ··· → Disable workflow).
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -11,20 +16,44 @@ concurrency:
 
 permissions:
   contents: read
+  actions: write   # para lanzar la siguiente vuelta
 
 jobs:
   avisos:
     runs-on: ubuntu-latest
-    timeout-minutes: 62
+    timeout-minutes: 64
     steps:
+      - name: Anotar la hora de inicio
+        run: echo "INICIO=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install google-auth requests cryptography
-      - run: python scripts/avisos.py
+      - name: Robot (revisa cada minuto durante 55 minutos)
+        timeout-minutes: 58
         env:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
           NFC_K_META: ${{ secrets.NFC_K_META }}
           NFC_K_FILE: ${{ secrets.NFC_K_FILE }}
-          DURACION: "3300"
+        run: |
+          # Si el robot se para por un error (por ejemplo, un fallo de red), se vuelve a arrancar con el tiempo que quede.
+          # Si falla 5 veces seguidas, algo va mal de verdad: se para y no se lanza la siguiente vuelta.
+          fallos=0
+          while true; do
+            queda=$(( 3300 - ($(date +%s) - INICIO) ))
+            if [ "$queda" -lt 120 ]; then break; fi
+            if DURACION=$queda python scripts/avisos.py; then
+              fallos=0
+            else
+              fallos=$((fallos + 1))
+              echo "::warning::El robot se ha parado con un error (vez $fallos de 5)"
+              if [ "$fallos" -ge 5 ]; then exit 1; fi
+              sleep 60
+            fi
+          done
+      - name: Lanzar la siguiente vuelta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run avisos.yml --ref main
