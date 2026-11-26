@@ -3,6 +3,8 @@ name: Avisos
 # GitHub debería lanzar este robot con el horario de abajo, pero en la práctica solo lo hace 3 o 4 veces al día.
 # Por eso cada vuelta dura unos 55 minutos y, al terminar, lanza ella misma la siguiente: así el robot está
 # siempre encendido. El horario se queda solo de respaldo, por si la cadena se corta.
+# Con el bar abierto (según «Reglas de reserva», con media hora de margen) revisa cada minuto; con el bar
+# cerrado, cada 5 minutos, para no pasarse de las lecturas gratis de Firestore.
 # Para pararlo: en la pestaña Actions, cancela la vuelta en curso (el horario lo volverá a arrancar más tarde)
 # o desactiva el workflow (Avisos → ··· → Disable workflow).
 on:
@@ -30,7 +32,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install google-auth requests cryptography
-      - name: Robot (revisa cada minuto durante 55 minutos)
+      - name: Robot (55 minutos; cada minuto con el bar abierto, cada 5 con el bar cerrado)
         timeout-minutes: 58
         env:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
@@ -43,14 +45,11 @@ jobs:
           while true; do
             queda=$(( 3300 - ($(date +%s) - INICIO) ))
             if [ "$queda" -lt 120 ]; then break; fi
-            if DURACION=$queda python scripts/avisos.py; then
-              fallos=0
-            else
-              fallos=$((fallos + 1))
-              echo "::warning::El robot se ha parado con un error (vez $fallos de 5)"
-              if [ "$fallos" -ge 5 ]; then exit 1; fi
-              sleep 60
-            fi
+            if DURACION=$queda python scripts/avisos.py; then break; fi
+            fallos=$((fallos + 1))
+            echo "::warning::El robot se ha parado con un error (vez $fallos de 5)"
+            if [ "$fallos" -ge 5 ]; then exit 1; fi
+            sleep 60
           done
       - name: Lanzar la siguiente vuelta
         env:
